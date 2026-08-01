@@ -8,6 +8,7 @@ import { StatusPill } from './StatusPill';
 import { useIndicAvatar } from '../hooks/useIndicAvatar';
 import { AudioLipSync } from '../lib/audioLipSync';
 import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
+import { AvatarDynamicsEngine } from '../lib/avatarDynamics';
 import type { VisemeWeights } from '../lib/visemeTable';
 
 export interface IndicAvatarCapabilities {
@@ -94,13 +95,18 @@ function AvatarModel({
   const { scene } = useGLTF(url);
   const morphMeshesRef = useRef<THREE.Mesh[]>([]);
 
-  // Lip sync engine instances (created once, never trigger React rerenders)
+  // Lip sync & facial dynamics engine instances (created once, zero React rerenders)
   const lipSyncRef = useRef<AudioLipSync | null>(null);
   const phonemeEngineRef = useRef(new PhonemeTimingEngine());
+  const dynamicsEngineRef = useRef(new AvatarDynamicsEngine());
   const prevWeightsRef = useRef<VisemeWeights | null>(null);
   const lastTextRef = useRef<string>('');
 
-  // Find all meshes with morph targets (e.g. Wolf3D_Head, Wolf3D_Teeth, Wolf3D_EyeLeft, etc.)
+  // Skeletal armature tracking refs for interactive head posture
+  const headBoneRef = useRef<THREE.Object3D | null>(null);
+  const initialHeadRotRef = useRef<THREE.Euler | null>(null);
+
+  // Find all meshes with morph targets and locate head armature bones
   useEffect(() => {
     const meshes: THREE.Mesh[] = [];
     scene.traverse((child) => {
@@ -109,6 +115,21 @@ function AvatarModel({
       }
     });
     morphMeshesRef.current = meshes;
+
+    // Locate standard humanoid neck/head armature joints for smooth pointer tracking
+    const foundHeadBone = (
+      scene.getObjectByName('Head') ||
+      scene.getObjectByName('Neck') ||
+      scene.getObjectByName('head') ||
+      scene.getObjectByName('neck') ||
+      scene.getObjectByName('Head_01') ||
+      null
+    );
+
+    if (foundHeadBone) {
+      headBoneRef.current = foundHeadBone;
+      initialHeadRotRef.current = foundHeadBone.rotation.clone();
+    }
   }, [scene]);
 
   // Create AudioLipSync when analyser becomes available
@@ -148,66 +169,99 @@ function AvatarModel({
     }
   });
 
-  // ─── PHASE 5: Hybrid Audio-Text Lip Sync ─────────────────────────────────
-  // Runs every frame. Reads FFT data + text timing → writes morph targets directly.
-  // Explicitly bypasses React state for 60fps performance.
-  useFrame(() => {
-    if (debug) return; // Don't override manual debug sliders
-    if (!lipSyncRef.current || morphMeshesRef.current.length === 0) return;
+  // ─── PHASE 5 & AVATAR DYNAMICS: Hybrid Lip Sync + Autonomous Micro-Expressions ───
+  // Runs every frame. Reads FFT audio, text timing, and pointer coords → mutates meshes & bones directly at 60 FPS.
+  useFrame((state, delta) => {
+    if (debug) return; // Don't override manual Leva debug controls
+    if (morphMeshesRef.current.length === 0) return;
 
-    // Step 1: Read real-time audio energy
-    const audioState = lipSyncRef.current.update();
+    // Step 1: Read real-time audio energy if active
+    const audioState = lipSyncRef.current?.update() ?? null;
 
-    // Step 2: Update phoneme timeline if the spoken text changed
-    const currentText = currentSpeechTextRef.current ?? '';
-    if (currentText !== lastTextRef.current) {
-      lastTextRef.current = currentText;
-      if (currentText.length > 0) {
-        phonemeEngineRef.current.setUtterance(
-          currentText,
-          currentAudioDurationRef.current ?? undefined
-        );
-      } else {
-        phonemeEngineRef.current.clear();
+    // Step 2: Update phoneme timeline if spoken text changed
+    if (lipSyncRef.current) {
+      const currentText = currentSpeechTextRef.current ?? '';
+      if (currentText !== lastTextRef.current) {
+        lastTextRef.current = currentText;
+        if (currentText.length > 0) {
+          phonemeEngineRef.current.setUtterance(
+            currentText,
+            currentAudioDurationRef.current ?? undefined
+          );
+        } else {
+          phonemeEngineRef.current.clear();
+        }
       }
-    }
 
-    // Step 3: Determine playback position and look up the active viseme
-    let timedViseme = null;
-    const ctx = audioContextRef.current;
-    if (ctx && currentText.length > 0 && playbackStartTimeRef.current > 0) {
-      const playbackTime = ctx.currentTime - playbackStartTimeRef.current;
-      timedViseme = phonemeEngineRef.current.getActiveViseme(playbackTime);
-    }
+      // Step 3: Determine playback position and active viseme
+      let timedViseme = null;
+      const ctx = audioContextRef.current;
+      if (ctx && currentText.length > 0 && playbackStartTimeRef.current > 0) {
+        const playbackTime = ctx.currentTime - playbackStartTimeRef.current;
+        timedViseme = phonemeEngineRef.current.getActiveViseme(playbackTime);
+      }
 
-    // Step 4: Blend audio energy + text viseme into final morph weights
-    const weights = blendAudioAndText(
-      audioState,
-      timedViseme,
-      prevWeightsRef.current,
-      0.35,
-    );
-    prevWeightsRef.current = weights;
+      // Step 4: Blend audio energy + text viseme into speech morph weights
+      if (audioState) {
+        const weights = blendAudioAndText(
+          audioState,
+          timedViseme,
+          prevWeightsRef.current,
+          0.35,
+        );
+        prevWeightsRef.current = weights;
 
-    // Step 5: Write directly to mesh morphTargetInfluences (no React state!)
-    for (const mesh of morphMeshesRef.current) {
-      if (!mesh.morphTargetInfluences || !mesh.morphTargetDictionary) continue;
-      for (const key of LIP_SYNC_TARGETS) {
-        const idx = mesh.morphTargetDictionary[key];
-        if (idx !== undefined) {
-          mesh.morphTargetInfluences[idx] = weights[key];
+        // Apply speech viseme targets directly to mesh influences
+        for (const mesh of morphMeshesRef.current) {
+          if (!mesh.morphTargetInfluences || !mesh.morphTargetDictionary) continue;
+          for (const key of LIP_SYNC_TARGETS) {
+            const idx = mesh.morphTargetDictionary[key];
+            if (idx !== undefined) {
+              mesh.morphTargetInfluences[idx] = weights[key];
+            }
+          }
         }
       }
     }
-  });
 
-  // Idle micro-movement applied to the entire root scene so head, teeth, and body stay attached
-  useFrame((state) => {
+    // Step 5: Compute autonomous facial vitality (blinks, eye darting, acoustic brows) & interactive pointer physics
+    const dynamics = dynamicsEngineRef.current.update({
+      elapsedTime: state.clock.getElapsedTime(),
+      delta,
+      pointerX: state.pointer.x,
+      pointerY: state.pointer.y,
+      audioState,
+    });
+
+    // Apply autonomous micro-expression blendshapes (blinking, saccades, eyebrows, cheek accentuation)
+    for (const mesh of morphMeshesRef.current) {
+      if (!mesh.morphTargetInfluences || !mesh.morphTargetDictionary) continue;
+      for (const [key, value] of Object.entries(dynamics.blendshapes)) {
+        const idx = mesh.morphTargetDictionary[key];
+        if (idx !== undefined) {
+          mesh.morphTargetInfluences[idx] = value;
+        }
+      }
+    }
+
+    // Step 6: Apply interactive cursor head & neck rotation toward user mouse pointer
+    if (headBoneRef.current && initialHeadRotRef.current) {
+      headBoneRef.current.rotation.x = initialHeadRotRef.current.x + dynamics.headRotation.x;
+      headBoneRef.current.rotation.y = initialHeadRotRef.current.y + dynamics.headRotation.y;
+      headBoneRef.current.rotation.z = initialHeadRotRef.current.z + dynamics.headRotation.z;
+    } else if (scene) {
+      // Gentle scene fallback tilt if model has no exposed Neck/Head armature joint
+      scene.rotation.y = dynamics.sceneOffset.rotationY + dynamics.headRotation.y * 0.45;
+      scene.rotation.x = dynamics.headRotation.x * 0.25;
+    }
+
+    // Step 7: Root scene respiration and idle presence
     if (scene) {
-      const t = state.clock.getElapsedTime();
-      scene.position.y = Math.sin(t * 1.5) * 0.02;
-      scene.rotation.y = Math.sin(t * 0.5) * 0.05;
-      scene.rotation.z = Math.cos(t * 0.3) * 0.02;
+      scene.position.y = dynamics.sceneOffset.positionY;
+      if (headBoneRef.current) {
+        scene.rotation.y = dynamics.sceneOffset.rotationY;
+        scene.rotation.z = dynamics.sceneOffset.rotationZ;
+      }
     }
   });
 

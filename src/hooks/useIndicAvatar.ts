@@ -324,7 +324,10 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
     return () => {
       mounted = false;
       try {
-        vadRef.current?.destroy();
+        const destroyPromise = vadRef.current?.destroy();
+        if (destroyPromise && typeof destroyPromise.catch === 'function') {
+          destroyPromise.catch(() => { /* ignore VAD destroy rejection on unmount */ });
+        }
       } catch (err) {
         console.warn('VAD destroy ignored on cleanup:', err);
       }
