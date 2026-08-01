@@ -1,0 +1,270 @@
+/**
+ * phonemeTiming.ts
+ *
+ * Hybrid text-aware lip sync timing engine.
+ *
+ * PROBLEM: Pure FFT spectral analysis cannot reliably distinguish between
+ * retroflex (ट) vs dental (त) or aspirated (ख) vs unaspirated (क)
+ * consonants — those distinctions live in timing (voice onset time,
+ * formant transitions), not steady-state frequency content.
+ *
+ * SOLUTION: Since our pipeline knows the exact text being spoken before
+ * audio playback begins, this module generates a coarse per-character
+ * timing estimate and tells the animation loop "we know a ठ is coming now"
+ * rather than trying to infer it from the waveform after the fact.
+ *
+ * The AudioLipSync module determines HOW OPEN the mouth is (via energy).
+ * This module determines WHAT SHAPE the mouth takes (via text timing).
+ * The two are blended together in the render loop.
+ */
+
+import {
+  type VisemeId,
+  type VisemeWeights,
+  VISEME_WEIGHTS,
+  getVisemeForChar,
+  isAspiratedViseme,
+  isRetroflexViseme,
+} from './visemeTable';
+import type { AudioLipSyncState } from './audioLipSync';
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+/** A single entry in the timing profile: which viseme plays at what time. */
+export interface TimedViseme {
+  /** Start time relative to utterance beginning (seconds). */
+  startTime: number;
+  /** Duration of this phoneme (seconds). */
+  duration: number;
+  /** The character that produced this viseme. */
+  char: string;
+  /** Resolved viseme ID. */
+  viseme: VisemeId;
+}
+
+// ─── Duration Model ─────────────────────────────────────────────────────────
+//
+// Coarse average durations per viseme category (in seconds).
+// These are approximate spoken-pace values for conversational speed.
+// Vowels are generally longer; plosives and silence are shorter.
+
+const VISEME_DURATIONS: Record<VisemeId, number> = {
+  sil:        0.03,   // silence / halant — very brief
+  PP:         0.07,   // bilabial plosive
+  FF:         0.08,   // labiodental
+  TH:         0.07,   // dental fricative
+  DD:         0.06,   // alveolar stop
+  DD_RETRO:   0.07,   // retroflex stop
+  KK:         0.06,   // velar stop
+  CH:         0.08,   // affricate
+  SS:         0.09,   // sibilant
+  NN:         0.06,   // nasal
+  RR:         0.05,   // rhotic
+  AA:         0.10,   // open vowel
+  EE:         0.09,   // close front vowel
+  IH:         0.08,   // near-close front
+  OH:         0.09,   // mid back rounded
+  OO:         0.09,   // close back rounded
+  ASPIRATE:   0.09,   // aspirated release (slightly longer for the burst)
+};
+
+// ─── PhonemeTimingEngine ────────────────────────────────────────────────────
+
+export class PhonemeTimingEngine {
+  private timeline: TimedViseme[] = [];
+  private totalDuration: number = 0;
+  private currentText: string = '';
+
+  /**
+   * Build a timing profile for an utterance.
+   * Call this when a new TTS chunk begins playback.
+   *
+   * @param text - The text being spoken (the same text sent to TTS).
+   * @param audioDuration - Actual audio clip duration in seconds (from the TTS output buffer).
+   *                        If provided, the character timings are scaled to fit exactly.
+   */
+  setUtterance(text: string, audioDuration?: number): void {
+    this.currentText = text;
+    this.timeline = [];
+
+    if (!text || text.length === 0) {
+      this.totalDuration = 0;
+      return;
+    }
+
+    // Step 1: Build raw timing from per-character viseme durations
+    let cursor = 0;
+    for (const char of text) {
+      const viseme = getVisemeForChar(char);
+      const rawDuration = VISEME_DURATIONS[viseme];
+      this.timeline.push({
+        startTime: cursor,
+        duration: rawDuration,
+        char,
+        viseme,
+      });
+      cursor += rawDuration;
+    }
+
+    const rawTotal = cursor;
+
+    // Step 2: Scale to actual audio duration if known
+    if (audioDuration && audioDuration > 0 && rawTotal > 0) {
+      const scale = audioDuration / rawTotal;
+      let scaledCursor = 0;
+      for (const entry of this.timeline) {
+        entry.startTime = scaledCursor;
+        entry.duration *= scale;
+        scaledCursor += entry.duration;
+      }
+      this.totalDuration = audioDuration;
+    } else {
+      this.totalDuration = rawTotal;
+    }
+  }
+
+  /**
+   * Query which viseme should be active at a given playback timestamp.
+   *
+   * @param playbackTime - Seconds elapsed since the start of audio playback for this utterance.
+   * @returns The active TimedViseme, or null if outside the timeline.
+   */
+  getActiveViseme(playbackTime: number): TimedViseme | null {
+    if (this.timeline.length === 0 || playbackTime < 0) return null;
+    if (playbackTime >= this.totalDuration) return null;
+
+    // Binary search for the active entry
+    let lo = 0;
+    let hi = this.timeline.length - 1;
+
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      const entry = this.timeline[mid];
+      const end = entry.startTime + entry.duration;
+
+      if (playbackTime < entry.startTime) {
+        hi = mid - 1;
+      } else if (playbackTime >= end) {
+        lo = mid + 1;
+      } else {
+        return entry;
+      }
+    }
+
+    // Fallback: return last entry
+    return this.timeline[this.timeline.length - 1];
+  }
+
+  /**
+   * Clear the timeline. Call when speech stops.
+   */
+  clear(): void {
+    this.timeline = [];
+    this.totalDuration = 0;
+    this.currentText = '';
+  }
+
+  get duration(): number {
+    return this.totalDuration;
+  }
+
+  get text(): string {
+    return this.currentText;
+  }
+}
+
+// ─── Hybrid Blending ────────────────────────────────────────────────────────
+//
+// Combines audio-driven energy with text-driven viseme shapes into a final
+// set of ARKit morph target weights ready to write into the mesh.
+
+/**
+ * Blend audio energy with text-predicted viseme to produce final morph weights.
+ *
+ * @param audioState - Current FFT analysis from AudioLipSync.update()
+ * @param timedViseme - Current text-predicted viseme from PhonemeTimingEngine.getActiveViseme()
+ * @param smoothedPrev - Previous frame's blended weights (for temporal smoothing)
+ * @param lerpFactor - Smoothing factor (0.2 = very smooth, 0.5 = responsive). Default 0.35.
+ * @returns Final VisemeWeights to write into morphTargetInfluences
+ */
+export function blendAudioAndText(
+  audioState: AudioLipSyncState,
+  timedViseme: TimedViseme | null,
+  smoothedPrev: VisemeWeights | null,
+  lerpFactor: number = 0.35,
+): VisemeWeights {
+  // If no text prediction is available, fall back to pure audio-driven animation
+  const targetViseme = timedViseme?.viseme ?? 'AA'; // Default to open vowel
+  const targetWeights = VISEME_WEIGHTS[targetViseme];
+
+  // Energy multiplier: audio energy scales HOW MUCH of the target shape is applied.
+  // When energy is 0 (silence), the mouth stays closed regardless of the text prediction.
+  const energyMul = audioState.isSpeaking ? Math.min(1, audioState.energy * 1.5) : 0;
+
+  // Extra emphasis for aspirated and retroflex visemes based on spectral cues:
+  // - Aspirated consonants correlate with high-frequency energy bursts
+  // - Retroflex consonants show slightly different mid-band formant patterns
+  let emphasisMul = 1.0;
+  if (timedViseme) {
+    if (isAspiratedViseme(timedViseme.viseme)) {
+      // Boost when high-band energy confirms the aspiration burst
+      emphasisMul = 1.0 + audioState.highBand * 0.4;
+    } else if (isRetroflexViseme(timedViseme.viseme)) {
+      // Slight boost for retroflex — the distinction is primarily from text, not audio
+      emphasisMul = 1.1;
+    }
+  }
+
+  const finalMul = Math.min(1.2, energyMul * emphasisMul);
+
+  // Apply energy-scaled target weights
+  const blended: VisemeWeights = {
+    jawOpen: targetWeights.jawOpen * finalMul,
+    mouthClose: targetWeights.mouthClose * (audioState.isSpeaking ? 0.3 : 1), // Reduce close when speaking
+    mouthFunnel: targetWeights.mouthFunnel * finalMul,
+    mouthPucker: targetWeights.mouthPucker * finalMul,
+    mouthSmileLeft: targetWeights.mouthSmileLeft * finalMul,
+    mouthSmileRight: targetWeights.mouthSmileRight * finalMul,
+    mouthStretchLeft: targetWeights.mouthStretchLeft * finalMul,
+    mouthStretchRight: targetWeights.mouthStretchRight * finalMul,
+    mouthRollLower: targetWeights.mouthRollLower * finalMul,
+    mouthRollUpper: targetWeights.mouthRollUpper * finalMul,
+    mouthShrugLower: targetWeights.mouthShrugLower * finalMul,
+    mouthShrugUpper: targetWeights.mouthShrugUpper * finalMul,
+    mouthPressLeft: targetWeights.mouthPressLeft * (audioState.isSpeaking ? finalMul : 0.1),
+    mouthPressRight: targetWeights.mouthPressRight * (audioState.isSpeaking ? finalMul : 0.1),
+    mouthLowerDownLeft: targetWeights.mouthLowerDownLeft * finalMul,
+    mouthLowerDownRight: targetWeights.mouthLowerDownRight * finalMul,
+    mouthUpperUpLeft: targetWeights.mouthUpperUpLeft * finalMul,
+    mouthUpperUpRight: targetWeights.mouthUpperUpRight * finalMul,
+    tongueOut: targetWeights.tongueOut * finalMul,
+  };
+
+  // Temporal smoothing against previous frame
+  if (smoothedPrev) {
+    const lerp = (a: number, b: number) => a + (b - a) * lerpFactor;
+    return {
+      jawOpen: lerp(smoothedPrev.jawOpen, blended.jawOpen),
+      mouthClose: lerp(smoothedPrev.mouthClose, blended.mouthClose),
+      mouthFunnel: lerp(smoothedPrev.mouthFunnel, blended.mouthFunnel),
+      mouthPucker: lerp(smoothedPrev.mouthPucker, blended.mouthPucker),
+      mouthSmileLeft: lerp(smoothedPrev.mouthSmileLeft, blended.mouthSmileLeft),
+      mouthSmileRight: lerp(smoothedPrev.mouthSmileRight, blended.mouthSmileRight),
+      mouthStretchLeft: lerp(smoothedPrev.mouthStretchLeft, blended.mouthStretchLeft),
+      mouthStretchRight: lerp(smoothedPrev.mouthStretchRight, blended.mouthStretchRight),
+      mouthRollLower: lerp(smoothedPrev.mouthRollLower, blended.mouthRollLower),
+      mouthRollUpper: lerp(smoothedPrev.mouthRollUpper, blended.mouthRollUpper),
+      mouthShrugLower: lerp(smoothedPrev.mouthShrugLower, blended.mouthShrugLower),
+      mouthShrugUpper: lerp(smoothedPrev.mouthShrugUpper, blended.mouthShrugUpper),
+      mouthPressLeft: lerp(smoothedPrev.mouthPressLeft, blended.mouthPressLeft),
+      mouthPressRight: lerp(smoothedPrev.mouthPressRight, blended.mouthPressRight),
+      mouthLowerDownLeft: lerp(smoothedPrev.mouthLowerDownLeft, blended.mouthLowerDownLeft),
+      mouthLowerDownRight: lerp(smoothedPrev.mouthLowerDownRight, blended.mouthLowerDownRight),
+      mouthUpperUpLeft: lerp(smoothedPrev.mouthUpperUpLeft, blended.mouthUpperUpLeft),
+      mouthUpperUpRight: lerp(smoothedPrev.mouthUpperUpRight, blended.mouthUpperUpRight),
+      tongueOut: lerp(smoothedPrev.tongueOut, blended.tongueOut),
+    };
+  }
+
+  return blended;
+}

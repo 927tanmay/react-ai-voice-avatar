@@ -35,6 +35,9 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
   const audioQueueRef = useRef<Array<{ audioData: Float32Array; sampleRate: number; text: string; isLast: boolean }>>([]);
   const isPlayingRef = useRef<boolean>(false);
   const isWaitingForMoreRef = useRef<boolean>(false);
+  const currentSpeechTextRef = useRef<string>('');
+  const currentAudioDurationRef = useRef<number>(0);
+  const playbackStartTimeRef = useRef<number>(0);
 
   // Keep latest config in ref for callbacks
   const configRef = useRef(config);
@@ -75,11 +78,18 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
 
     source.onended = () => {
       isPlayingRef.current = false;
+      currentSpeechTextRef.current = '';
+      currentAudioDurationRef.current = 0;
       if (item.isLast) {
         isWaitingForMoreRef.current = false;
       }
       playNextInQueue();
     };
+
+    // Expose text + timing for the lip sync engine
+    currentSpeechTextRef.current = item.text;
+    currentAudioDurationRef.current = buffer.duration;
+    playbackStartTimeRef.current = ctx.currentTime;
 
     setStatus('speaking');
     source.start(0);
@@ -363,6 +373,10 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
     startListening,
     stopListening,
     interrupt,
-    clearHistory
+    clearHistory,
+    currentSpeechTextRef,
+    currentAudioDurationRef,
+    playbackStartTimeRef,
+    audioContextRef,
   };
 }

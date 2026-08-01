@@ -6,6 +6,9 @@ import * as THREE from 'three';
 import { resolveAvatarUrl } from '../lib/avatarAssets';
 import { StatusPill } from './StatusPill';
 import { useIndicAvatar } from '../hooks/useIndicAvatar';
+import { AudioLipSync } from '../lib/audioLipSync';
+import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
+import type { VisemeWeights } from '../lib/visemeTable';
 
 export interface IndicAvatarCapabilities {
   webgpu: boolean;
@@ -64,9 +67,38 @@ const ARKIT_BLENDSHAPES = [
   "cheekSquintRight", "noseSneerLeft", "noseSneerRight", "tongueOut"
 ];
 
-function AvatarModel({ url, debug }: { url: string; debug?: boolean }) {
+// Morph target keys that the lip sync engine writes to
+const LIP_SYNC_TARGETS = [
+  'jawOpen', 'mouthClose', 'mouthFunnel', 'mouthPucker',
+  'mouthSmileLeft', 'mouthSmileRight', 'mouthStretchLeft', 'mouthStretchRight',
+  'mouthRollLower', 'mouthRollUpper', 'mouthShrugLower', 'mouthShrugUpper',
+  'mouthPressLeft', 'mouthPressRight', 'mouthLowerDownLeft', 'mouthLowerDownRight',
+  'mouthUpperUpLeft', 'mouthUpperUpRight', 'tongueOut',
+] as const;
+
+interface AvatarModelProps {
+  url: string;
+  debug?: boolean;
+  analyser?: AnalyserNode;
+  currentSpeechTextRef: React.RefObject<string>;
+  currentAudioDurationRef: React.RefObject<number>;
+  playbackStartTimeRef: React.RefObject<number>;
+  audioContextRef: React.RefObject<AudioContext | null>;
+}
+
+function AvatarModel({
+  url, debug, analyser,
+  currentSpeechTextRef, currentAudioDurationRef,
+  playbackStartTimeRef, audioContextRef,
+}: AvatarModelProps) {
   const { scene } = useGLTF(url);
   const morphMeshesRef = useRef<THREE.Mesh[]>([]);
+
+  // Lip sync engine instances (created once, never trigger React rerenders)
+  const lipSyncRef = useRef<AudioLipSync | null>(null);
+  const phonemeEngineRef = useRef(new PhonemeTimingEngine());
+  const prevWeightsRef = useRef<VisemeWeights | null>(null);
+  const lastTextRef = useRef<string>('');
 
   // Find all meshes with morph targets (e.g. Wolf3D_Head, Wolf3D_Teeth, Wolf3D_EyeLeft, etc.)
   useEffect(() => {
@@ -78,6 +110,17 @@ function AvatarModel({ url, debug }: { url: string; debug?: boolean }) {
     });
     morphMeshesRef.current = meshes;
   }, [scene]);
+
+  // Create AudioLipSync when analyser becomes available
+  useEffect(() => {
+    if (analyser) {
+      lipSyncRef.current = new AudioLipSync(analyser);
+    }
+    return () => {
+      lipSyncRef.current?.reset();
+      lipSyncRef.current = null;
+    };
+  }, [analyser]);
 
   // Dev-only debug panel (Statically mapped so Leva doesn't break on lazy-load)
   const controls = useControls(
@@ -100,6 +143,59 @@ function AvatarModel({ url, debug }: { url: string; debug?: boolean }) {
               mesh.morphTargetInfluences[idx] = controls[key];
             }
           }
+        }
+      }
+    }
+  });
+
+  // ─── PHASE 5: Hybrid Audio-Text Lip Sync ─────────────────────────────────
+  // Runs every frame. Reads FFT data + text timing → writes morph targets directly.
+  // Explicitly bypasses React state for 60fps performance.
+  useFrame(() => {
+    if (debug) return; // Don't override manual debug sliders
+    if (!lipSyncRef.current || morphMeshesRef.current.length === 0) return;
+
+    // Step 1: Read real-time audio energy
+    const audioState = lipSyncRef.current.update();
+
+    // Step 2: Update phoneme timeline if the spoken text changed
+    const currentText = currentSpeechTextRef.current ?? '';
+    if (currentText !== lastTextRef.current) {
+      lastTextRef.current = currentText;
+      if (currentText.length > 0) {
+        phonemeEngineRef.current.setUtterance(
+          currentText,
+          currentAudioDurationRef.current ?? undefined
+        );
+      } else {
+        phonemeEngineRef.current.clear();
+      }
+    }
+
+    // Step 3: Determine playback position and look up the active viseme
+    let timedViseme = null;
+    const ctx = audioContextRef.current;
+    if (ctx && currentText.length > 0 && playbackStartTimeRef.current > 0) {
+      const playbackTime = ctx.currentTime - playbackStartTimeRef.current;
+      timedViseme = phonemeEngineRef.current.getActiveViseme(playbackTime);
+    }
+
+    // Step 4: Blend audio energy + text viseme into final morph weights
+    const weights = blendAudioAndText(
+      audioState,
+      timedViseme,
+      prevWeightsRef.current,
+      0.35,
+    );
+    prevWeightsRef.current = weights;
+
+    // Step 5: Write directly to mesh morphTargetInfluences (no React state!)
+    for (const mesh of morphMeshesRef.current) {
+      if (!mesh.morphTargetInfluences || !mesh.morphTargetDictionary) continue;
+      for (const key of LIP_SYNC_TARGETS) {
+        const idx = mesh.morphTargetDictionary[key];
+        if (idx !== undefined) {
+          mesh.morphTargetInfluences[idx] = weights[key];
         }
       }
     }
@@ -135,7 +231,10 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
 
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(modelSrc || null);
 
-  const { status, analyser, startListening, stopListening, interrupt } = useIndicAvatar({
+  const {
+    status, analyser, startListening, stopListening, interrupt,
+    currentSpeechTextRef, currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
+  } = useIndicAvatar({
     llmModel: props.llmModel,
     asrModel: props.asrModel,
     ttsLanguage,
@@ -186,7 +285,15 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
     <group {...groupProps}>
       {environmentPreset === 'studio' && <Environment preset="studio" />}
 
-      <AvatarModel url={resolvedUrl} debug={debug} />
+      <AvatarModel
+        url={resolvedUrl}
+        debug={debug}
+        analyser={analyser}
+        currentSpeechTextRef={currentSpeechTextRef}
+        currentAudioDurationRef={currentAudioDurationRef}
+        playbackStartTimeRef={playbackStartTimeRef}
+        audioContextRef={audioContextRef}
+      />
 
       <Html fullscreen zIndexRange={[100, 0]}>
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -203,3 +310,4 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
 });
 
 IndicAvatar.displayName = 'IndicAvatar';
+
