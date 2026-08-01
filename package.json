@@ -1,0 +1,53 @@
+{
+  "name": "react-indic-avatar",
+  "version": "0.1.0",
+  "description": "Local-first, WebGPU-powered 3D avatar with real-time Indic voice conversation for React.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "peerDependencies": {
+    "@react-three/fiber": "^9.0.0",
+    "react": ">=19 <19.3",
+    "react-dom": ">=19 <19.3",
+    "three": ">=0.156"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@react-three/drei": "^10.7.7",
+    "@ricky0123/vad-web": "^0.0.30",
+    "kokoro-js": "^1.2.1",
+    "leva": "^0.10.1",
+    "onnxruntime-web": "^1.27.0"
+  },
+  "devDependencies": {
+    "@react-three/fiber": "^9.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.167.0",
+    "eslint": "^9.9.0",
+    "prettier": "^3.3.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.167.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vite-plugin-dts": "^4.0.0",
+    "vite-plugin-static-copy": "^2.1.0"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "format": "prettier --write src"
+  },
+  "sideEffects": false
+}
