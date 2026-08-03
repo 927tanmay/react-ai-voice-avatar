@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar, StatusPill, type IndicAvatarHandle } from 'react-indic-avatar';
+import { IndicAvatar, type IndicAvatarHandle } from 'react-indic-avatar';
 import './style.css';
 
 interface Persona {
@@ -90,7 +90,7 @@ export const App: React.FC = () => {
         position: 'absolute',
         top: '24px',
         left: '24px',
-        zIndex: 50,
+        zIndex: 500,
         background: 'rgba(20, 22, 28, 0.75)',
         backdropFilter: 'blur(16px)',
         border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -130,7 +130,7 @@ export const App: React.FC = () => {
         position: 'absolute',
         top: '24px',
         right: '24px',
-        zIndex: 50,
+        zIndex: 500,
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
@@ -282,41 +282,17 @@ export const App: React.FC = () => {
             </p>
           )}
         </div>
-
-        {/* Docked Status Pill directly underneath the Voice card in standard layout */}
-        <StatusPill
-          status={avatarStatus}
-          accentColor={currentPersona.accentColor}
-          analyser={avatarRef.current?.getAnalyser()}
-          onPillClick={() => avatarRef.current?.startListening()}
-          onStopClick={() => {
-            avatarRef.current?.stopListening();
-            avatarRef.current?.interrupt();
-          }}
-          style={{
-            position: 'relative',
-            top: 'auto',
-            left: 'auto',
-            transform: 'none',
-            width: '100%',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-            marginTop: '4px',
-            padding: '14px 20px',
-            borderRadius: '16px',
-          }}
-        />
       </div>
 
       {/* 3D Studio Viewport - Delicate Wide Studio Framing */}
-      <Canvas camera={{ position: [0, 0.1, 1.85], fov: 38 }} style={{ width: '100%', height: '100%' }}>
+      <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }} style={{ width: '100%', height: '100%' }}>
         <color attach="background" args={['#101116']} />
         
         {/* Subtle studio back-lighting accents representing saffron / peacock teal */}
         <pointLight position={[-3, 2, -2]} intensity={25} color={activePersonaId === 'ananya' ? '#FF9933' : '#1A73E8'} distance={6} />
         <pointLight position={[3, 1, -2]} intensity={20} color={activePersonaId === 'ananya' ? '#138808' : '#FF9933'} distance={6} />
         
-        <OrbitControls target={[0, 0.1, 0]} minDistance={0.5} maxDistance={4} />
+        <OrbitControls target={[0, 0.05, 0]} minDistance={0.5} maxDistance={4} />
         
         {/* React Indic Avatar component with dual-worker TTS architecture */}
         <IndicAvatar
@@ -327,8 +303,10 @@ export const App: React.FC = () => {
           ttsEngine={ttsEngine}
           ttsVoice={ttsVoice}
           debug={false}
-          position={[0, -0.72, 0]}
-          hideStatusPill={true}
+          showCaptions={true}
+          scale={0.48}
+          position={[-0.15, -0.42, 0]}
+          hideStatusPill={false}
           onStatusChange={(newStatus) => setAvatarStatus(newStatus)}
         />
       </Canvas>
