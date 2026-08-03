@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 // @ts-ignore
-import MLWorker from '../workers/mlPipeline.worker?worker&inline';
+import MLWorker from '../workers/mlPipeline.worker?worker';
 import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
 
 export interface UseMLWorkerConfig {
@@ -33,6 +33,7 @@ export function useMLWorker(config: UseMLWorkerConfig) {
   }, [config]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || typeof Worker === 'undefined') return; // P4: Next.js SSR Guard
     let isMounted = true;
     let worker: Worker | null = null;
 

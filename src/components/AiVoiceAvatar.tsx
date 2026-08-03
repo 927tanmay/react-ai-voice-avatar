@@ -30,6 +30,10 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   avatarPreset?: 'ananya' | 'aarav' | 'default' | 'kiosk';
   visemeMap?: Record<string, string>;
   environmentPreset?: 'studio' | 'none';
+  /** Pre-built cinematic studio lighting presets for zero-config visual atmospheres */
+  lightingPreset?: 'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none';
+  /** Intuitive size preset or custom numerical scale multiplier ('sm' | 'md' | 'lg' | number) */
+  avatarSize?: 'sm' | 'md' | 'lg' | number;
 
   systemPrompt?: string;
   llmModel?: string;
@@ -139,6 +143,23 @@ function AvatarModel({
       headBoneRef.current = foundHeadBone;
       initialHeadRotRef.current = foundHeadBone.rotation.clone();
     }
+
+    return () => {
+      // P2 Optimization: Systematic WebGL resource disposal to prevent VRAM memory leaks on unmount
+      scene.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          mesh.geometry?.dispose();
+          if (Array.isArray(mesh.material)) {
+            mesh.material.forEach((mat) => mat.dispose());
+          } else if (mesh.material) {
+            mesh.material.dispose();
+          }
+        }
+      });
+      morphMeshesRef.current = [];
+      headBoneRef.current = null;
+    };
   }, [scene]);
 
   // Create AudioLipSync when analyser becomes available
@@ -164,6 +185,7 @@ function AvatarModel({
 
   // Apply debug controls to ALL morph target meshes if in debug mode
   useFrame(() => {
+    if (typeof document !== 'undefined' && document.hidden) return;
     if (debug && morphMeshesRef.current.length > 0) {
       for (const mesh of morphMeshesRef.current) {
         if (mesh.morphTargetInfluences && mesh.morphTargetDictionary) {
@@ -181,6 +203,7 @@ function AvatarModel({
   // ─── PHASE 5 & AVATAR DYNAMICS: Hybrid Lip Sync + Autonomous Micro-Expressions ───
   // Runs every frame. Reads FFT audio, text timing, and pointer coords → mutates meshes & bones directly at 60 FPS.
   useFrame((state, delta) => {
+    if (typeof document !== 'undefined' && document.hidden) return; // P2: Halt rendering computations when tab is inactive
     if (debug) return; // Don't override manual Leva debug controls
     if (morphMeshesRef.current.length === 0) return;
 
@@ -277,11 +300,70 @@ function AvatarModel({
   return <primitive object={scene} />;
 }
 
+function StudioLighting({ preset = 'studio' }: { preset?: string }) {
+  if (preset === 'none') return null;
+
+  if (preset === 'cyberpunk_violet') {
+    return (
+      <>
+        <ambientLight intensity={0.6} color="#A78BFA" />
+        <pointLight position={[-3, 2, 2]} intensity={25} color="#8B5CF6" distance={8} />
+        <pointLight position={[3, 1, -2]} intensity={20} color="#06B6D4" distance={8} />
+        <directionalLight position={[0, 4, 3]} intensity={1.2} color="#D8B4FE" />
+      </>
+    );
+  }
+
+  if (preset === 'cool_azure') {
+    return (
+      <>
+        <ambientLight intensity={0.7} color="#93C5FD" />
+        <pointLight position={[-3, 2, 2]} intensity={22} color="#3B82F6" distance={8} />
+        <pointLight position={[3, 1, -2]} intensity={16} color="#10B981" distance={8} />
+        <directionalLight position={[0, 4, 3]} intensity={1.4} color="#E0F2FE" />
+      </>
+    );
+  }
+
+  if (preset === 'warm_amber') {
+    return (
+      <>
+        <ambientLight intensity={0.8} color="#FDE68A" />
+        <pointLight position={[-3, 2, 2]} intensity={24} color="#F59E0B" distance={8} />
+        <pointLight position={[3, 1, -2]} intensity={15} color="#EC4899" distance={8} />
+        <directionalLight position={[0, 4, 3]} intensity={1.3} color="#FFFBEB" />
+      </>
+    );
+  }
+
+  if (preset === 'clean_white') {
+    return (
+      <>
+        <ambientLight intensity={1.1} color="#FFFFFF" />
+        <directionalLight position={[2, 4, 5]} intensity={1.8} color="#FFFFFF" />
+        <directionalLight position={[-2, -2, -2]} intensity={0.5} color="#F1F5F9" />
+      </>
+    );
+  }
+
+  // Default balanced 'studio' lighting
+  return (
+    <>
+      <ambientLight intensity={0.75} color="#E2E8F0" />
+      <pointLight position={[-3, 2, 2]} intensity={20} color="#60A5FA" distance={8} />
+      <pointLight position={[3, 1, -2]} intensity={16} color="#34D399" distance={8} />
+      <directionalLight position={[0, 4, 4]} intensity={1.5} color="#FFFFFF" />
+    </>
+  );
+}
+
 export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>((props, _ref) => {
   const {
     modelSrc,
     avatarPreset = 'ananya',
+    avatarSize,
     environmentPreset = 'studio',
+    lightingPreset = 'studio',
     loadingProgress,
     fallbackMode = 'wasm',
     asrLanguage = 'en-US',
@@ -292,6 +374,14 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     statusPillStyle,
     ...groupProps
   } = props;
+
+  let computedScale = groupProps.scale;
+  if (avatarSize !== undefined) {
+    if (avatarSize === 'sm') computedScale = 0.38;
+    else if (avatarSize === 'md') computedScale = 0.48;
+    else if (avatarSize === 'lg') computedScale = 0.62;
+    else if (typeof avatarSize === 'number') computedScale = avatarSize;
+  }
 
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(modelSrc || null);
   const [caption, setCaption] = useState<{ text: string; speaker: 'user' | 'avatar' } | null>(null);
@@ -357,8 +447,9 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
 
   return (
     <>
-      <group {...groupProps}>
+      <group {...groupProps} scale={computedScale}>
         {environmentPreset === 'studio' && <Environment preset="studio" />}
+        <StudioLighting preset={lightingPreset} />
 
         <AvatarModel
           url={resolvedUrl}

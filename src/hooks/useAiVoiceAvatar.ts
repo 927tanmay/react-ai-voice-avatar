@@ -271,6 +271,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
     let mounted = true;
 
     async function initVad() {
+      if (typeof window === 'undefined' || typeof navigator === 'undefined') return; // P4: Next.js SSR Guard
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        console.warn('[AiVoiceAvatar] navigator.mediaDevices.getUserMedia is not available in this browser or insecure context.');
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -282,7 +287,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
         });
         mediaStreamRef.current = stream;
 
-        const audioCtx = new AudioContext();
+        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtxClass) {
+          console.warn('[AiVoiceAvatar] AudioContext not supported in this browser environment.');
+          return;
+        }
+        const audioCtx = new AudioCtxClass();
         audioContextRef.current = audioCtx;
 
         const analyserNode = audioCtx.createAnalyser();

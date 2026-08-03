@@ -73,6 +73,26 @@ If you wish to introduce new GLTF character busts or refine ARKit blendshape map
 
 ---
 
+## 🎯 Open Issues & Contributor Roadmap
+
+Looking for impactful features to take up? We welcome pull requests for the following high-priority open issues in our engineering roadmap:
+
+### 🚀 Developer Experience & Enterprise UI Features
+1. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**
+   - **Goal**: Expose an intuitive prop `vadSensitivity?: 'high' | 'balanced' | 'noisy_room'`. In loud environments (hospital kiosks, expo floors), raising Voice Activity Detection energy thresholds will prevent ambient conversation from accidentally triggering AI prompts.
+2. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**
+   - **Goal**: Expose a lightweight callback prop `onAudioLevelChange?: (energy: number) => void` that streams real-time microphone input volume directly to parent components, empowering developers to build dynamic ChatGPT-style voice visualizers and glowing HUD microphone rings.
+3. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**
+   - **Goal**: Build a built-in fallback skeleton or React Suspense wrapper (`<AiVoiceAvatar.Lazy />`) that displays an animated glowing 3D placeholder sphere or studio light silhouette while the `.glb` character mesh hydrates over slow mobile networks.
+
+### ⚡ Core Architectural & Memory Optimizations
+4. **♻️ Aggressive Audio Buffer Reclamation**
+   - **Goal**: During extended 30-to-60 minute conversation sessions, systematically null out and dereference old `Float32Array` acoustic phoneme FFT buffers immediately after an utterance completes speaking, ensuring JavaScript heap consumption remains completely flat over hours of usage.
+5. **💾 Offline Instant-Boot Verification & Local Caching Diagnostics**
+   - **Goal**: Create a rapid zero-latency bootstrapper that verifies if neural net model weights (Whisper ASR and Kokoro TTS) are fully settled inside browser IndexedDB / Cache API. On repeat visits, this will allow the avatar to bypass discovery checks and initialize directly from local disk in **under 1.5 seconds offline**.
+
+---
+
 ## 📥 Submitting a Pull Request
 
 1. Create a feature branch named after your objective (e.g., `feature/marathi-tts-optimization` or `fix/canvas-resize`).

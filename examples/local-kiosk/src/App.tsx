@@ -99,13 +99,8 @@ export default function App() {
       </div>
 
       {/* 3D Studio Canvas Viewport */}
-      {/* 3D Studio Canvas Viewport */}
       <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }}>
         <color attach="background" args={['#0B0E14']} />
-        
-        {/* Warm saffron & cool ambient studio lighting */}
-        <pointLight position={[-3, 2, -2]} intensity={25} color="#F59E0B" distance={6} />
-        <pointLight position={[3, 1, -2]} intensity={18} color="#3B82F6" distance={6} />
         
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
@@ -117,17 +112,18 @@ export default function App() {
           // model. You can also substitute heavier models like 'onnx-community/Llama-3.2-1B-Instruct' if VRAM permits!
           llmModel="onnx-community/Qwen2.5-0.5B-Instruct"
 
-          // Configure ultra-natural Kokoro voice engine with studio presets
+          // Configure ultra-natural Kokoro voice engine with built-in warm amber hospitality lighting preset!
           ttsEngine="kokoro"
           ttsVoice="af_heart"
           environmentPreset="studio"
+          lightingPreset="warm_amber"
           
           // Enable real-time captions overlay for accessible noise-heavy environments
           showCaptions={true}
           
           systemPrompt="You are Tara, an enthusiastic, highly knowledgeable voice concierge for Roll Farm restaurant. You have complete mastery of our live menu database: 1) Paneer Tikka Roll (₹180): spiced marinated cottage cheese wrapped in a thin roomali roti with fresh mint-coriander chutney and pickled shallots (Vegetarian, mild spice). 2) Steamed Corn & Cheese Momos (₹150): 6 delicate handmade dumplings served with our signature Fiery Tibetan red pepper garlic sauce and clear broth (Vegetarian, high spice sauce). 3) Masala Chai & Bun Maska (₹90): classic cardamom and fresh ginger Indian boiled tea paired with a warm toasted Brioche bun lathered in sweetened heritage butter. 4) Saffron Pista Kulfi (₹120): artisan traditional frozen dessert slow-churned from whole reduced milk, green cardamom, roasted pistachios, and pure saffron strands (Gluten-free, chilled sweet). Special Combo offer: Any Roll + Masala Chai for just ₹250 (saving ₹20!). Our kitchen is open 11 AM to 11 PM daily. When interacting with customers, always sound natural, friendly, and helpful like a real human waiter conversing out loud. Quote exact menu prices in Rupees whenever relevant. Keep your verbal replies brief (1 to 2 spoken sentences) and never use lists, markdown formatting, or bullet points."
 
-          scale={0.48}
+          avatarSize={0.48} // Supports numeric scale multipliers directly in avatarSize prop!
           position={[-0.28, -0.42, 0]} // Compact avatar scale positioned cleanly to stay clear of overlays
           
           onStatusChange={(newStatus) => setStatus(newStatus)}

@@ -17,21 +17,55 @@ export default defineConfig({
       fileName: (format) => `index.${format === 'es' ? 'js' : 'cjs'}`
     },
     rollupOptions: {
-      // make sure to externalize deps that shouldn't be bundled
-      // into your library
-      external: ['react', 'react-dom', 'three', '@react-three/fiber', '@huggingface/transformers', '@ricky0123/vad-web', 'kokoro-js', 'phonemizer'],
+      // Externalize all dependencies and peerDependencies so they aren't bundled into our library
+      external: [
+        'react',
+        'react-dom',
+        'three',
+        '@react-three/fiber',
+        '@react-three/drei',
+        '@huggingface/transformers',
+        '@ricky0123/vad-web',
+        'kokoro-js',
+        'phonemizer',
+        'leva',
+        'onnxruntime-web',
+        'web-audio-api',
+      ],
       output: {
         globals: {
           react: 'React',
           'react-dom': 'ReactDOM',
           three: 'THREE',
           '@react-three/fiber': 'ReactThreeFiber',
+          '@react-three/drei': 'ReactThreeDrei',
           '@huggingface/transformers': 'Transformers',
           '@ricky0123/vad-web': 'vad',
           'kokoro-js': 'Kokoro',
-          'phonemizer': 'phonemizer'
+          'phonemizer': 'phonemizer',
+          'leva': 'Leva',
+          'onnxruntime-web': 'ort',
         }
       }
+    }
+  },
+  worker: {
+    format: 'es',
+    rollupOptions: {
+      external: [
+        'react',
+        'react-dom',
+        'three',
+        '@react-three/fiber',
+        '@react-three/drei',
+        '@huggingface/transformers',
+        '@ricky0123/vad-web',
+        'kokoro-js',
+        'phonemizer',
+        'leva',
+        'onnxruntime-web',
+        'web-audio-api',
+      ]
     }
   },
   server: {

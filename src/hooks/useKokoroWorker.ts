@@ -32,6 +32,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
 
   // Create / destroy the worker based on `enabled`
   useEffect(() => {
+    if (typeof window === 'undefined' || typeof Worker === 'undefined') return; // P4: Next.js SSR Guard
     if (!config.enabled) {
       // Tear down if disabled
       if (workerRef.current) {

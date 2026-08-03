@@ -25,9 +25,11 @@ When implementing voice AI agents or 3D avatars in web applications, traditional
 npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 ```
 
-### Vite Configuration (Required for Web Workers & SharedArrayBuffer)
-To ensure optimal multi-threaded audio synthesis and WASM execution, add the following optimizations to your `vite.config.ts`:
+### ⚙️ Bundler & Server Configuration (Vite, Next.js & Webpack)
 
+Because our multi-threaded WASM and WebGPU engines leverage modern browser `SharedArrayBuffer` memory pipelines, your hosting server or bundler must emit standard Cross-Origin Isolation HTTP headers (`COOP`/`COEP`). Choose your framework configuration below:
+
+#### ⚡ Vite (`vite.config.ts`)
 ```ts
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -49,11 +51,58 @@ export default defineConfig({
 });
 ```
 
+#### 🔺 Next.js (`next.config.mjs` or `next.config.js`)
+In Next.js (Webpack & Turbopack), register cross-origin headers directly inside your config export:
+```js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+        ],
+      },
+    ];
+  },
+  // Ensure Web Workers and WASM binaries bundle cleanly
+  webpack: (config) => {
+    config.output.webassemblyModuleFilename = 'static/wasm/[modulehash].wasm';
+    config.experiments = { ...config.experiments, asyncWebAssembly: true, layers: true };
+    return config;
+  },
+};
+
+export default nextConfig;
+```
+
+#### 📦 Webpack & Create React App (`webpack.config.js` or `src/setupProxy.js`)
+If you are running custom Webpack or Create React App, configure your local development server headers via `devServer` or middleware proxy:
+```js
+// In webpack.config.js (devServer section):
+devServer: {
+  headers: {
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+  },
+}
+```
+*(For CRA without ejecting, place a `setupProxy.js` file inside your `src/` directory setting these headers via `res.setHeader()` on incoming dev requests).*
+
+#### 🌐 Production Deployment (Vercel, Netlify & Cloudflare)
+When deploying to CDN static hosts, specify the isolation headers in your routing manifests:
+- **Vercel (`vercel.json`)**: Add `"headers": [{ "source": "/(.*)", "headers": [{ "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }, { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }] }]`
+- **Netlify / Cloudflare Pages (`_headers`)**: Add `/*\n  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp`
+
 ---
 
 ## ⚡ Quickstart
 
-Deploy a complete 3D conversational voice assistant in under 30 lines of code:
+Deploy a complete, zero-configuration 3D voice assistant with built-in studio lighting in under 25 lines of code:
+
+👉 **[View complete interactive examples/quickstart code directly on GitHub](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/quickstart)** for immediate integration copy-paste!
 
 ```tsx
 import React from 'react';
@@ -65,17 +114,17 @@ export default function App() {
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#090C15' }}>
       <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }}>
-        <ambientLight intensity={1.5} />
-        <pointLight position={[3, 2, 4]} intensity={25} />
         <OrbitControls target={[0, 0.05, 0]} />
         
+        {/* Zero-config 3D Voice Avatar with built-in studio lighting & sizing presets */}
         <AiVoiceAvatar
           avatarPreset="ananya"
+          avatarSize="md"
+          lightingPreset="studio"
           systemPrompt="You are a warm, knowledgeable digital AI assistant. Keep answers friendly and concise."
           ttsEngine="kokoro"
           ttsVoice="af_heart"
           showCaptions={true}
-          scale={0.48}
           position={[-0.05, -0.42, 0]}
         />
       </Canvas>
@@ -92,10 +141,10 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 
 | Example Pattern | Folder | Highlights & Architecture |
 | :--- | :--- | :--- |
-| **Quickstart** | `examples/quickstart` | Minimal, zero-configuration plug-and-play AI voice avatar deployment. |
-| **Local Kiosk** | `examples/local-kiosk` | 100% offline on-device retail & restaurant ordering kiosk with embedded menu reasoning. Operates without internet access once model weights are locally cached. |
-| **Hybrid Cloud** | `examples/hybrid-cloud` | Illustrates the **`onSubmit`** escape hatch. Bypasses gigabyte-scale local LLM downloads by routing reasoning to OpenAI, Claude, or corporate APIs while keeping ASR, TTS, and 3D lip blending 100% on-device! |
-| **Headless Custom UI**| `examples/headless-custom-ui`| Demonstrates hiding built-in DOM overlays (`hideStatusPill={true}`, `showCaptions={false}`), streaming transcripts into a custom enterprise UI, and controlling voice outputs imperatively via `ref.current?.speak(text)`. |
+| **Quickstart** | [`examples/quickstart`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/quickstart) | Minimal, zero-configuration plug-and-play AI voice avatar deployment with built-in studio lighting & sizing. |
+| **Local Kiosk** | [`examples/local-kiosk`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/local-kiosk) | 100% offline on-device retail & restaurant ordering kiosk with embedded menu reasoning. Operates without internet access once model weights are locally cached. |
+| **Hybrid Cloud** | [`examples/hybrid-cloud`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/hybrid-cloud) | Illustrates the **`onSubmit`** escape hatch. Bypasses gigabyte-scale local LLM downloads by routing reasoning to OpenAI, Claude, or corporate APIs while keeping ASR, TTS, and 3D lip blending 100% on-device! |
+| **Headless Custom UI**| [`examples/headless-custom-ui`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/headless-custom-ui)| Demonstrates hiding built-in DOM overlays (`hideStatusPill={true}`, `showCaptions={false}`), streaming transcripts into a custom enterprise UI, and controlling voice outputs imperatively via `ref.current?.speak(text)`. |
 
 ---
 
@@ -106,7 +155,9 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 | Prop | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `avatarPreset` | `'ananya' \| 'aarav' \| 'default' \| 'kiosk'` | `'ananya'` | Built-in 3D character models with full ARKit expression blendshapes and autonomous facial vitality. |
+| `avatarSize` | `'sm' \| 'md' \| 'lg' \| number` | `'md'` (`0.48`) | Intuitive model sizing presets or custom decimal scaling multiplier applied directly to the 3D humanoid mesh. |
 | `modelSrc` | `string` | `undefined` | Absolute local path or remote URL to a custom GLTF/GLB humanoid armature avatar model. |
+| `lightingPreset` | `'studio' \| 'cyberpunk_violet' \| 'cool_azure' \| 'warm_amber' \| 'clean_white' \| 'none'` | `'studio'` | Pre-built cinematic studio lighting atmospheres directly applied to your 3D viewport without manual Three.js configuration! |
 | `systemPrompt` | `string` | `"You are Ananya..."`| Conversational persona directives and context injected into active LLMs. |
 | `llmModel` | `string` | `"HuggingFaceTB/SmolLM2-1.7B-Instruct-WebGPU"` | Hugging Face identifier for in-browser client-side WebGPU Transformer reasoning weights. |
 | `ttsEngine` | `'kokoro' \| 'mms'` | `'kokoro'` | High-fidelity neural voice synthesis engine executing inside dedicated Web Workers. |
@@ -151,6 +202,17 @@ interface AiVoiceAvatarHandle {
    - On systems without WebGPU, inference automatically falls back to multi-threaded WebAssembly (WASM) quantization without app crashes.
 2. **Persistent Local Caching**:
    - AI models (Whisper ASR, Kokoro TTS, SmolLM2) are downloaded once on initial startup and persisted inside browser **CacheStorage / IndexedDB**. Subsequent page refreshes load offline almost instantaneously!
+
+---
+
+## 🤝 Contributing & Open Issues Roadmap
+
+We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local development guides and our curated list of **Open Issues** available for contributors:
+1. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
+2. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**: Streaming microphone energy to power custom UI visualizers and reactive HUDs.
+3. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**: Built-in 3D loading silhouettes while model meshes hydrate over networks.
+4. **♻️ Aggressive Audio Buffer Reclamation**: Dereferencing old audio FFT arrays to maintain flat JS memory consumption over multi-hour conversations.
+5. **💾 Offline Instant-Boot Verification**: Fast cache diagnostics for instant (<1.5s) offline reloads.
 
 ---
 

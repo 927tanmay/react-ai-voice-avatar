@@ -20,17 +20,15 @@ export default function App() {
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#0f0f13' }}>
       <Canvas camera={{ position: [0, 0.1, 1.85], fov: 38 }}>
-        <color attach="background" args={['#fff']} />
-
-        {/* Simple two-point studio lighting */}
-        <pointLight position={[-3, 2, -2]} intensity={20} color="#FF9933" distance={6} />
-        <pointLight position={[3, 1, -2]} intensity={15} color="#1A73E8" distance={6} />
+        <color attach="background" args={['#0f0f13']} />
 
         <OrbitControls target={[0, 0.1, 0]} />
 
         {/* That's it — one component, zero config. */}
         <AiVoiceAvatar
           avatarPreset="ananya"
+          avatarSize="md"
+          lightingPreset="studio"
           ttsEngine="kokoro"
           ttsVoice="af_heart"
           position={[0, -0.72, 0]}

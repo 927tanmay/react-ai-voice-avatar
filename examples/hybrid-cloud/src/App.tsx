@@ -182,10 +182,6 @@ export default function App() {
       <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }}>
         <color attach="background" args={['#080A10']} />
         
-        {/* Cool modern azure and silver ambient studio lighting */}
-        <pointLight position={[-3, 2, -2]} intensity={25} color="#3B82F6" distance={6} />
-        <pointLight position={[3, 1, -2]} intensity={18} color="#10B981" distance={6} />
-        
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
         <AiVoiceAvatar
@@ -198,13 +194,14 @@ export default function App() {
            */
           onSubmit={handleCloudSubmit}
 
-          // Configure ultra-natural Kokoro voice engine with studio presets
+          // Configure ultra-natural Kokoro voice engine with built-in cool azure cloud lighting preset!
           ttsEngine="kokoro"
           ttsVoice="af_heart"
           environmentPreset="studio"
+          lightingPreset="cool_azure"
           showCaptions={true}
           
-          scale={0.48}
+          scale={0.48} // Demonstrating full compatibility with native React-Three-Fiber group scale prop!
           position={[-0.28, -0.42, 0]} // Compact avatar scale positioned cleanly to stay clear of overlays
           
           onStatusChange={(newStatus) => {

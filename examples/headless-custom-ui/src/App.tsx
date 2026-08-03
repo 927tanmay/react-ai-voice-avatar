@@ -214,10 +214,6 @@ export default function App() {
       {/* ─── CENTER: PURE 3D AVATAR VIEWPORT (ALL DOM OVERLAYS HIDDEN) ─── */}
       <div style={{ flex: 1, height: '100%', position: 'relative', background: 'radial-gradient(circle at 50% 45%, #151A2C 0%, #07090E 75%)' }}>
         <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }}>
-          {/* Cool modern violet & turquoise ambient studio lighting */}
-          <pointLight position={[-3, 2, -2]} intensity={25} color="#8B5CF6" distance={6} />
-          <pointLight position={[3, 1, -2]} intensity={18} color="#06B6D4" distance={6} />
-          
           <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
           <AiVoiceAvatar
@@ -241,8 +237,9 @@ export default function App() {
             ttsEngine="kokoro"
             ttsVoice="af_heart"
             environmentPreset="studio"
+            lightingPreset="cyberpunk_violet" // Built-in sci-fi violet & turquoise lighting ambiance!
 
-            scale={0.48}
+            avatarSize="md"
             position={[-0.05, -0.42, 0]} // Center balanced between left and right sidebars
             onStatusChange={(newStatus) => setStatus(newStatus)}
           />
