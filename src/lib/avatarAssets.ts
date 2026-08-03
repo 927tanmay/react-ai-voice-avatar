@@ -2,22 +2,40 @@ export async function resolveAvatarUrl(
   preset: 'ananya' | 'aarav' | 'default' | 'kiosk' = 'ananya',
   onProgress?: (pct: number, label: string) => void
 ): Promise<string> {
-  // In a real production package, this would point to a CDN like jsDelivr or GitHub Releases.
-  // For now, we point to the public path where the sandbox hosts it.
-  const urlMap: Record<string, string> = {
-    ananya: '/ananya.glb',
-    aarav: '/aarav.glb',
-    default: '/default.glb',
-    kiosk: '/default.glb',
+  const fileMap: Record<string, string> = {
+    ananya: 'ananya.glb',
+    aarav: 'aarav.glb',
+    default: 'default.glb',
+    kiosk: 'default.glb',
   };
 
-  const targetUrl = urlMap[preset] || urlMap.ananya;
+  const fileName = fileMap[preset] || fileMap.ananya;
+  const localPath = `/${fileName}`;
+  const cdnUrl = `https://cdn.jsdelivr.net/npm/react-indic-avatar@0.1.0/assets/avatars/${fileName}`;
 
-  // We simulate fetching it with progress if the callback is provided
+  let resolvedUrl = cdnUrl;
+
+  try {
+    // Perform a lightweight HTTP HEAD probe to check if the asset is hosted locally in public/
+    const headResponse = await fetch(localPath, { method: 'HEAD' });
+    
+    // Ensure status is OK (200) AND content-type is not an HTML 404 SPA routing fallback page
+    if (headResponse.ok) {
+      const contentType = headResponse.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().includes('text/html')) {
+        resolvedUrl = localPath;
+      }
+    }
+  } catch (e) {
+    // Local check failed or offline without local file, seamlessly fall back to global CDN URL
+    resolvedUrl = cdnUrl;
+  }
+
+  // Stream asset download with real-time progress notifications if callback is attached
   if (onProgress) {
     try {
-      const response = await fetch(targetUrl);
-      if (!response.ok) throw new Error('Failed to fetch avatar');
+      const response = await fetch(resolvedUrl);
+      if (!response.ok) throw new Error(`Failed to fetch avatar from ${resolvedUrl}`);
       
       const contentLength = response.headers.get('content-length');
       const total = contentLength ? parseInt(contentLength, 10) : 0;
@@ -34,9 +52,9 @@ export async function resolveAvatarUrl(
         }
       }
     } catch (e) {
-      console.error('Failed to fetch avatar with progress', e);
+      console.warn('Failed to stream avatar download with progress, proceeding to direct loader:', e);
     }
   }
 
-  return targetUrl;
+  return resolvedUrl;
 }
