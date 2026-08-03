@@ -5,18 +5,18 @@ import { useControls, Leva } from 'leva';
 import * as THREE from 'three';
 import { resolveAvatarUrl } from '../lib/avatarAssets';
 import { StatusPill } from './StatusPill';
-import { useIndicAvatar } from '../hooks/useIndicAvatar';
+import { useAiVoiceAvatar } from '../hooks/useAiVoiceAvatar';
 import { AudioLipSync } from '../lib/audioLipSync';
 import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
 import { AvatarDynamicsEngine } from '../lib/avatarDynamics';
 import type { VisemeWeights } from '../lib/visemeTable';
 
-export interface IndicAvatarCapabilities {
+export interface AiVoiceAvatarCapabilities {
   webgpu: boolean;
   estimatedVram: number | null;
 }
 
-export interface IndicAvatarHandle {
+export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
   interrupt: () => void;
   startListening: () => void;
@@ -25,7 +25,7 @@ export interface IndicAvatarHandle {
   getAnalyser: () => AnalyserNode | undefined;
 }
 
-export interface IndicAvatarProps extends Omit<ThreeElements['group'], 'children'> {
+export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'children'> {
   modelSrc?: string;
   avatarPreset?: 'ananya' | 'aarav' | 'default' | 'kiosk';
   visemeMap?: Record<string, string>;
@@ -47,7 +47,7 @@ export interface IndicAvatarProps extends Omit<ThreeElements['group'], 'children
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
 
   fallbackMode?: 'wasm' | 'disable' | 'error';
-  onCapabilityDetected?: (caps: IndicAvatarCapabilities) => void;
+  onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   lowMemoryMode?: boolean;
 
@@ -277,7 +277,7 @@ function AvatarModel({
   return <primitive object={scene} />;
 }
 
-export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((props, _ref) => {
+export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>((props, _ref) => {
   const {
     modelSrc,
     avatarPreset = 'ananya',
@@ -299,7 +299,7 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
   const {
     status, analyser, startListening, stopListening, interrupt, speak,
     currentSpeechTextRef, currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
-  } = useIndicAvatar({
+  } = useAiVoiceAvatar({
     llmModel: props.llmModel,
     asrModel: props.asrModel,
     ttsLanguage,
@@ -411,5 +411,5 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
   );
 });
 
-IndicAvatar.displayName = 'IndicAvatar';
+AiVoiceAvatar.displayName = 'AiVoiceAvatar';
 

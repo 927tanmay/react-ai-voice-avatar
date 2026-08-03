@@ -11,7 +11,7 @@ export async function resolveAvatarUrl(
 
   const fileName = fileMap[preset] || fileMap.ananya;
   const localPath = `/${fileName}`;
-  const cdnUrl = `https://cdn.jsdelivr.net/npm/react-indic-avatar@0.1.0/assets/avatars/${fileName}`;
+  const cdnUrl = `https://cdn.jsdelivr.net/npm/react-ai-voice-avatar@0.1.0/assets/avatars/${fileName}`;
 
   let resolvedUrl = cdnUrl;
 

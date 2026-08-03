@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 // @ts-ignore
 import MLWorker from '../workers/mlPipeline.worker?worker&inline';
-import { IndicAvatarCapabilities } from '../components/IndicAvatar';
+import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
 
 export interface UseMLWorkerConfig {
   llmModel?: string;
@@ -14,7 +14,7 @@ export interface UseMLWorkerConfig {
   systemPrompt?: string;
   loadLlm?: boolean;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
-  onCapabilityDetected?: (caps: IndicAvatarCapabilities) => void;
+  onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   onSpeechOutput?: (audio: Float32Array | null, sampleRate: number, text: string, isLast?: boolean) => void;
   onStreamWord?: (word: string, fullText: string) => void;

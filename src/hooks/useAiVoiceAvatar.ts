@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as vad from '@ricky0123/vad-web';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
-import { IndicAvatarCapabilities } from '../components/IndicAvatar';
+import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
 
-export interface UseIndicAvatarConfig {
+export interface UseAiVoiceAvatarConfig {
   llmModel?: string;
   asrModel?: string;
   ttsLanguage?: string;
@@ -16,7 +16,7 @@ export interface UseIndicAvatarConfig {
   asrLanguage?: string;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
-  onCapabilityDetected?: (caps: IndicAvatarCapabilities) => void;
+  onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   listenMode?: 'vad' | 'push-to-talk';
   onInferenceStart?: () => void;
@@ -24,7 +24,7 @@ export interface UseIndicAvatarConfig {
   onUserInterrupt?: () => void;
 }
 
-export function useIndicAvatar(config: UseIndicAvatarConfig) {
+export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
   const [status, setStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [analyser, setAnalyser] = useState<AnalyserNode | undefined>(undefined);
   
@@ -127,7 +127,7 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
     onSpeechEnd: config.ttsEngine === 'kokoro' ? handleSpeechEnd : undefined,
     loadingProgress: config.loadingProgress,
     onError: (_stage, _msg) => {
-      console.error('[IndicAvatar] Kokoro error, audio may be unavailable');
+      console.error('[AiVoiceAvatar] Kokoro error, audio may be unavailable');
     },
   });
 
@@ -153,7 +153,7 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
       }
     },
     onStreamWord: (word) => {
-      console.log('[IndicAvatar] Streaming token:', word);
+      console.log('[AiVoiceAvatar] Streaming token:', word);
     },
     onSpeechEnd: () => {
       if (config.ttsEngine === 'kokoro') {
@@ -164,9 +164,9 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
     },
     onTranscriptUpdate: (text, speaker) => {
       if (speaker === 'user') {
-        console.log('[IndicAvatar] User spoke:', text);
+        console.log('[AiVoiceAvatar] User spoke:', text);
       } else {
-        console.log('[IndicAvatar] Avatar spoke:', text);
+        console.log('[AiVoiceAvatar] Avatar spoke:', text);
       }
       configRef.current.onTranscriptUpdate?.(text, speaker);
       if (speaker === 'user' && configRef.current.onSubmit) {
