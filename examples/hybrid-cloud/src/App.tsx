@@ -1,5 +1,5 @@
 /**
- * React Indic Avatar — Hybrid Cloud Example
+ * React AI Voice Avatar — Hybrid Cloud Example
  *
  * Demonstrates utilizing the `onSubmit` prop to bypass local on-device LLM inference entirely,
  * forwarding transcribed user speech to an external cloud API (e.g. Anthropic, OpenAI, or a custom backend server)
@@ -16,7 +16,7 @@
 import { useState, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar } from 'react-indic-avatar';
+import { AiVoiceAvatar } from 'react-ai-voice-avatar';
 
 interface TelemetryEvent {
   id: string;
@@ -188,12 +188,12 @@ export default function App() {
         
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
-        <IndicAvatar
+        <AiVoiceAvatar
           avatarPreset="ananya"
           
           /**
            * THE ON_SUBMIT CLOUD ESCAPE HATCH:
-           * Passing this prop automatically instructs useIndicAvatar to set `loadLlm: false`,
+           * Passing this prop automatically instructs useAiVoiceAvatar to set `loadLlm: false`,
            * skipping on-device LLM model downloading/initialization completely.
            */
           onSubmit={handleCloudSubmit}

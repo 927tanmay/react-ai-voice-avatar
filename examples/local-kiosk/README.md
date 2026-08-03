@@ -1,4 +1,4 @@
-# Local Kiosk — React Indic Avatar
+# Local Kiosk — React AI Voice Avatar
 
 An interactive restaurant self-service voice concierge (**Roll Farm Interactive Menu**) running entirely offline on a local machine via WebGPU, with zero external cloud dependencies or API servers.
 
@@ -27,7 +27,7 @@ Open **http://localhost:5173** in a WebGPU-capable browser (Chrome / Edge). Once
 In [`src/App.tsx`](src/App.tsx), customizing the AI model engine is accomplished simply by supplying a Hugging Face repository identifier:
 
 ```tsx
-<IndicAvatar
+<AiVoiceAvatar
   avatarPreset="kiosk"
   
   // EXPLICIT LLM OVERRIDE SELECTION:

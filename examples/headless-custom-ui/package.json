@@ -1,5 +1,5 @@
 {
-  "name": "react-indic-avatar-headless-custom-ui",
+  "name": "react-ai-voice-avatar-headless-custom-ui",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "@react-three/fiber": "^8.17.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-indic-avatar": "^0.1.0",
+    "react-ai-voice-avatar": "^0.1.0",
     "three": "^0.167.0"
   },
   "devDependencies": {

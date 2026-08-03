@@ -1,6 +1,6 @@
-# Contributing to React Indic Avatar 🤝🌟
+# Contributing to React AI Voice Avatar 🤝🌟
 
-We welcome contributions from web frontend developers, 3D character animators, machine learning engineers, and linguistics enthusiasts! Whether you are bug hunting, refining lip-sync phoneme algorithms, adding support for new regional dialects, or sharing new architectural examples, your input is deeply appreciated.
+We welcome contributions from web frontend developers, 3D character animators, machine learning engineers, and voice technology enthusiasts! Whether you are bug hunting, refining lip-sync phoneme algorithms, adding support for new regional dialects, or sharing new architectural examples, your input is deeply appreciated.
 
 ---
 
@@ -17,8 +17,8 @@ We welcome contributions from web frontend developers, 3D character animators, m
 ### 1. Clone & Install Dependencies
 Clone the repository and install root workspace dependencies:
 ```bash
-git clone https://github.com/your-org/react-indic-avatar.git
-cd react-indic-avatar
+git clone https://github.com/927tanmay/react-ai-voice-avatar.git
+cd react-ai-voice-avatar
 npm install
 ```
 

@@ -1,4 +1,4 @@
-# Quickstart — React Indic Avatar
+# Quickstart — React AI Voice Avatar
 
 The absolute minimum to get a talking, lip-syncing 3D avatar running in your
 browser. **No backend, no API keys, no custom models required.**
@@ -43,7 +43,7 @@ The entire app is in [`src/App.tsx`](src/App.tsx) — roughly 35 lines:
 ```tsx
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar } from 'react-indic-avatar';
+import { AiVoiceAvatar } from 'react-ai-voice-avatar';
 
 export default function App() {
   return (
@@ -54,7 +54,7 @@ export default function App() {
         <pointLight position={[3, 1, -2]} intensity={15} color="#1A73E8" distance={6} />
         <OrbitControls target={[0, 0.1, 0]} />
 
-        <IndicAvatar
+        <AiVoiceAvatar
           avatarPreset="ananya"
           ttsEngine="mms"
           position={[0, -0.72, 0]}

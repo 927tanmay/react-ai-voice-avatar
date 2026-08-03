@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // Resolve directly from source so Vite handles workers natively in dev
-      'react-indic-avatar': resolve(import.meta.dirname, '../src/index.ts'),
+      'react-ai-voice-avatar': resolve(import.meta.dirname, '../src/index.ts'),
     },
     dedupe: ['react', 'react-dom', 'three', '@react-three/fiber', '@react-three/drei']
   },

@@ -1,13 +1,13 @@
-# React Indic Avatar — Enterprise Headless & Custom UI Example
+# React AI Voice Avatar — Enterprise Headless & Custom UI Example
 
-This example demonstrates how to deploy `react-indic-avatar` in a **headless UI mode**, removing all default on-screen DOM overlays in order to embed the 3D avatar within a custom corporate design system.
+This example demonstrates how to deploy `react-ai-voice-avatar` in a **headless UI mode**, removing all default on-screen DOM overlays in order to embed the 3D avatar within a custom corporate design system.
 
 ## Key Concepts Demonstrated
 
 1. **Headless Canvas Setup**:
    - Setting `hideStatusPill={true}` and `showCaptions={false}` completely suppresses our internal floating control components and subtitle boxes.
 2. **Imperative Speech Triggering (`speak(text)`)**:
-   - By binding to `IndicAvatarHandle` via `useRef<IndicAvatarHandle>(null)`, you can programmatically command the 3D digital character to speak any script or alert out loud at any time:
+   - By binding to `AiVoiceAvatarHandle` via `useRef<AiVoiceAvatarHandle>(null)`, you can programmatically command the 3D digital character to speak any script or alert out loud at any time:
      ```tsx
      avatarRef.current?.speak("Hello! Welcome to our enterprise digital reception.");
      ```

@@ -1,5 +1,5 @@
 /**
- * React Indic Avatar — Local Kiosk Example
+ * React AI Voice Avatar — Local Kiosk Example
  *
  * Demonstrates running an interactive kiosk assistant entirely offline on a local device
  * while configuring the LLM engine via the `llmModel` prop for rapid boot times.
@@ -16,7 +16,7 @@
 import { useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar } from 'react-indic-avatar';
+import { AiVoiceAvatar } from 'react-ai-voice-avatar';
 
 export default function App() {
   const [status, setStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
@@ -109,7 +109,7 @@ export default function App() {
         
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
-        <IndicAvatar
+        <AiVoiceAvatar
           avatarPreset="kiosk"
           
           // EXPLICIT LLM OVERRIDE SELECTION:

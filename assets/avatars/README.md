@@ -1,6 +1,6 @@
-# 🇮🇳 React Indic Avatar — 3D Character Asset Guide
+# 🇮🇳 React AI Voice Avatar — 3D Character Asset Guide
 
-This directory houses the default 3D `.glb` avatar characters used by the `react-indic-avatar` engine and the sandbox test studio.
+This directory houses the default 3D `.glb` avatar characters used by the `react-ai-voice-avatar` engine and the sandbox test studio.
 
 ## Built-In Indic Personas
 1. **`ananya.glb` (Female Indic Voice Companion)**:
@@ -26,16 +26,16 @@ To deploy your own custom male Indian character model (or updated feminine model
    - Reload your studio app (`npm run dev` in `/sandbox`). When you select **"👨🏽 Aarav"**, your realistic custom character will instantly load with all Indian voice prompts and cultural theme styling applied automatically!
 
 ## NPM Package Consumer Usage
-When developers install `react-indic-avatar`, they select their preferred persona via standard props:
+When developers install `react-ai-voice-avatar`, they select their preferred persona via standard props:
 ```tsx
-import { IndicAvatar } from 'react-indic-avatar';
+import { AiVoiceAvatar } from 'react-ai-voice-avatar';
 
-// Render Female Indic Companion (Ananya)
-<IndicAvatar avatarPreset="ananya" systemPrompt="..." />
+// Render Female Voice Companion (Ananya)
+<AiVoiceAvatar avatarPreset="ananya" systemPrompt="..." />
 
-// Render Male Indic Companion (Aarav)
-<IndicAvatar avatarPreset="aarav" systemPrompt="..." />
+// Render Male Voice Companion (Aarav)
+<AiVoiceAvatar avatarPreset="aarav" systemPrompt="..." />
 
 // Or provide a custom remote CDN endpoint directly:
-<IndicAvatar modelSrc="https://cdn.example.com/custom-avatar.glb" />
+<AiVoiceAvatar modelSrc="https://cdn.example.com/custom-avatar.glb" />
 ```

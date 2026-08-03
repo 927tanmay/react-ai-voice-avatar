@@ -1,7 +1,7 @@
 /**
- * React Indic Avatar — Quickstart Example
+ * React AI Voice Avatar — Quickstart Example
  *
- * This is the simplest possible setup: a single <IndicAvatar> component
+ * This is the simplest possible setup: a single <AiVoiceAvatar> component
  * inside a Three.js Canvas. No custom models, no backend, no API keys.
  *
  * Everything runs locally in your browser via WebGPU:
@@ -14,7 +14,7 @@
  */
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar } from 'react-indic-avatar';
+import { AiVoiceAvatar } from 'react-ai-voice-avatar';
 
 export default function App() {
   return (
@@ -29,7 +29,7 @@ export default function App() {
         <OrbitControls target={[0, 0.1, 0]} />
 
         {/* That's it — one component, zero config. */}
-        <IndicAvatar
+        <AiVoiceAvatar
           avatarPreset="ananya"
           ttsEngine="kokoro"
           ttsVoice="af_heart"

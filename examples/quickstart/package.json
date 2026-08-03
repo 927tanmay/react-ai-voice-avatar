@@ -1,5 +1,5 @@
 {
-  "name": "react-indic-avatar-quickstart",
+  "name": "react-ai-voice-avatar-quickstart",
   "private": true,
   "version": "1.0.0",
   "description": "Minimal quickstart: drop-in conversational 3D avatar with zero configuration.",
@@ -14,7 +14,7 @@
     "@react-three/fiber": "^9.6.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-indic-avatar": "^0.1.0",
+    "react-ai-voice-avatar": "^0.1.0",
     "three": "^0.167.0"
   },
   "devDependencies": {

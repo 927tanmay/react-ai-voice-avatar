@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar, type IndicAvatarHandle } from 'react-indic-avatar';
+import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import './style.css';
 
 interface Persona {
@@ -57,8 +57,8 @@ const KOKORO_VOICES = [
 ];
 
 export const App: React.FC = () => {
-  const avatarRef = useRef<IndicAvatarHandle>(null);
-  const [avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
+  const avatarRef = useRef<AiVoiceAvatarHandle>(null);
+  const [_avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [activePersonaId, setActivePersonaId] = useState<'ananya' | 'aarav'>('ananya');
   
   // Dynamic TTS Engine Configuration & Seamless Switching
@@ -294,8 +294,8 @@ export const App: React.FC = () => {
         
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.5} maxDistance={4} />
         
-        {/* React Indic Avatar component with dual-worker TTS architecture */}
-        <IndicAvatar
+        {/* React AI Voice Avatar component with dual-worker TTS architecture */}
+        <AiVoiceAvatar
           ref={avatarRef}
           key={currentPersona.id}
           avatarPreset={currentPersona.preset}
@@ -307,7 +307,7 @@ export const App: React.FC = () => {
           scale={0.48}
           position={[-0.15, -0.42, 0]}
           hideStatusPill={false}
-          onStatusChange={(newStatus) => setAvatarStatus(newStatus)}
+          onStatusChange={(newStatus: any) => setAvatarStatus(newStatus)}
         />
       </Canvas>
     </div>

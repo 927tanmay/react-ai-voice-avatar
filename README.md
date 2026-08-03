@@ -84,8 +84,6 @@ export default function App() {
 }
 ```
 
-> **Note**: For backwards compatibility with initial prototypes, `IndicAvatar` is also available as an exported alias for `AiVoiceAvatar`.
-
 ---
 
 ## 🏗️ Architecture & Deployment Modes

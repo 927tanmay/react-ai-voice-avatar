@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar, IndicAvatarHandle } from 'react-indic-avatar';
+import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 
 interface ChatMessage {
   id: string;
@@ -29,7 +29,7 @@ const QUICK_SCRIPTS = [
 ];
 
 export default function App() {
-  const avatarRef = useRef<IndicAvatarHandle>(null);
+  const avatarRef = useRef<AiVoiceAvatarHandle>(null);
   const [status, setStatus] = useState<string>('loading');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [customText, setCustomText] = useState<string>('');
@@ -220,7 +220,7 @@ export default function App() {
           
           <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
-          <IndicAvatar
+          <AiVoiceAvatar
             ref={avatarRef}
             avatarPreset="ananya"
             
