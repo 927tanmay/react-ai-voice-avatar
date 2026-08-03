@@ -25,7 +25,7 @@
 ## Indic Avatar Personas & 3D Model Replacement Strategy
 - **Dual Indic Personas**: Established `'ananya'` (Female Indic Companion) and `'aarav'` (Male Indic Assistant) as core supported `avatarPreset` options in `IndicAvatarProps`.
 - **Zero-Code Asset Overriding**: Both `ananya.glb` and `aarav.glb` exist in `assets/avatars/` and `sandbox/public/`. During early testing, both endpoints mirror our validated ARKit test model to prevent runtime missing asset exceptions.
-- **Developer Instructions**: When deploying custom gendered Indic character meshes (e.g., from Avatar SDK or Blender/MPFB with TalkingHead rigs), developers simply replace `assets/avatars/aarav.glb` and `sandbox/public/aarav.glb` with their updated `.glb` files—zero code changes required. See [assets/avatars/README.md](file:///Users/apple/Documents/my/react-indic-avatar/assets/avatars/README.md) for full documentation.
+- **Developer Instructions**: When deploying custom gendered Indic character meshes (e.g., from Avatar SDK or Blender/MPFB with TalkingHead rigs), developers simply replace `assets/avatars/aarav.glb` and `sandbox/public/aarav.glb` with their updated `.glb` files—zero code changes required. See [assets/avatars/README.md](./assets/avatars/README.md) for full documentation.
 
 ## Dynamic Neural TTS Engine (Kokoro-82M vs Meta MMS)
 - **Problem**: Meta MMS-TTS (`Xenova/mms-tts-eng` / `hin`) provides functional localized speech synthesis, but uses a flat, monotone voice architecture with zero prosody or emotional variance—leading to a robotic conversation feel.
