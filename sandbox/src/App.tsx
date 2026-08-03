@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { IndicAvatar } from 'react-indic-avatar';
+import { IndicAvatar, StatusPill, type IndicAvatarHandle } from 'react-indic-avatar';
 import './style.css';
 
 interface Persona {
@@ -23,12 +23,12 @@ const PERSONAS: Persona[] = [
     id: 'ananya',
     name: 'Ananya',
     hindiName: 'अनन्या',
-    role: 'Female Indic Voice Companion',
+    role: 'Female Voice Companion',
     avatarIcon: '👩🏽',
     preset: 'ananya',
     accentColor: '#E67E22', // Warm Saffron Gold / Peach
     borderColor: 'rgba(230, 126, 34, 0.6)',
-    systemPrompt: "You are Ananya, an empathetic, warm, and lively conversational companion from India. You speak the way a person actually talks out loud, never like a written assistant or textbook. Keep your replies to 1-3 short, naturally spoken sentences unless explicitly asked for more detail. Never use lists, bullet points, markdown, or section headers—all of those sound absurd out loud. Always use contractions like I'm, that's, let's, and don't. To keep our chat feeling alive and flowing, occasionally end your answer by asking a short, friendly follow-up question.",
+    systemPrompt: "You are Ananya, an empathetic, warm, and lively conversational companion. You speak the way a person actually talks out loud, never like a written assistant or textbook. Keep your replies to 1-3 short, naturally spoken sentences unless explicitly asked for more detail. Never use lists, bullet points, markdown, or section headers—all of those sound absurd out loud. Always use contractions like I'm, that's, let's, and don't. To keep our chat feeling alive and flowing, occasionally end your answer by asking a short, friendly follow-up question.",
     description: 'Empathetic, warm, and highly expressive conversationalist.',
     defaultVoice: 'af_heart',
   },
@@ -36,12 +36,12 @@ const PERSONAS: Persona[] = [
     id: 'aarav',
     name: 'Aarav',
     hindiName: 'आरव',
-    role: 'Male Indic Voice Companion',
+    role: 'Male Voice Companion',
     avatarIcon: '👨🏽',
     preset: 'aarav',
     accentColor: '#1A73E8', // Royal Peacock Indigo / Blue
     borderColor: 'rgba(26, 115, 232, 0.6)',
-    systemPrompt: "You are Aarav, a charismatic, sharp, and confident technical guide and voice companion from India. You communicate like a real human conversing out loud, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 concise, spoken sentences unless explicitly prompted for depth. Absolutely avoid lists, numbered steps, markdown, and headers—just speak naturally. Use common contractions like I'm, that's, can't, and don't. To maintain an authentic conversational dialogue rather than a Q&A terminal, occasionally weave in a brief, engaging follow-up question.",
+    systemPrompt: "You are Aarav, a charismatic, sharp, and confident technical guide and voice companion. You communicate like a real human conversing out loud, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 concise, spoken sentences unless explicitly prompted for depth. Absolutely avoid lists, numbered steps, markdown, and headers—just speak naturally. Use common contractions like I'm, that's, can't, and don't. To maintain an authentic conversational dialogue rather than a Q&A terminal, occasionally weave in a brief, engaging follow-up question.",
     description: 'Confident, articulate, and dynamic technical assistant.',
     defaultVoice: 'am_michael',
   },
@@ -56,16 +56,10 @@ const KOKORO_VOICES = [
   { id: 'bm_george', label: 'George (bm_george - British Male)' },
 ];
 
-const INDIC_PROMPTS = [
-  { icon: '🕌', label: 'Taj Mahal Architecture', text: 'Tell me about the architectural genius of the Taj Mahal.' },
-  { icon: '🫖', label: 'Authentic Masala Chai', text: 'What is the secret behind a warm cup of authentic Masala Chai?' },
-  { icon: '🚀', label: 'Indian Tech Innovation', text: 'How is India driving innovations in AI and aerospace today?' },
-  { icon: '🏏', label: 'Passion for Cricket', text: 'Why is cricket considered an emotion across India?' },
-];
-
 export const App: React.FC = () => {
+  const avatarRef = useRef<IndicAvatarHandle>(null);
+  const [avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [activePersonaId, setActivePersonaId] = useState<'ananya' | 'aarav'>('ananya');
-  const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
   
   // Dynamic TTS Engine Configuration & Seamless Switching
   const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>('mms');
@@ -76,7 +70,6 @@ export const App: React.FC = () => {
   const handlePersonaSelect = (persona: Persona) => {
     setActivePersonaId(persona.id);
     setTtsVoice(persona.defaultVoice);
-    setSelectedPrompt(null);
   };
 
   return (
@@ -122,7 +115,7 @@ export const App: React.FC = () => {
           }}>v0.2.0</span>
         </div>
         <p style={{ margin: 0, fontSize: '13px', color: '#A0A6B2', lineHeight: '1.4' }}>
-          Real-time Edge WebGPU conversational voice AI featuring human-like prosody & Indian aesthetics.
+          Real-time Edge WebGPU conversational voice AI featuring human-like prosody & 3D virtual presence.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <span style={{ fontSize: '12px', color: '#138808', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -142,7 +135,7 @@ export const App: React.FC = () => {
         flexDirection: 'column',
         gap: '12px',
         width: '330px',
-        maxHeight: 'calc(100vh - 160px)',
+        maxHeight: 'calc(100vh - 48px)',
         overflowY: 'auto',
       }}>
         {/* Persona Selector Card */}
@@ -151,14 +144,14 @@ export const App: React.FC = () => {
           backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255, 255, 255, 0.12)',
           borderRadius: '20px',
-          padding: '18px',
+          padding: '14px 16px',
           boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
         }}>
           <h2 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            ✨ Select Indian Persona
+            ✨ Select Persona
           </h2>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {PERSONAS.map((persona) => {
               const isSelected = activePersonaId === persona.id;
               return (
@@ -168,8 +161,8 @@ export const App: React.FC = () => {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '14px',
-                    padding: '12px 14px',
+                    gap: '12px',
+                    padding: '10px 12px',
                     borderRadius: '14px',
                     cursor: 'pointer',
                     transition: 'all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
@@ -181,11 +174,11 @@ export const App: React.FC = () => {
                   }}
                 >
                   <div style={{
-                    fontSize: '28px',
+                    fontSize: '24px',
                     background: isSelected ? `${persona.accentColor}22` : 'rgba(255,255,255,0.05)',
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '12px',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -195,8 +188,8 @@ export const App: React.FC = () => {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                      <span style={{ fontWeight: 700, fontSize: '15px', color: '#FFFFFF' }}>{persona.name}</span>
-                      <span style={{ fontWeight: 500, fontSize: '13px', color: persona.accentColor }}>({persona.hindiName})</span>
+                      <span style={{ fontWeight: 700, fontSize: '14px', color: '#FFFFFF' }}>{persona.name}</span>
+                      <span style={{ fontWeight: 500, fontSize: '12px', color: persona.accentColor }}>({persona.hindiName})</span>
                     </div>
                     <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 500 }}>{persona.role}</div>
                   </div>
@@ -212,7 +205,7 @@ export const App: React.FC = () => {
           backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255, 255, 255, 0.12)',
           borderRadius: '20px',
-          padding: '16px 18px',
+          padding: '14px 16px',
           boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
         }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
@@ -285,125 +278,58 @@ export const App: React.FC = () => {
             </div>
           ) : (
             <p style={{ margin: 0, fontSize: '11px', color: '#64748B', lineHeight: '1.3' }}>
-              ℹ️ Standard flat single-voice synthesis. Ideal for Hindi/Indic fallback mode.
+              ℹ️ Standard flat single-voice synthesis. Ideal for basic lightweight offline fallback mode.
             </p>
           )}
         </div>
+
+        {/* Docked Status Pill directly underneath the Voice card in standard layout */}
+        <StatusPill
+          status={avatarStatus}
+          accentColor={currentPersona.accentColor}
+          analyser={avatarRef.current?.getAnalyser()}
+          onPillClick={() => avatarRef.current?.startListening()}
+          onStopClick={() => {
+            avatarRef.current?.stopListening();
+            avatarRef.current?.interrupt();
+          }}
+          style={{
+            position: 'relative',
+            top: 'auto',
+            left: 'auto',
+            transform: 'none',
+            width: '100%',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+            marginTop: '4px',
+            padding: '14px 20px',
+            borderRadius: '16px',
+          }}
+        />
       </div>
 
-      {/* Interactive Topic Starter Chips - Bottom Floating Carousel */}
-      <div style={{
-        position: 'absolute',
-        bottom: '24px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 50,
-        width: 'calc(100% - 64px)',
-        maxWidth: '740px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '10px',
-      }}>
-        <span style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          color: 'rgba(255, 255, 255, 0.6)',
-          textTransform: 'uppercase',
-          letterSpacing: '1.2px',
-          background: 'rgba(0, 0, 0, 0.4)',
-          padding: '4px 12px',
-          borderRadius: '12px',
-        }}>
-          💡 Ask {currentPersona.name} about India (Using {ttsEngine === 'kokoro' ? 'Kokoro Neural Voice' : 'Meta MMS'})
-        </span>
-        {selectedPrompt && (
-          <div style={{
-            background: 'rgba(30, 35, 48, 0.95)',
-            border: `1px solid ${currentPersona.accentColor}`,
-            padding: '8px 16px',
-            borderRadius: '12px',
-            color: '#FFFFFF',
-            fontSize: '13px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
-          }}>
-            <span style={{ color: currentPersona.accentColor, fontWeight: 700 }}>Prompt Copied & Ready:</span>
-            <span>"{selectedPrompt}"</span>
-            <span
-              onClick={() => setSelectedPrompt(null)}
-              style={{ cursor: 'pointer', opacity: 0.7, marginLeft: '8px', fontSize: '14px' }}
-            >
-              ✕
-            </span>
-          </div>
-        )}
-        <div style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-          gap: '8px',
-          width: '100%',
-        }}>
-          {INDIC_PROMPTS.map((item, index) => (
-            <button
-              key={index}
-              onClick={() => setSelectedPrompt(item.text)}
-              style={{
-                background: 'rgba(24, 26, 34, 0.75)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: '50px',
-                padding: '9px 16px',
-                color: '#FFFFFF',
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = currentPersona.accentColor;
-                e.currentTarget.style.background = 'rgba(32, 35, 46, 0.9)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                e.currentTarget.style.background = 'rgba(24, 26, 34, 0.75)';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              <span style={{ fontSize: '15px' }}>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 3D Studio Viewport */}
-      <Canvas camera={{ position: [0, 0.1, 1.8], fov: 38 }} style={{ width: '100%', height: '100%' }}>
+      {/* 3D Studio Viewport - Delicate Wide Studio Framing */}
+      <Canvas camera={{ position: [0, 0.1, 1.85], fov: 38 }} style={{ width: '100%', height: '100%' }}>
         <color attach="background" args={['#101116']} />
         
         {/* Subtle studio back-lighting accents representing saffron / peacock teal */}
         <pointLight position={[-3, 2, -2]} intensity={25} color={activePersonaId === 'ananya' ? '#FF9933' : '#1A73E8'} distance={6} />
         <pointLight position={[3, 1, -2]} intensity={20} color={activePersonaId === 'ananya' ? '#138808' : '#FF9933'} distance={6} />
         
-        <OrbitControls target={[0, 0, 0]} minDistance={0.5} maxDistance={4} />
+        <OrbitControls target={[0, 0.1, 0]} minDistance={0.5} maxDistance={4} />
         
         {/* React Indic Avatar component with dual-worker TTS architecture */}
         <IndicAvatar
+          ref={avatarRef}
           key={currentPersona.id}
           avatarPreset={currentPersona.preset}
           systemPrompt={currentPersona.systemPrompt}
           ttsEngine={ttsEngine}
           ttsVoice={ttsVoice}
           debug={false}
-          position={[0, -1.45, 0]}
+          position={[0, -0.72, 0]}
+          hideStatusPill={true}
+          onStatusChange={(newStatus) => setAvatarStatus(newStatus)}
         />
       </Canvas>
     </div>

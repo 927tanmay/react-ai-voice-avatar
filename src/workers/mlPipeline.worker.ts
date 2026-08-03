@@ -102,7 +102,7 @@ self.onmessage = async (e: MessageEvent) => {
       ttsVoice = 'af_heart',
       fallbackMode = 'wasm',
       lowMemoryMode: _lowMemoryMode = false,
-      systemPrompt = "You are Tara, an empathetic, engaging, and lively voice companion from India. You speak the way a real human conversing out loud talks, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 short, spoken sentences unless explicitly asked for detail. Absolutely avoid lists, numbered steps, markdown, and headers—just say it the way a person would say it out loud. Use common natural contractions like I'm, that's, let's, and don't. To maintain an authentic conversational flow rather than a Q&A terminal, occasionally end your reply with a brief, warm follow-up question."
+      systemPrompt = "You are Tara, an empathetic, engaging, and lively voice companion. You speak the way a real human conversing out loud talks, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 short, spoken sentences unless explicitly asked for detail. Absolutely avoid lists, numbered steps, markdown, and headers—just say it the way a person would say it out loud. Use common natural contractions like I'm, that's, let's, and don't. To maintain an authentic conversational flow rather than a Q&A terminal, occasionally end your reply with a brief, warm follow-up question."
     } = payload;
     
     currentTtsLanguage = ttsLanguage;
@@ -150,14 +150,16 @@ self.onmessage = async (e: MessageEvent) => {
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
-      // 3. Load TTS Engine (MMS only — Kokoro will be loaded via a separate worker in a future phase)
-      self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 0 } });
-      const ttsRepo = currentTtsLanguage === 'hi-IN' ? 'Xenova/mms-tts-hin' : 'Xenova/mms-tts-eng';
-      ttsPipeline = await pipeline('text-to-speech', ttsRepo, {
-        device: 'wasm',
-        progress_callback: (p: any) => self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: p.progress }})
-      });
-      self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
+      // 3. Load TTS Engine (Only load MMS if engine is not set to Kokoro)
+      if (currentTtsEngine !== 'kokoro') {
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 0 } });
+        const ttsRepo = currentTtsLanguage === 'hi-IN' ? 'Xenova/mms-tts-hin' : 'Xenova/mms-tts-eng';
+        ttsPipeline = await pipeline('text-to-speech', ttsRepo, {
+          device: 'wasm',
+          progress_callback: (p: any) => self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: p.progress }})
+        });
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
+      }
 
       self.postMessage({ type: 'ready' });
     } catch (error: any) {

@@ -1,18 +1,20 @@
 import { useEffect, useRef } from 'react';
 
 export interface StatusPillProps {
-  status: 'idle' | 'listening' | 'thinking' | 'speaking';
+  status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
   accentColor?: string;
   analyser?: AnalyserNode; // For the waveform
   onPillClick?: () => void;
   onStopClick?: () => void;
+  style?: React.CSSProperties;
 }
 
-export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillClick, onStopClick }: StatusPillProps) {
+export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillClick, onStopClick, style }: StatusPillProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Status text mapping
   const statusLabels = {
+    loading: 'Loading models...',
     idle: 'Tap to start',
     listening: 'Listening...',
     thinking: 'Thinking...',
@@ -59,6 +61,7 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
 
   const handleMainClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (status === 'loading') return;
     if (status === 'idle') {
       onPillClick?.();
     } else {
@@ -69,13 +72,13 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
   return (
     <div
       onClick={handleMainClick}
-      title={status === 'idle' ? 'Start voice session' : 'Click to stop / pause'}
+      title={status === 'loading' ? 'Initializing AI models in Web Workers...' : status === 'idle' ? 'Start voice session' : 'Click to stop / pause'}
       style={{
         position: 'absolute',
-        top: '32px',
-        bottom: 'auto',
-        left: '50%',
-        transform: 'translateX(-50%)',
+        top: 'auto',
+        bottom: '40px',
+        left: '48px',
+        transform: 'none',
         padding: '12px 24px',
         borderRadius: '9999px',
         backgroundColor: 'rgba(28, 28, 35, 0.75)',
@@ -89,8 +92,10 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
         color: '#fff',
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         zIndex: 9999,
-        cursor: 'pointer',
-        pointerEvents: 'auto'
+        cursor: status === 'loading' ? 'wait' : 'pointer',
+        pointerEvents: 'auto',
+        opacity: status === 'loading' ? 0.85 : 1,
+        ...style,
       }}
     >
       <div
@@ -98,8 +103,8 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
           width: '10px',
           height: '10px',
           borderRadius: '50%',
-          backgroundColor: status === 'listening' ? '#ef4444' : accentColor,
-          boxShadow: status === 'listening' ? '0 0 10px #ef4444' : `0 0 10px ${accentColor}`,
+          backgroundColor: status === 'loading' ? '#f59e0b' : status === 'listening' ? '#ef4444' : accentColor,
+          boxShadow: status === 'loading' ? '0 0 10px #f59e0b' : status === 'listening' ? '0 0 10px #ef4444' : `0 0 10px ${accentColor}`,
           transition: 'all 0.3s ease'
         }}
       />
@@ -117,7 +122,7 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
         />
       )}
 
-      {status !== 'idle' && (
+      {status !== 'idle' && status !== 'loading' && (
         <button
           onClick={(e) => {
             e.stopPropagation();

@@ -4,6 +4,11 @@
   "description": "Local-first, WebGPU-powered 3D avatar with real-time Indic voice conversation for React.",
   "license": "MIT",
   "type": "module",
+  "files": [
+    "dist",
+    "assets",
+    "README.md"
+  ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

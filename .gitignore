@@ -1,10 +1,13 @@
 # Dependencies
 node_modules/
 sandbox/node_modules/
+examples/**/node_modules/
 
 # Build outputs
 dist/
 sandbox/dist/
+examples/**/dist/
+*.tgz
 
 # Logs & temp
 *.log

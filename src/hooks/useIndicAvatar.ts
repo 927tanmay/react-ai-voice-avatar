@@ -25,7 +25,7 @@ export interface UseIndicAvatarConfig {
 }
 
 export function useIndicAvatar(config: UseIndicAvatarConfig) {
-  const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+  const [status, setStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [analyser, setAnalyser] = useState<AnalyserNode | undefined>(undefined);
   
   const vadRef = useRef<vad.MicVAD | null>(null);
@@ -240,6 +240,7 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
 
   // ─── Unified synthesizeText: routes to the correct TTS engine ───
   const synthesizeText = useCallback((text: string, isLast: boolean = true) => {
+    configRef.current.onTranscriptUpdate?.(text, 'avatar');
     if (config.ttsEngine === 'kokoro' && isKokoroReady) {
       kokoroSynthesize(text, isLast);
     } else {
@@ -247,8 +248,23 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
     }
   }, [config.ttsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize]);
 
+  // Imperative speech triggering for external alerts or scripted turns
+  const speak = useCallback((text: string) => {
+    if (!text || !text.trim()) return;
+    setStatus('speaking');
+    synthesizeText(text.trim(), true);
+  }, [synthesizeText]);
+
   // Combined readiness
   const isReady = isMLReady && (config.ttsEngine !== 'kokoro' || isKokoroReady);
+
+  useEffect(() => {
+    if (isReady && status === 'loading') {
+      setStatus('idle');
+    } else if (!isReady && status === 'idle') {
+      setStatus('loading');
+    }
+  }, [isReady, status]);
 
   // Init VAD and AudioContext
   useEffect(() => {
@@ -344,13 +360,13 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
   }, [processAudio]);
 
   const startListening = useCallback(() => {
-    if (!vadRef.current) return;
+    if (!vadRef.current || !isReady) return;
     if (audioContextRef.current?.state === 'suspended') {
       audioContextRef.current.resume();
     }
     vadRef.current.start();
     setStatus('listening');
-  }, []);
+  }, [isReady]);
 
   const stopListening = useCallback(() => {
     vadRef.current?.pause();
@@ -377,6 +393,7 @@ export function useIndicAvatar(config: UseIndicAvatarConfig) {
     stopListening,
     interrupt,
     clearHistory,
+    speak,
     currentSpeechTextRef,
     currentAudioDurationRef,
     playbackStartTimeRef,

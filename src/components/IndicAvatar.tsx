@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useState, useRef, useImperativeHandle } from 'react';
 import { ThreeElements, useFrame } from '@react-three/fiber';
 import { useGLTF, Environment, Html } from '@react-three/drei';
-import { useControls } from 'leva';
+import { useControls, Leva } from 'leva';
 import * as THREE from 'three';
 import { resolveAvatarUrl } from '../lib/avatarAssets';
 import { StatusPill } from './StatusPill';
@@ -21,6 +21,8 @@ export interface IndicAvatarHandle {
   interrupt: () => void;
   startListening: () => void;
   stopListening: () => void;
+  speak: (text: string) => void;
+  getAnalyser: () => AnalyserNode | undefined;
 }
 
 export interface IndicAvatarProps extends Omit<ThreeElements['group'], 'children'> {
@@ -55,6 +57,13 @@ export interface IndicAvatarProps extends Omit<ThreeElements['group'], 'children
 
   // Debug flag to show Leva panel
   debug?: boolean;
+  
+  /** Optional custom CSS styling & positioning for the Status/Tap-to-start Pill overlay */
+  statusPillStyle?: React.CSSProperties;
+  /** Set to true to disable internal rendering of StatusPill if placing it independently in DOM */
+  hideStatusPill?: boolean;
+  /** Callback fired whenever the avatar conversation state changes */
+  onStatusChange?: (status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking') => void;
 }
 
 const ARKIT_BLENDSHAPES = [
@@ -150,7 +159,7 @@ function AvatarModel({
       acc[key] = { value: 0, min: 0, max: 1 };
       return acc;
     }, {} as Record<string, any>),
-    { collapsed: true }
+    { collapsed: true, render: () => Boolean(debug) }
   );
 
   // Apply debug controls to ALL morph target meshes if in debug mode
@@ -280,13 +289,15 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
     onSubmit,
     onTranscriptUpdate,
     debug,
+    statusPillStyle,
     ...groupProps
   } = props;
 
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(modelSrc || null);
+  const [caption, setCaption] = useState<{ text: string; speaker: 'user' | 'avatar' } | null>(null);
 
   const {
-    status, analyser, startListening, stopListening, interrupt,
+    status, analyser, startListening, stopListening, interrupt, speak,
     currentSpeechTextRef, currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
   } = useIndicAvatar({
     llmModel: props.llmModel,
@@ -298,7 +309,10 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
     fallbackMode,
     asrLanguage,
     onSubmit,
-    onTranscriptUpdate,
+    onTranscriptUpdate: (text, speaker) => {
+      setCaption({ text, speaker });
+      onTranscriptUpdate?.(text, speaker);
+    },
     onCapabilityDetected: props.onCapabilityDetected,
     loadingProgress: props.loadingProgress,
     lowMemoryMode: props.lowMemoryMode,
@@ -313,12 +327,18 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
     interrupt();
   };
 
+  useEffect(() => {
+    props.onStatusChange?.(status);
+  }, [status, props.onStatusChange]);
+
   // Expose methods to parent
   useImperativeHandle(_ref, () => ({
-    clearHistory: () => { },
+    clearHistory: () => { setCaption(null); },
     interrupt,
     startListening,
-    stopListening
+    stopListening,
+    speak,
+    getAnalyser: () => analyser
   }));
 
   useEffect(() => {
@@ -336,30 +356,58 @@ export const IndicAvatar = forwardRef<IndicAvatarHandle, IndicAvatarProps>((prop
   if (!resolvedUrl) return null;
 
   return (
-    <group {...groupProps}>
-      {environmentPreset === 'studio' && <Environment preset="studio" />}
+    <>
+      <group {...groupProps}>
+        {environmentPreset === 'studio' && <Environment preset="studio" />}
 
-      <AvatarModel
-        url={resolvedUrl}
-        debug={debug}
-        analyser={analyser}
-        currentSpeechTextRef={currentSpeechTextRef}
-        currentAudioDurationRef={currentAudioDurationRef}
-        playbackStartTimeRef={playbackStartTimeRef}
-        audioContextRef={audioContextRef}
-      />
+        <AvatarModel
+          url={resolvedUrl}
+          debug={debug}
+          analyser={analyser}
+          currentSpeechTextRef={currentSpeechTextRef}
+          currentAudioDurationRef={currentAudioDurationRef}
+          playbackStartTimeRef={playbackStartTimeRef}
+          audioContextRef={audioContextRef}
+        />
+      </group>
 
-      <Html fullscreen zIndexRange={[100, 0]}>
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-          <StatusPill
-            status={status}
-            analyser={analyser}
-            onPillClick={startListening}
-            onStopClick={handleStopOrPause}
-          />
-        </div>
-      </Html>
-    </group>
+      {(props.showCaptions || !props.hideStatusPill || !debug) && (
+        <Html fullscreen zIndexRange={[100, 0]}>
+          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+            <Leva hidden={!debug} />
+
+            {props.showCaptions && caption && (
+              <div style={{
+                position: 'absolute', bottom: '110px', top: 'auto', left: '48px', transform: 'none',
+                background: 'rgba(15, 23, 42, 0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                border: `1px solid ${caption.speaker === 'user' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(16, 185, 129, 0.5)'}`,
+                borderRadius: '16px', padding: '14px 22px', maxWidth: '480px', width: 'auto', minWidth: '260px',
+                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.75)', transition: 'all 0.3s ease',
+                pointerEvents: 'auto', textAlign: 'left', zIndex: 110
+              }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: caption.speaker === 'user' ? '#60A5FA' : '#34D399', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>{caption.speaker === 'user' ? '🎙️' : '💬'}</span>
+                  <span>{caption.speaker === 'user' ? 'You spoke' : 'Assistant'}</span>
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: 500, color: '#F8FAFC', lineHeight: 1.5 }}>
+                  {caption.text}
+                </div>
+              </div>
+            )}
+
+            {!props.hideStatusPill && (
+              <StatusPill
+                status={status}
+                analyser={analyser}
+                onPillClick={startListening}
+                onStopClick={handleStopOrPause}
+                style={statusPillStyle}
+              />
+            )}
+          </div>
+        </Html>
+      )}
+    </>
   );
 });
 
