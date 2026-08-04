@@ -22,11 +22,13 @@
     "virtual-assistant",
     "ai-concierge"
   ],
+  "author": "Tanmay <https://github.com/927tanmay>",
   "license": "MIT",
   "type": "module",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
