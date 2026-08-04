@@ -22,11 +22,34 @@ export interface UseAiVoiceAvatarConfig {
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
   onUserInterrupt?: () => void;
+  onSpeechStart?: (text: string) => void;
 }
 
-export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
+export interface UseAiVoiceAvatarReturn {
+  status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
+  isLoading: boolean;
+  isIdle: boolean;
+  isListening: boolean;
+  isThinking: boolean;
+  isSpeaking: boolean;
+  micError: string | null;
+  analyser: AnalyserNode | undefined;
+  isReady: boolean;
+  startListening: () => void;
+  stopListening: () => void;
+  interrupt: () => void;
+  clearHistory: () => void;
+  speak: (text: string) => void;
+  currentSpeechTextRef: React.RefObject<string>;
+  currentAudioDurationRef: React.RefObject<number>;
+  playbackStartTimeRef: React.RefObject<number>;
+  audioContextRef: React.RefObject<AudioContext | null>;
+}
+
+export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvatarReturn {
   const [status, setStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [analyser, setAnalyser] = useState<AnalyserNode | undefined>(undefined);
+  const [micError, setMicError] = useState<string | null>(null);
   
   const vadRef = useRef<vad.MicVAD | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -92,6 +115,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
     playbackStartTimeRef.current = ctx.currentTime;
 
     setStatus('speaking');
+    configRef.current.onSpeechStart?.(item.text);
     source.start(0);
     currentAudioSourceRef.current = source;
   }, [analyser]);
@@ -273,7 +297,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
     async function initVad() {
       if (typeof window === 'undefined' || typeof navigator === 'undefined') return; // P4: Next.js SSR Guard
       if (!navigator?.mediaDevices?.getUserMedia) {
-        console.warn('[AiVoiceAvatar] navigator.mediaDevices.getUserMedia is not available in this browser or insecure context.');
+        const errMsg = 'Microphone API not available (secure HTTPS context or localhost required).';
+        console.warn(`[AiVoiceAvatar] ${errMsg}`);
+        if (mounted) setMicError(errMsg);
         return;
       }
       try {
@@ -285,6 +311,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
             noiseSuppression: true,
           },
         });
+        if (mounted) setMicError(null);
         mediaStreamRef.current = stream;
 
         const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -342,6 +369,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
         }
       } catch (err) {
         console.error('Failed to init VAD', err);
+        if (mounted) {
+          setMicError('Microphone access denied or unavailable. Please enable permissions in browser settings.');
+        }
       }
     }
 
@@ -397,6 +427,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig) {
 
   return {
     status,
+    isLoading: status === 'loading',
+    isIdle: status === 'idle',
+    isListening: status === 'listening',
+    isThinking: status === 'thinking',
+    isSpeaking: status === 'speaking',
+    micError,
     analyser,
     isReady,
     startListening,

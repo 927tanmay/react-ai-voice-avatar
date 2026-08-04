@@ -23,6 +23,13 @@ export interface AiVoiceAvatarHandle {
   stopListening: () => void;
   speak: (text: string) => void;
   getAnalyser: () => AnalyserNode | undefined;
+  status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
+  isLoading: boolean;
+  isIdle: boolean;
+  isListening: boolean;
+  isThinking: boolean;
+  isSpeaking: boolean;
+  micError: string | null;
 }
 
 export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'children'> {
@@ -61,7 +68,7 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
 
   // Debug flag to show Leva panel
   debug?: boolean;
-  
+
   /** Optional custom CSS styling & positioning for the Status/Tap-to-start Pill overlay */
   statusPillStyle?: React.CSSProperties;
   /** Set to true to disable internal rendering of StatusPill if placing it independently in DOM */
@@ -385,9 +392,11 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
 
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(modelSrc || null);
   const [caption, setCaption] = useState<{ text: string; speaker: 'user' | 'avatar' } | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState<{ pct?: number; label?: string }>({});
 
   const {
-    status, analyser, startListening, stopListening, interrupt, speak,
+    status, isLoading, isIdle, isListening, isThinking, isSpeaking, micError,
+    analyser, startListening, stopListening, interrupt, speak,
     currentSpeechTextRef, currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
   } = useAiVoiceAvatar({
     llmModel: props.llmModel,
@@ -400,11 +409,19 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     asrLanguage,
     onSubmit,
     onTranscriptUpdate: (text, speaker) => {
-      setCaption({ text, speaker });
+      if (speaker === 'user') {
+        setCaption({ text, speaker });
+      }
       onTranscriptUpdate?.(text, speaker);
     },
+    onSpeechStart: (text) => {
+      setCaption({ text, speaker: 'avatar' });
+    },
     onCapabilityDetected: props.onCapabilityDetected,
-    loadingProgress: props.loadingProgress,
+    loadingProgress: (pct, label) => {
+      setLoadingInfo({ pct, label });
+      props.loadingProgress?.(pct, label);
+    },
     lowMemoryMode: props.lowMemoryMode,
     listenMode: props.listenMode,
     onInferenceStart: props.onInferenceStart,
@@ -421,14 +438,21 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     props.onStatusChange?.(status);
   }, [status, props.onStatusChange]);
 
-  // Expose methods to parent
+  // Expose methods and explicit state booleans to parent component handle
   useImperativeHandle(_ref, () => ({
     clearHistory: () => { setCaption(null); },
     interrupt,
     startListening,
     stopListening,
     speak,
-    getAnalyser: () => analyser
+    getAnalyser: () => analyser,
+    status,
+    isLoading,
+    isIdle,
+    isListening,
+    isThinking,
+    isSpeaking,
+    micError,
   }));
 
   useEffect(() => {
@@ -492,6 +516,9 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
                 analyser={analyser}
                 onPillClick={startListening}
                 onStopClick={handleStopOrPause}
+                micError={micError}
+                loadingLabel={loadingInfo.label}
+                loadingPct={loadingInfo.pct}
                 style={statusPillStyle}
               />
             )}

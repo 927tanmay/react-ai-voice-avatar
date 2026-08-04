@@ -59,7 +59,7 @@ const KOKORO_VOICES = [
 export const App: React.FC = () => {
   const avatarRef = useRef<AiVoiceAvatarHandle>(null);
   const [_avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
-  const [activePersonaId, setActivePersonaId] = useState<'ananya' | 'aarav'>('ananya');
+  const [activePersonaId, setActivePersonaId] = useState<'ananya' | 'aarav'>('aarav');
   
   // Dynamic TTS Engine Configuration & Seamless Switching
   const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>('mms');

@@ -6,15 +6,28 @@ export interface StatusPillProps {
   analyser?: AnalyserNode; // For the waveform
   onPillClick?: () => void;
   onStopClick?: () => void;
+  micError?: string | null;
+  loadingLabel?: string;
+  loadingPct?: number;
   style?: React.CSSProperties;
 }
 
-export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillClick, onStopClick, style }: StatusPillProps) {
+export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillClick, onStopClick, micError, loadingLabel, loadingPct, style }: StatusPillProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const formatLoadingText = () => {
+    if (loadingLabel && loadingPct !== undefined && loadingPct > 0) {
+      return `Downloading ${loadingLabel} (${Math.round(loadingPct)}%)...`;
+    }
+    if (loadingLabel) {
+      return `Initializing ${loadingLabel}...`;
+    }
+    return 'Downloading AI models...';
+  };
 
   // Status text mapping
   const statusLabels = {
-    loading: 'Loading models...',
+    loading: formatLoadingText(),
     idle: 'Tap to start',
     listening: 'Listening...',
     thinking: 'Thinking...',
@@ -24,7 +37,7 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
   // Basic waveform drawing
   useEffect(() => {
     if ((status !== 'listening' && status !== 'speaking') || !analyser || !canvasRef.current) return;
-    
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -103,15 +116,22 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
           width: '10px',
           height: '10px',
           borderRadius: '50%',
-          backgroundColor: status === 'loading' ? '#f59e0b' : status === 'listening' ? '#ef4444' : accentColor,
-          boxShadow: status === 'loading' ? '0 0 10px #f59e0b' : status === 'listening' ? '0 0 10px #ef4444' : `0 0 10px ${accentColor}`,
+          backgroundColor: micError ? '#ef4444' : status === 'loading' ? '#f59e0b' : status === 'listening' ? '#ef4444' : accentColor,
+          boxShadow: micError ? '0 0 12px #ef4444' : status === 'loading' ? '0 0 10px #f59e0b' : status === 'listening' ? '0 0 10px #ef4444' : `0 0 10px ${accentColor}`,
           transition: 'all 0.3s ease'
         }}
       />
-      
-      <span style={{ fontWeight: 600, minWidth: '80px', fontSize: '15px', letterSpacing: '0.3px' }}>
-        {statusLabels[status]}
-      </span>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <span style={{ fontWeight: 600, minWidth: '80px', fontSize: '14px', letterSpacing: '0.3px', color: micError ? '#fca5a5' : '#fff' }}>
+          {micError ? '🎙️ Microphone Access Denied — Check Permissions' : status === 'loading' && !loadingLabel ? '⏳ Downloading AI models (1st run cached)...' : statusLabels[status]}
+        </span>
+        {status === 'loading' && loadingPct !== undefined && loadingPct > 0 && (
+          <div style={{ width: '100%', height: '3px', background: 'rgba(255,255,255,0.15)', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }}>
+            <div style={{ width: `${Math.min(100, Math.max(5, loadingPct))}%`, height: '100%', background: '#f59e0b', transition: 'width 0.3s ease' }} />
+          </div>
+        )}
+      </div>
 
       {(status === 'speaking' || status === 'listening') && (
         <canvas

@@ -45,7 +45,7 @@ export default function App() {
    */
   const handleCloudSubmit = async (userTranscript: string): Promise<string> => {
     const startTime = performance.now();
-    
+
     // Stage 1 complete: Speech transcribed on-device
     setActiveStage(2);
     addTelemetry('asr_local', 'Stage 1: Local Whisper ASR', `Captured speech: "${userTranscript}"`);
@@ -73,7 +73,7 @@ export default function App() {
 
       let aiReply = "I received your message through our hybrid cloud bridge! How can I assist with your financial portfolio today?";
       const lower = userTranscript.toLowerCase();
-      
+
       if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
         aiReply = "Hello there! Welcome to our financial wealth desk. I'm operating on our hybrid cloud architecture, combining local WebGPU voice rendering with enterprise cloud reasoning.";
       } else if (lower.includes('invest') || lower.includes('stock') || lower.includes('portfolio') || lower.includes('return')) {
@@ -86,10 +86,10 @@ export default function App() {
 
       const latency = Math.round(performance.now() - startTime);
       addTelemetry('cloud_response', 'Stage 2: Cloud API Response', `Received reply (${aiReply.length} chars)`, latency);
-      
+
       setActiveStage(3);
       addTelemetry('tts_local', 'Stage 3: Local Kokoro Speech Synthesis', 'Streaming audio buffer & blending 3D phoneme lip movements...');
-      
+
       return aiReply;
     } catch (err: any) {
       addTelemetry('cloud_response', 'Cloud API Error', err.message || 'Network failure');
@@ -99,7 +99,7 @@ export default function App() {
 
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100vw', backgroundColor: '#080A10', overflow: 'hidden', fontFamily: "'Inter', -apple-system, sans-serif", color: '#E2E8F0' }}>
-      
+
       {/* Top Header Branding */}
       <div style={{ position: 'absolute', zIndex: 20, top: '24px', left: '32px', display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', boxShadow: '0 8px 24px rgba(59, 130, 246, 0.35)' }}>
@@ -121,7 +121,11 @@ export default function App() {
       }}>
         <h2 style={{ fontSize: '15px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#60A5FA', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span>⚡ Live Pipeline Telemetry</span>
-          {activeStage && <span style={{ fontSize: '11px', background: '#3B82F6', color: '#FFF', padding: '2px 8px', borderRadius: '12px', textTransform: 'none', letterSpacing: 0 }}>Stage {activeStage} Active</span>}
+          {activeStage ? (
+            <span style={{ fontSize: '11px', background: '#3B82F6', color: '#FFF', padding: '2px 8px', borderRadius: '12px', textTransform: 'none', letterSpacing: 0 }}>Stage {activeStage} Active</span>
+          ) : (
+            <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.1)', color: '#94A3B8', padding: '2px 8px', borderRadius: '12px', textTransform: 'capitalize', letterSpacing: 0 }}>{status === 'loading' ? 'Initializing...' : status}</span>
+          )}
         </h2>
 
         {/* 3-Stage Architecture Roadmap Cards */}
@@ -181,12 +185,13 @@ export default function App() {
       {/* 3D Studio Canvas Viewport */}
       <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }}>
         <color attach="background" args={['#080A10']} />
-        
+
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
         <AiVoiceAvatar
-          avatarPreset="ananya"
-          
+          // Showcasing Aarav (built-in Male option!) paired with Kokoro am_michael engaging voice!
+          avatarPreset="aarav"
+
           /**
            * THE ON_SUBMIT CLOUD ESCAPE HATCH:
            * Passing this prop automatically instructs useAiVoiceAvatar to set `loadLlm: false`,
@@ -194,16 +199,16 @@ export default function App() {
            */
           onSubmit={handleCloudSubmit}
 
-          // Configure ultra-natural Kokoro voice engine with built-in cool azure cloud lighting preset!
+          // Configure ultra-natural Kokoro male voice engine with built-in cool azure cloud lighting preset!
           ttsEngine="kokoro"
-          ttsVoice="af_heart"
+          ttsVoice="am_michael"
           environmentPreset="studio"
           lightingPreset="cool_azure"
           showCaptions={true}
-          
+
           scale={0.48} // Demonstrating full compatibility with native React-Three-Fiber group scale prop!
           position={[-0.28, -0.42, 0]} // Compact avatar scale positioned cleanly to stay clear of overlays
-          
+
           onStatusChange={(newStatus) => {
             setStatus(newStatus);
             if (newStatus === 'listening') {

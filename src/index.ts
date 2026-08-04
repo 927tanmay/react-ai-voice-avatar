@@ -3,4 +3,4 @@ export type { AiVoiceAvatarProps, AiVoiceAvatarCapabilities, AiVoiceAvatarHandle
 export { StatusPill } from './components/StatusPill';
 export type { StatusPillProps } from './components/StatusPill';
 export { useAiVoiceAvatar, useAiVoiceAvatar as useAiVoiceAvatarState } from './hooks/useAiVoiceAvatar';
-export type { UseAiVoiceAvatarConfig } from './hooks/useAiVoiceAvatar';
+export type { UseAiVoiceAvatarConfig, UseAiVoiceAvatarReturn, UseAiVoiceAvatarReturn as UseAiVoiceAvatarStateReturn } from './hooks/useAiVoiceAvatar';

@@ -82,7 +82,8 @@ export default function App() {
 
   const handleToggleListen = () => {
     if (status === 'loading' || !avatarRef.current) return;
-    if (status === 'listening' || status === 'speaking') {
+    // Using new boolean convenience state flags (isListening / isSpeaking) on AiVoiceAvatarHandle!
+    if (avatarRef.current.isListening || avatarRef.current.isSpeaking) {
       avatarRef.current.stopListening();
       addMessage('system', '⏸️ Voice session paused by user.');
     } else {
@@ -117,23 +118,23 @@ export default function App() {
           </p>
         </div>
 
-        {/* Custom Status Indicator Card */}
+        {/* Custom Status Indicator Card — Demonstrating direct access to handle state & micError warnings! */}
         <div style={{
-          padding: '16px 20px', borderRadius: '16px', background: 'rgba(30, 41, 59, 0.6)',
-          border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+          padding: '16px 20px', borderRadius: '16px', background: avatarRef.current?.micError ? 'rgba(127, 29, 29, 0.35)' : 'rgba(30, 41, 59, 0.6)',
+          border: avatarRef.current?.micError ? '1px solid rgba(239, 68, 68, 0.5)' : '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
         }}>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: '#64748B', letterSpacing: '0.8px' }}>
-              Avatar Engine State
+            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: avatarRef.current?.micError ? '#FCA5A5' : '#64748B', letterSpacing: '0.8px' }}>
+              {avatarRef.current?.micError ? '⚠️ Audio Hardware Warning' : 'Avatar Engine State'}
             </div>
-            <div style={{ fontSize: '17px', fontWeight: 700, color: status === 'loading' ? '#F59E0B' : status === 'listening' ? '#10B981' : status === 'speaking' ? '#8B5CF6' : '#FFF', marginTop: '3px', textTransform: 'capitalize' }}>
-              {status === 'loading' ? 'Initializing WebGPU...' : status === 'idle' ? 'Ready (Standby)' : status}
+            <div style={{ fontSize: '17px', fontWeight: 700, color: avatarRef.current?.micError ? '#F87171' : status === 'loading' ? '#F59E0B' : status === 'listening' ? '#10B981' : status === 'speaking' ? '#8B5CF6' : '#FFF', marginTop: '3px', textTransform: 'capitalize' }}>
+              {avatarRef.current?.micError ? 'Mic Permission Denied' : status === 'loading' ? 'Initializing WebGPU...' : status === 'idle' ? 'Ready (Standby)' : status}
             </div>
           </div>
           <div style={{
             width: '14px', height: '14px', borderRadius: '50%',
-            background: status === 'loading' ? '#F59E0B' : status === 'listening' ? '#10B981' : status === 'speaking' ? '#8B5CF6' : '#64748B',
-            boxShadow: status === 'listening' ? '0 0 14px #10B981' : status === 'speaking' ? '0 0 14px #8B5CF6' : 'none'
+            background: avatarRef.current?.micError ? '#EF4444' : status === 'loading' ? '#F59E0B' : status === 'listening' ? '#10B981' : status === 'speaking' ? '#8B5CF6' : '#64748B',
+            boxShadow: avatarRef.current?.micError ? '0 0 14px #EF4444' : status === 'listening' ? '0 0 14px #10B981' : status === 'speaking' ? '0 0 14px #8B5CF6' : 'none'
           }} />
         </div>
 

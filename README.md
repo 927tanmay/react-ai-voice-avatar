@@ -154,7 +154,7 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 
 | Prop | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `avatarPreset` | `'ananya' \| 'aarav' \| 'default' \| 'kiosk'` | `'ananya'` | Built-in 3D character models with full ARKit expression blendshapes and autonomous facial vitality. |
+| `avatarPreset` | `'ananya' \| 'aarav' \| 'default' \| 'kiosk'` | `'ananya'` | Built-in 3D character models featuring both female (`'ananya'`) and male (`'aarav'`) voice concierges out of the box with full ARKit facial blendshapes! |
 | `avatarSize` | `'sm' \| 'md' \| 'lg' \| number` | `'md'` (`0.48`) | Intuitive model sizing presets or custom decimal scaling multiplier applied directly to the 3D humanoid mesh. |
 | `modelSrc` | `string` | `undefined` | Absolute local path or remote URL to a custom GLTF/GLB humanoid armature avatar model. |
 | `lightingPreset` | `'studio' \| 'cyberpunk_violet' \| 'cool_azure' \| 'warm_amber' \| 'clean_white' \| 'none'` | `'studio'` | Pre-built cinematic studio lighting atmospheres directly applied to your 3D viewport without manual Three.js configuration! |
@@ -208,11 +208,12 @@ interface AiVoiceAvatarHandle {
 ## 🤝 Contributing & Open Issues Roadmap
 
 We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local development guides and our curated list of **Open Issues** available for contributors:
-1. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
-2. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**: Streaming microphone energy to power custom UI visualizers and reactive HUDs.
-3. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**: Built-in 3D loading silhouettes while model meshes hydrate over networks.
-4. **♻️ Aggressive Audio Buffer Reclamation**: Dereferencing old audio FFT arrays to maintain flat JS memory consumption over multi-hour conversations.
-5. **💾 Offline Instant-Boot Verification**: Fast cache diagnostics for instant (<1.5s) offline reloads.
+1. **🎭 Expanding Regional 3D Avatar Personas**: We provide both Ananya (girl) and Aarav (boy) out of the box! We invite contributors to submit new royalty-free character GLB models (~3MB) rigged with standard 52 Apple ARKit facial blendshapes. Thanks to our JsDelivr GitHub Edge CDN architecture, adding new avatars adds **zero bytes** to our ~46KB NPM install footprint!
+2. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
+3. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**: Streaming microphone energy to power custom UI visualizers and reactive HUDs.
+4. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**: Built-in 3D loading silhouettes while model meshes hydrate over networks.
+5. **♻️ Aggressive Audio Buffer Reclamation**: Dereferencing old audio FFT arrays to maintain flat JS memory consumption over multi-hour conversations.
+6. **💾 Offline Instant-Boot Verification**: Fast cache diagnostics for instant (<1.5s) offline reloads.
 
 ---
 

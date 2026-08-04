@@ -11,7 +11,8 @@ export async function resolveAvatarUrl(
 
   const fileName = fileMap[preset] || fileMap.ananya;
   const localPath = `/${fileName}`;
-  const cdnUrl = `https://cdn.jsdelivr.net/npm/react-ai-voice-avatar@0.1.0/assets/avatars/${fileName}`;
+  // Stream high-resolution GLB mesh over global edge CDN directly from GitHub releases (zero NPM bundle weight!)
+  const cdnUrl = `https://cdn.jsdelivr.net/gh/927tanmay/react-ai-voice-avatar@main/assets/avatars/${fileName}`;
 
   let resolvedUrl = cdnUrl;
 

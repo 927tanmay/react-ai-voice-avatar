@@ -105,7 +105,7 @@ export default function App() {
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.8} maxDistance={4} />
 
         <AiVoiceAvatar
-          avatarPreset="kiosk"
+          avatarPreset="ananya" // Showcasing built-in Female voice concierge option!
           
           // EXPLICIT LLM OVERRIDE SELECTION:
           // For rapid startup times on kiosk hardware, we explicitly configure a lightweight 0.5B instruction
