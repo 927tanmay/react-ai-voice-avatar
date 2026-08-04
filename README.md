@@ -1,8 +1,8 @@
 # React AI Voice Avatar (`react-ai-voice-avatar`) 🚀🗣️🧬
 
-**The definitive zero-config, WebGPU-powered 3D conversational AI voice avatar and real-time lip-sync engine for React and React Three Fiber.**
+**The definitive zero-config 3D conversational AI voice avatar and real-time lip-sync engine for React and React Three Fiber.**
 
-Build immersive virtual concierges, intelligent autonomous agents, digital teachers, and interactive voice kiosks that talk, listen, and express facial vitality—running completely inside the client browser with zero server costs, zero API keys required, and ultimate acoustic privacy!
+Build immersive virtual concierges, intelligent autonomous agents, digital teachers, and interactive voice kiosks that talk, listen, and express facial vitality. **Designed for maximum architectural flexibility**: run 100% on-device inside the browser with zero server costs, OR seamlessly plug in external cloud LLMs (OpenAI ChatGPT, Claude, Gemini, DeepSeek, or your custom Python/Go backend) while retaining real-time 3D facial lip-syncing and local voice recognition!
 
 ---
 
@@ -10,9 +10,9 @@ Build immersive virtual concierges, intelligent autonomous agents, digital teach
 
 When implementing voice AI agents or 3D avatars in web applications, traditional architectures rely on expensive server-side GPU clouds, fragile WebSocket video streaming, and latency-heavy cloud TTS/STT services that compromise user microphone privacy.
 
-**`react-ai-voice-avatar`** revolutionizes web conversational AI through a comprehensive multi-modal edge computing pipeline executing entirely inside browser Web Workers and WebGPU memory:
-1. **Real-Time Speech Recognition (ASR)**: On-device **WebGPU Whisper** streaming transcribing with automated VAD (Voice Activity Detection).
-2. **Neural Reasoning (LLM)**: Client-side **Llama 3 / SmolLM2** execution, or effortless low-latency routing to external cloud LLMs (OpenAI, Claude, custom servers) via flexible escape hatches.
+**`react-ai-voice-avatar`** provides a complete, hybrid-ready conversational frontend architecture executing inside browser Web Workers and WebGPU memory:
+1. **Real-Time Speech Recognition (ASR)**: On-device **WebGPU Whisper** streaming transcribing with automated VAD (Voice Activity Detection), ensuring raw microphone audio never eavesdrops over network channels.
+2. **Hybrid-Ready Neural Reasoning (LLM)**: Run client-side **Llama 3 / SmolLM2** models out of the box for offline privacy, or use our simple **`onSubmit` escape hatch** to route transcripts instantly to external cloud LLM endpoints (OpenAI, Claude, LangChain, or custom APIs) with zero initial model downloading!
 3. **Natural Voice Synthesis (TTS)**: High-fidelity **Kokoro-82M ONNX** neural vocal synthesis with multi-voice emotion modeling and **Meta MMS** worldwide multilingual support (featuring first-class Indic languages: Hindi, Bengali, Tamil, Telugu, Marathi).
 4. **Autonomous Facial Vitality & Lip-Sync**: A dual-engine O(1) phonetic timeline and real-time audio FFT spectral blender driving 3D ARKit blendshapes at 60 FPS without touching React state. Features autonomous eye tracking, micro-saccade darting, acoustic eyebrow elevation, and spontaneous blinking!
 5. **Zero-Config CDN Asset Fallback**: Automatically serves packaged 3D `.glb` character models over global edge CDNs out of the box, with local-first offline caching.

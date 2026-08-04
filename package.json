@@ -1,7 +1,7 @@
 {
   "name": "react-ai-voice-avatar",
   "version": "0.1.0",
-  "description": "Zero-config, WebGPU-powered 3D conversational AI voice avatar and real-time lip-sync engine for React and React Three Fiber.",
+  "description": "Zero-config 3D conversational AI voice avatar and real-time lip-sync engine for React. Run 100% locally with WebGPU/ONNX or plug in external cloud LLMs (OpenAI, Claude, APIs).",
   "keywords": [
     "react",
     "threejs",
@@ -20,7 +20,11 @@
     "local-ai",
     "onnx",
     "virtual-assistant",
-    "ai-concierge"
+    "ai-concierge",
+    "hybrid-cloud",
+    "openai",
+    "claude",
+    "llm-integration"
   ],
   "author": "Tanmay <https://github.com/927tanmay>",
   "license": "MIT",
