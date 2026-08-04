@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 // @ts-ignore
-import MLWorker from '../workers/mlPipeline.worker?worker';
+import MLWorker from '../workers/mlPipeline.worker?worker&inline';
 import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
 
 export interface UseMLWorkerConfig {

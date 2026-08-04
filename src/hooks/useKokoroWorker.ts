@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 // @ts-ignore
-import KokoroWorker from '../workers/kokoroTts.worker?worker';
+import KokoroWorker from '../workers/kokoroTts.worker?worker&inline';
 
 /**
  * useKokoroWorker — manages a dedicated Kokoro-82M TTS worker.

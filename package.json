@@ -1,6 +1,6 @@
 {
   "name": "react-ai-voice-avatar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Zero-config 3D conversational AI voice avatar and real-time lip-sync engine for React. Run 100% locally with WebGPU/ONNX or plug in external cloud LLMs (OpenAI, Claude, APIs).",
   "keywords": [
     "react",
@@ -69,7 +69,7 @@
     "react-dom": "^19.0.0",
     "three": "^0.167.0",
     "typescript": "^5.5.4",
-    "vite": "^5.4.0",
+    "vite": "^8.2.0",
     "vite-plugin-dts": "^4.0.0",
     "vite-plugin-static-copy": "^2.1.0"
   },

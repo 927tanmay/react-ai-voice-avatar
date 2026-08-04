@@ -1,5 +1,4 @@
-import { KokoroTTS } from 'kokoro-js';
-
+let KokoroTTS: any = null;
 let kokoroTts: any = null;
 let currentVoice: string = 'af_heart';
 
@@ -70,6 +69,10 @@ self.onmessage = async (e: MessageEvent) => {
 
     try {
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 0 } });
+      if (!KokoroTTS) {
+        const mod = await import('kokoro-js');
+        KokoroTTS = mod.KokoroTTS || (mod as any).default?.KokoroTTS || mod;
+      }
       try {
         console.log('[Kokoro Worker] Initializing Kokoro-82M on WebGPU...');
         kokoroTts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
