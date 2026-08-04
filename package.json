@@ -70,8 +70,7 @@
     "three": "^0.167.0",
     "typescript": "^5.5.4",
     "vite": "^8.2.0",
-    "vite-plugin-dts": "^4.0.0",
-    "vite-plugin-static-copy": "^2.1.0"
+    "vite-plugin-dts": "^4.0.0"
   },
   "scripts": {
     "build": "vite build",
