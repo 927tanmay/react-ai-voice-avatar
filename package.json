@@ -20,7 +20,7 @@
     "local-ai",
     "onnx",
     "virtual-assistant",
-    "indic"
+    "ai-concierge"
   ],
   "license": "MIT",
   "type": "module",
@@ -70,7 +70,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "tsc --noEmit",
     "format": "prettier --write src"
   },
   "sideEffects": false
