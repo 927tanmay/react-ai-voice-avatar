@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build && cd sandbox && npm install && npm run build"
+  publish = "sandbox/dist"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
