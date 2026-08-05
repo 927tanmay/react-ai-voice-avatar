@@ -70,20 +70,42 @@ self.onmessage = async (e: MessageEvent) => {
     try {
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 0 } });
       if (!KokoroTTS) {
+        try {
+          // Silence verbose ONNX Runtime C++ optimization warnings (e.g., shape nodes fallback to CPU EP)
+          const ort = await import('onnxruntime-web');
+          const env = ort.env || (ort as any).default?.env;
+          if (env) {
+            env.logLevel = 'error';
+          }
+        } catch (_) {
+          // Continue if direct ORT import is handled internally by consumer bundlers
+        }
         const mod = await import('kokoro-js');
         KokoroTTS = mod.KokoroTTS || (mod as any).default?.KokoroTTS || mod;
       }
+
+      const progressCallback = (data: any) => {
+        if (data && data.status === 'progress' && typeof data.progress === 'number') {
+          self.postMessage({
+            type: 'loadingProgress',
+            payload: { model: 'kokoro', pct: Math.min(99, Math.round(data.progress)) },
+          });
+        }
+      };
+
       try {
-        console.log('[Kokoro Worker] Initializing Kokoro-82M on WebGPU...');
+        console.log('[Kokoro Worker] Initializing Kokoro-82M on WebGPU (q8 quantized)...');
         kokoroTts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-          dtype: 'fp32',
+          dtype: 'q8',
           device: 'webgpu',
+          progress_callback: progressCallback,
         });
       } catch (webGpuErr) {
         console.warn('[Kokoro Worker] WebGPU initialization failed, falling back to WASM...', webGpuErr);
         kokoroTts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
           dtype: 'q8',
           device: 'wasm',
+          progress_callback: progressCallback,
         });
       }
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 100 } });
