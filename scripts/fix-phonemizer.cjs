@@ -21,6 +21,9 @@ const repData = `A.removeRunDependency("datafile_js/espeakng.worker.data");A.__e
 const targetNe = `const ne=new Promise((e=>{A.calledRun?e(new A.eSpeakNGWorker):A.onRuntimeInitialized=()=>e(new A.eSpeakNGWorker)}))`;
 const repNe = `const ne=new Promise((async e=>{while(!A.__espeakDataLoaded){await new Promise(r=>setTimeout(r,10));}A.calledRun?e(new A.eSpeakNGWorker):A.onRuntimeInitialized=()=>e(new A.eSpeakNGWorker)}))`;
 
+const targetCe = `ce=async(A,e="en-us")=>{const g=await ne,{identifiers:r}=await oe;if(!r.has(e))throw new Error(\`Invalid language identifier: "\${e}". Should be one of: \${Array.from(r).toSorted().join(", ")}.\`);`;
+const repCe = `ce=async(A,e="en-us")=>{const g=await ne,{identifiers:r}=await oe;if(!r.has(e)){try{for(const v of g.list_voices()){if(v.identifier)r.add(v.identifier);if(v.languages){for(const l of v.languages)if(l.name)r.add(l.name);}}}catch(_){}r.add("en-us");r.add("en");r.add("us");}if(!r.has(e))throw new Error(\`Invalid language identifier: "\${e}". Should be one of: \${Array.from(r).toSorted().join(", ")}.\`);`;
+
 const rawCandidatePaths = [
   path.resolve(__dirname, '../node_modules/phonemizer/dist/phonemizer.js'),
   path.resolve(__dirname, '../../node_modules/phonemizer/dist/phonemizer.js'),
@@ -69,51 +72,33 @@ candidatePaths.forEach((filePath) => {
   if (!fs.existsSync(filePath)) return;
   try {
     let content = fs.readFileSync(filePath, 'utf8');
-    if (content.includes('__espeakDataLoaded=true')) {
-      console.log(`[fix-phonemizer] Already patched with filesystem readiness check: ${filePath}`);
-      patchedCount++;
-      return;
-    }
     let patched = false;
-    if (content.includes(targetData) && content.includes(targetNe)) {
-      content = content.replace(targetData, repData).replace(targetNe, repNe);
+
+    // 1. Data load flag injection
+    if (content.includes(targetData) && !content.includes(repData)) {
+      content = content.replace(targetData, repData);
       patched = true;
-    } else {
-      // Try exact or regex fallback matching
-      if (content.includes(targetData) && !content.includes(repData)) {
-        content = content.replace(targetData, repData);
-        patched = true;
-      } else {
-        const regexData = /([a-zA-Z0-9_$]+)\.removeRunDependency\("datafile_js\/espeakng\.worker\.data"\)\}/;
-        const matchData = content.match(regexData);
-        if (matchData) {
-          content = content.replace(matchData[0], `${matchData[1]}.removeRunDependency("datafile_js/espeakng.worker.data");${matchData[1]}.__espeakDataLoaded=true}`);
-          patched = true;
-        }
-      }
-      if (content.includes(targetNe) && !content.includes(repNe)) {
-        content = content.replace(targetNe, repNe);
-        patched = true;
-      } else {
-        const regexNe = /const ([a-zA-Z0-9_$]+)=new Promise\(\(([a-zA-Z0-9_$]+)=>\{([a-zA-Z0-9_$]+)\.calledRun\?[a-zA-Z0-9_$]+\(new \3\.eSpeakNGWorker\):\3\.onRuntimeInitialized=\(\)=>[a-zA-Z0-9_$]+\(new \3\.eSpeakNGWorker\)\}\)\)/;
-        const matchNe = content.match(regexNe);
-        if (matchNe) {
-          const varProm = matchNe[1];
-          const varRes = matchNe[2];
-          const varMod = matchNe[3];
-          const replacement = `const ${varProm}=new Promise((async ${varRes}=>{while(!${varMod}.__espeakDataLoaded){await new Promise(r=>setTimeout(r,10));}${varMod}.calledRun?${varRes}(new ${varMod}.eSpeakNGWorker):${varMod}.onRuntimeInitialized=()=>${varRes}(new ${varMod}.eSpeakNGWorker)}))`;
-          content = content.replace(matchNe[0], replacement);
-          patched = true;
-        }
-      }
+    }
+
+    // 2. eSpeakNGWorker construction deferral
+    if (content.includes(targetNe) && !content.includes(repNe)) {
+      content = content.replace(targetNe, repNe);
+      patched = true;
+    }
+
+    // 3. Dynamic voice recovery patch for ce/phonemize
+    if (content.includes(targetCe) && !content.includes(repCe)) {
+      content = content.replace(targetCe, repCe);
+      patched = true;
     }
 
     if (patched) {
       fs.writeFileSync(filePath, content, 'utf8');
-      console.log(`[fix-phonemizer] Successfully injected Emscripten filesystem readiness patch into: ${filePath}`);
+      console.log(`[fix-phonemizer] Successfully injected Emscripten filesystem readiness & voice recovery patch into: ${filePath}`);
       patchedCount++;
-    } else {
-      console.warn(`[fix-phonemizer] Target strings not matched in ${filePath} (may already be updated or custom format)`);
+    } else if (content.includes('__espeakDataLoaded=true') && content.includes('r.add("en-us")')) {
+      console.log(`[fix-phonemizer] Already fully patched: ${filePath}`);
+      patchedCount++;
     }
   } catch (err) {
     console.error(`[fix-phonemizer] Error processing ${filePath}:`, err);
