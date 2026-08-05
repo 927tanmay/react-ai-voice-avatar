@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 // @ts-ignore
-import KokoroWorker from '../workers/kokoroTts.worker?worker&inline';
+import KokoroWorker from '../workers/kokoroTts.worker?worker';
 
 /**
  * useKokoroWorker — manages a dedicated Kokoro-82M TTS worker.
@@ -24,8 +24,8 @@ export interface UseKokoroWorkerConfig {
 export function useKokoroWorker(config: UseKokoroWorkerConfig) {
   const workerRef = useRef<Worker | null>(null);
   const [isReady, setIsReady] = useState(false);
-
   const configRef = useRef(config);
+
   useEffect(() => {
     configRef.current = config;
   }, [config]);
@@ -44,7 +44,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     }
 
     let isMounted = true;
-    // Lazy-load the Kokoro worker (managed by Vite as a separate chunk, NOT inlined)
+    // Lazy-load the Kokoro worker (managed by Vite as a dedicated ESM chunk, NOT inlined)
     const kokoroWorker = new KokoroWorker();
     workerRef.current = kokoroWorker;
 
