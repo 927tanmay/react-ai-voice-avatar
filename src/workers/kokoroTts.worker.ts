@@ -44,7 +44,12 @@ const processTtsQueue = async () => {
       continue;
     }
     const cleanText = sanitizeForSpeech(item.text);
-    if (!cleanText || cleanText.length === 0) continue;
+    if (!cleanText || cleanText.length === 0) {
+      if (item.isLast) {
+        self.postMessage({ type: 'speechEnd' });
+      }
+      continue;
+    }
 
     try {
       const ttsResult = await kokoroTts.generate(cleanText, {
@@ -64,6 +69,9 @@ const processTtsQueue = async () => {
       });
     } catch (e: any) {
       console.error('[Kokoro Worker] TTS chunk error:', e);
+      if (item.isLast) {
+        self.postMessage({ type: 'speechEnd' });
+      }
     }
   }
 
@@ -86,6 +94,9 @@ self.onmessage = async (e: MessageEvent) => {
           const env = ort.env || (ort as any).default?.env;
           if (env) {
             env.logLevel = 'error';
+            if (env.wasm) {
+              env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
+            }
           }
         } catch (_) {
           // Continue if direct ORT import is handled internally by consumer bundlers
@@ -104,16 +115,16 @@ self.onmessage = async (e: MessageEvent) => {
       };
 
       try {
-        console.log('[Kokoro Worker] Initializing Kokoro-82M on WebGPU (q8 quantized)...');
+        console.log('[Kokoro Worker] Initializing Kokoro-82M on WebGPU (fp32)...');
         kokoroTts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-          dtype: 'q8',
+          dtype: 'fp32',
           device: 'webgpu',
           progress_callback: progressCallback,
         });
       } catch (webGpuErr) {
-        console.warn('[Kokoro Worker] WebGPU initialization failed, falling back to WASM...', webGpuErr);
+        console.warn('[Kokoro Worker] WebGPU initialization failed, falling back to WASM (fp32)...', webGpuErr);
         kokoroTts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-          dtype: 'q8',
+          dtype: 'fp32',
           device: 'wasm',
           progress_callback: progressCallback,
         });
