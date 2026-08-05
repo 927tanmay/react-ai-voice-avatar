@@ -84,6 +84,15 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
           configRef.current.onSpeechEnd?.();
         } else if (type === 'error') {
           console.error(`[Kokoro Worker] Error: ${payload.stage} — ${payload.message}`);
+          if (payload.stage === 'kokoro-init') {
+            setIsReady(false);
+            try {
+              kokoroWorker?.terminate();
+              workerRef.current = null;
+            } catch (termErr) {
+              console.warn('Error terminating failed worker on init failure:', termErr);
+            }
+          }
           configRef.current.onError?.(payload.stage, payload.message);
         }
       };

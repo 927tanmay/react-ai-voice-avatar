@@ -37,7 +37,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    exclude: ['kokoro-js', 'phonemizer']
+    exclude: ['react-ai-voice-avatar', 'kokoro-js', 'phonemizer']
   },
   worker: {
     format: 'es'

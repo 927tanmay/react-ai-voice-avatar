@@ -2,14 +2,33 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import dts from 'vite-plugin-dts';
 
+// Plugin to prevent Vite from converting static .wasm URL references into base64 data URIs in bundled workers
+const excludeOnnxWasmPlugin = () => ({
+  name: 'exclude-onnx-wasm',
+  enforce: 'pre' as const,
+  transform(code: string) {
+    if (code.includes('.wasm')) {
+      return {
+        code: code.replace(/new\s+URL\(\s*['"]([^'"]+\.wasm)['"]\s*,\s*import\.meta\.url\s*\)/g, (_, wasmFile) => {
+          return `new (globalThis.URL || URL)(${JSON.stringify(wasmFile)}, "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/").href`;
+        }),
+        map: null
+      };
+    }
+    return null;
+  }
+});
+
 export default defineConfig({
   plugins: [
+    excludeOnnxWasmPlugin(),
     dts({
       insertTypesEntry: true,
       include: ['src/**/*.ts', 'src/**/*.tsx']
     })
   ],
   build: {
+    assetsInlineLimit: 0,
     lib: {
       entry: resolve(import.meta.dirname, 'src/index.ts'),
       name: 'ReactAiVoiceAvatar',
@@ -38,6 +57,11 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
+    plugins: () => [excludeOnnxWasmPlugin()],
+    rollupOptions: {
+      external: (id) => /\.wasm($|\?)/.test(id),
+      output: { codeSplitting: false }
+    },
   },
   server: {
     headers: {

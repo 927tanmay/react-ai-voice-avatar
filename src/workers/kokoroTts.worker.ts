@@ -172,24 +172,38 @@ self.onmessage = async (e: MessageEvent) => {
 
       // Warmup & Emscripten filesystem readiness verification:
       // In production builds, eSpeak-NG dictionaries extract asynchronously via DecompressionStream.
-      // We run a lightweight warmup generation ('a') with auto-retries until voices are loaded.
+      // We validate operational status by verifying audio output length on a diagnostic probe sentence.
       let retries = 0;
+      let probeSuccess = false;
+      const probeText = 'The quick brown fox jumps over the lazy dog.';
       while (retries < 15) {
         try {
-          await Promise.race([
-            kokoroTts.generate('a', { voice: currentVoice || 'af_heart' }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Warmup generation timeout')), 8000))
+          const probe: any = await Promise.race([
+            kokoroTts.generate(probeText, { voice: currentVoice || 'af_heart' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Warmup generation timeout')), 15000))
           ]);
+          const audioLen = probe?.audio?.length || (probe?.audio instanceof Float32Array ? probe.audio.length : 0);
+          const sampleRate = probe?.sampling_rate || 24000;
+          const seconds = audioLen / sampleRate;
+          if (seconds < 2.0) {
+            throw new Error(`espeak voices not loaded (probe produced ${seconds.toFixed(2)}s, expected >2s)`);
+          }
+          console.log(`[Kokoro Worker] Warmup probe verified: ${seconds.toFixed(2)}s generated.`);
+          probeSuccess = true;
           break;
         } catch (warmupErr: any) {
           const msg = warmupErr?.message || String(warmupErr);
-          if (msg.includes('Invalid language identifier') || msg.includes('eSpeakNGWorker') || msg.includes('not initialized')) {
-            retries++;
-            await new Promise(r => setTimeout(r, 200));
-          } else {
-            break;
+          console.warn(`[Kokoro Worker] Warmup probe attempt ${retries + 1} failed: ${msg}. Retrying in 400ms...`);
+          retries++;
+          if (retries >= 15) {
+            throw new Error(`Kokoro initialization failed: espeak dictionary verification timed out after 15 attempts (${msg})`);
           }
+          await new Promise(r => setTimeout(r, 400));
         }
+      }
+
+      if (!probeSuccess) {
+        throw new Error('Kokoro initialization failed: espeak dictionary verification unsuccessful.');
       }
 
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 100 } });
