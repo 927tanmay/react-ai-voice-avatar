@@ -25,6 +25,12 @@ When implementing voice AI agents or 3D avatars in web applications, traditional
 npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 ```
 
+> [!NOTE]
+> **React 18 Users:** Installing the latest `@react-three/drei` defaults to version 10, which demands React 19. If your project runs on React 18, install compatible Three.js React bindings explicitly:
+> ```bash
+> npm install @react-three/drei@^9 @react-three/fiber@^8
+> ```
+
 ### ⚙️ Bundler & Server Configuration (Vite, Next.js & Webpack)
 
 Because our multi-threaded WASM and WebGPU engines leverage modern browser `SharedArrayBuffer` memory pipelines, your hosting server or bundler must emit standard Cross-Origin Isolation HTTP headers (`COOP`/`COEP`). Choose your framework configuration below:
@@ -37,7 +43,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    exclude: ['react-ai-voice-avatar', 'kokoro-js', 'phonemizer']
+    exclude: ['react-ai-voice-avatar', 'kokoro-js', 'phonemizer'],
+    include: ['@ricky0123/vad-web'], // CJS — must stay pre-bundled by Vite or VAD mic init fails with "exports is not defined"
   },
   worker: {
     format: 'es'
@@ -50,6 +57,10 @@ export default defineConfig({
   },
 });
 ```
+
+> [!TIP]
+> **Why is `optimizeDeps` needed in Vite?**  
+> Excluding `react-ai-voice-avatar` keeps `import.meta.url` properly pointing at its shipped worker assets during local development (`npm run dev`), preventing 404 worker loading errors. However, because `@ricky0123/vad-web` is a CommonJS dependency, it must stay in `include` so Vite pre-bundles it into ESM; otherwise, microphone initialization crashes with `ReferenceError: exports is not defined`. Note that this `optimizeDeps` block is strictly **dev-only**—production builds (`vite build`) do not require it!
 
 #### 🔺 Next.js (`next.config.mjs` or `next.config.js`)
 In Next.js (Webpack & Turbopack), register cross-origin headers directly inside your config export:
@@ -211,7 +222,7 @@ interface AiVoiceAvatarHandle {
 ## 🤝 Contributing & Open Issues Roadmap
 
 We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local development guides and our curated list of **Open Issues** available for contributors:
-1. **🎭 Expanding Regional 3D Avatar Personas**: We provide both Ananya (girl) and Aarav (boy) out of the box! We invite contributors to submit new royalty-free character GLB models (~3MB) rigged with standard 52 Apple ARKit facial blendshapes. Thanks to our JsDelivr GitHub Edge CDN architecture, adding new avatars adds **zero bytes** to our ~46KB NPM install footprint!
+1. **🎭 Expanding Regional 3D Avatar Personas**: We provide both Ananya (girl) and Aarav (boy) out of the box! We invite contributors to submit new royalty-free character GLB models (~3MB) rigged with standard 52 Apple ARKit facial blendshapes. Thanks to our JsDelivr GitHub Edge CDN architecture, adding new avatars adds **zero bytes** to our **~3.3 MB NPM install footprint** (across 25 files, shipping self-contained pre-bundled esbuild workers for zero-config compatibility across all consumer bundlers)!
 2. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
 3. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**: Streaming microphone energy to power custom UI visualizers and reactive HUDs.
 4. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**: Built-in 3D loading silhouettes while model meshes hydrate over networks.

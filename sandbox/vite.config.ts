@@ -13,7 +13,8 @@ export default defineConfig({
     dedupe: ['react', 'react-dom', 'three', '@react-three/fiber', '@react-three/drei']
   },
   optimizeDeps: {
-    exclude: ['react-ai-voice-avatar', 'kokoro-js', 'phonemizer']
+    exclude: ['react-ai-voice-avatar', 'kokoro-js', 'phonemizer'],
+    include: ['@ricky0123/vad-web'],
   },
   worker: {
     format: 'es'

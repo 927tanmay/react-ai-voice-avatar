@@ -79,7 +79,7 @@ Looking for impactful features to take up? We welcome pull requests for the foll
 
 ### 👑 Premier 3D Model & Animation Bounty
 1. **🎭 Expanding Regional 3D Avatar Personas & Blendshape Tuning**
-   - **Goal**: While we provide both Ananya (female) and Aarav (male) voice concierge meshes out of the box, we welcome community contributors to expand our gallery! Submit high-fidelity, royalty-free humanoid `.glb` models (~2MB to 4MB) equipped with standard 52 Apple ARKit blendshape morph targets. Uploading new armatures to our GitHub repository via our JsDelivr GitHub Edge CDN pipeline will introduce richer regional diversity without increasing our lightweight **~46KB NPM package footprint** by even a single byte!
+   - **Goal**: While we provide both Ananya (female) and Aarav (male) voice concierge meshes out of the box, we welcome community contributors to expand our gallery! Submit high-fidelity, royalty-free humanoid `.glb` models (~2MB to 4MB) equipped with standard 52 Apple ARKit blendshape morph targets. Uploading new armatures to our GitHub repository via our JsDelivr GitHub Edge CDN pipeline will introduce richer regional diversity without increasing our lightweight **~3.3 MB NPM package footprint** (across 25 files, shipping self-contained pre-bundled esbuild workers) by even a single byte!
 
 ### 🚀 Developer Experience & Enterprise UI Features
 2. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**
