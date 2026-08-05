@@ -2,6 +2,23 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import dts from 'vite-plugin-dts';
 
+// Plugin to switch worker URLs from TypeScript dev sources to pre-bundled esbuild scripts during library build
+const usePrebuiltWorkersPlugin = () => ({
+  name: 'use-prebuilt-workers',
+  enforce: 'pre' as const,
+  transform(code: string, id: string) {
+    if (id.includes('useKokoroWorker') || id.includes('useMLWorker')) {
+      return {
+        code: code
+          .replace("new URL('../workers/kokoroTts.worker.ts', import.meta.url)", "new URL(/* @vite-ignore */ 'assets/kokoroTts.worker.js', import.meta.url)")
+          .replace("new URL('../workers/mlPipeline.worker.ts', import.meta.url)", "new URL(/* @vite-ignore */ 'assets/mlPipeline.worker.js', import.meta.url)"),
+        map: null
+      };
+    }
+    return null;
+  }
+});
+
 // Plugin to prevent Vite from converting static .wasm URL references into base64 data URIs in bundled workers
 const excludeOnnxWasmPlugin = () => ({
   name: 'exclude-onnx-wasm',
@@ -21,6 +38,7 @@ const excludeOnnxWasmPlugin = () => ({
 
 export default defineConfig({
   plugins: [
+    usePrebuiltWorkersPlugin(),
     excludeOnnxWasmPlugin(),
     dts({
       insertTypesEntry: true,
