@@ -17,6 +17,8 @@ let isTtsProcessing = false;
 
 const sanitizeForSpeech = (text: string): string => {
   return text
+    // Strip pictographs and emojis to prevent vocal hallucination babble
+    .replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}/gu, '')
     // Remove markdown formatting: bold (**), italics (* or _), strikethroughs (~~), backticks
     .replace(/(\*{1,3}|_{1,3}|~~|`+)/g, '')
     // Remove markdown link syntax [label](url) -> label
@@ -47,6 +49,12 @@ const processTtsQueue = async () => {
     if (!cleanText || cleanText.length === 0) {
       if (item.isLast) {
         self.postMessage({ type: 'speechEnd' });
+      } else {
+        // Emit an empty speechOutput chunk so the main thread doesn't stall waiting for a dropped non-last chunk
+        self.postMessage({
+          type: 'speechOutput',
+          payload: { audio: new Float32Array(0), sampleRate: 24000, text: '', isLast: false }
+        });
       }
       continue;
     }
@@ -56,9 +64,15 @@ const processTtsQueue = async () => {
       let generateRetries = 0;
       while (generateRetries < 5) {
         try {
-          ttsResult = await kokoroTts.generate(cleanText, {
-            voice: currentVoice || 'af_heart',
-          });
+          // Wrap generate in a 30s timeout using Promise.race to prevent GPU hangs from blocking forever
+          ttsResult = await Promise.race([
+            kokoroTts.generate(cleanText, {
+              voice: currentVoice || 'af_heart',
+            }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Kokoro TTS generation timeout (30s exceeded)')), 30000)
+            )
+          ]);
           break;
         } catch (genErr: any) {
           const msg = genErr?.message || String(genErr);
@@ -86,6 +100,17 @@ const processTtsQueue = async () => {
       console.error('[Kokoro Worker] TTS chunk error:', e);
       if (item.isLast) {
         self.postMessage({ type: 'speechEnd' });
+      } else {
+        // Guarantee main thread recovery: emit a zero-sample fallback chunk for EVERY failed non-last item
+        self.postMessage({
+          type: 'speechOutput',
+          payload: {
+            audio: new Float32Array(0),
+            sampleRate: 24000,
+            text: cleanText,
+            isLast: false,
+          },
+        });
       }
     }
   }
@@ -151,7 +176,10 @@ self.onmessage = async (e: MessageEvent) => {
       let retries = 0;
       while (retries < 15) {
         try {
-          await kokoroTts.generate('a', { voice: currentVoice || 'af_heart' });
+          await Promise.race([
+            kokoroTts.generate('a', { voice: currentVoice || 'af_heart' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Warmup generation timeout')), 8000))
+          ]);
           break;
         } catch (warmupErr: any) {
           const msg = warmupErr?.message || String(warmupErr);
@@ -166,6 +194,8 @@ self.onmessage = async (e: MessageEvent) => {
 
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 100 } });
       self.postMessage({ type: 'ready' });
+      // Guarantee no stranded tasks: process any TTS jobs queued during model initialization
+      processTtsQueue();
     } catch (err: any) {
       console.error('[Kokoro Worker] Init failed:', err);
       self.postMessage({ type: 'error', payload: { stage: 'kokoro-init', message: err.message } });

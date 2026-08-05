@@ -62,6 +62,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const currentSpeechTextRef = useRef<string>('');
   const currentAudioDurationRef = useRef<number>(0);
   const playbackStartTimeRef = useRef<number>(0);
+  const playbackWatchdogRef = useRef<any>(null);
 
   // Keep latest config in ref for callbacks
   const configRef = useRef(config);
@@ -78,51 +79,94 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     if (audioQueueRef.current.length === 0) {
       if (!isWaitingForMoreRef.current) {
+        if (playbackWatchdogRef.current) {
+          clearTimeout(playbackWatchdogRef.current);
+          playbackWatchdogRef.current = null;
+        }
         setStatus('idle');
         configRef.current.onInferenceEnd?.();
         if (configRef.current.listenMode !== 'push-to-talk') {
           vadRef.current?.start();
         }
+      } else if (!playbackWatchdogRef.current) {
+        // Watchdog recovery: If nothing is playing and queue stays empty for ~10s while waiting for more chunks, recover pipeline
+        playbackWatchdogRef.current = setTimeout(() => {
+          console.warn('[Watchdog] Audio queue timed out waiting for further chunks (10s elapsed). Resetting to idle and restarting VAD.');
+          playbackWatchdogRef.current = null;
+          isWaitingForMoreRef.current = false;
+          isPlayingRef.current = false;
+          setStatus('idle');
+          configRef.current.onInferenceEnd?.();
+          if (configRef.current.listenMode !== 'push-to-talk') {
+            vadRef.current?.start();
+          }
+        }, 10000);
       }
       return;
     }
 
-    isPlayingRef.current = true;
-    const item = audioQueueRef.current.shift()!;
-    const ctx = audioContextRef.current;
-
-    const buffer = ctx.createBuffer(1, item.audioData.length, item.sampleRate);
-    buffer.copyToChannel(item.audioData as unknown as Float32Array<ArrayBuffer>, 0);
-
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-
-    if (analyser) {
-      source.connect(analyser);
-      analyser.connect(ctx.destination);
-    } else {
-      source.connect(ctx.destination);
+    // We have audio to process; clear any active watchdog timer
+    if (playbackWatchdogRef.current) {
+      clearTimeout(playbackWatchdogRef.current);
+      playbackWatchdogRef.current = null;
     }
 
-    source.onended = () => {
+    const item = audioQueueRef.current.shift()!;
+
+    // Guard against "poison pill" zero-length or invalid sampleRate chunks (e.g. MMS->Kokoro text forwarding or stripped emojis)
+    if (!item.audioData || item.audioData.length === 0 || !item.sampleRate || item.sampleRate <= 0) {
+      if (item.isLast) {
+        isWaitingForMoreRef.current = false;
+      }
+      // Recurse directly to next chunk or trigger idle completion without locking playback state
+      playNextInQueue();
+      return;
+    }
+
+    isPlayingRef.current = true;
+    const ctx = audioContextRef.current;
+
+    try {
+      const buffer = ctx.createBuffer(1, item.audioData.length, item.sampleRate);
+      buffer.copyToChannel(item.audioData as unknown as Float32Array<ArrayBuffer>, 0);
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+
+      if (analyser) {
+        source.connect(analyser);
+        analyser.connect(ctx.destination);
+      } else {
+        source.connect(ctx.destination);
+      }
+
+      source.onended = () => {
+        isPlayingRef.current = false;
+        currentSpeechTextRef.current = '';
+        currentAudioDurationRef.current = 0;
+        if (item.isLast) {
+          isWaitingForMoreRef.current = false;
+        }
+        playNextInQueue();
+      };
+
+      // Expose text + timing for the lip sync engine
+      currentSpeechTextRef.current = item.text;
+      currentAudioDurationRef.current = buffer.duration;
+      playbackStartTimeRef.current = ctx.currentTime;
+
+      setStatus('speaking');
+      configRef.current.onSpeechStart?.(item.text);
+      source.start(0);
+      currentAudioSourceRef.current = source;
+    } catch (playbackErr) {
+      console.error('[AiVoiceAvatar] Audio buffer creation/playback error, skipping chunk to recover pipeline:', playbackErr);
       isPlayingRef.current = false;
-      currentSpeechTextRef.current = '';
-      currentAudioDurationRef.current = 0;
       if (item.isLast) {
         isWaitingForMoreRef.current = false;
       }
       playNextInQueue();
-    };
-
-    // Expose text + timing for the lip sync engine
-    currentSpeechTextRef.current = item.text;
-    currentAudioDurationRef.current = buffer.duration;
-    playbackStartTimeRef.current = ctx.currentTime;
-
-    setStatus('speaking');
-    configRef.current.onSpeechStart?.(item.text);
-    source.start(0);
-    currentAudioSourceRef.current = source;
+    }
   }, [analyser]);
 
   const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, isLast: boolean = true) => {
@@ -138,6 +182,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [playNextInQueue]);
 
   const handleSpeechEnd = useCallback(() => {
+    if (playbackWatchdogRef.current) {
+      clearTimeout(playbackWatchdogRef.current);
+      playbackWatchdogRef.current = null;
+    }
     isWaitingForMoreRef.current = false;
     if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
       setStatus('idle');
@@ -345,6 +393,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             setStatus('listening');
             
             // Interrupt logic:
+            if (playbackWatchdogRef.current) {
+              clearTimeout(playbackWatchdogRef.current);
+              playbackWatchdogRef.current = null;
+            }
             audioQueueRef.current = [];
             isPlayingRef.current = false;
             isWaitingForMoreRef.current = false;
@@ -385,6 +437,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     return () => {
       mounted = false;
+      if (playbackWatchdogRef.current) {
+        clearTimeout(playbackWatchdogRef.current);
+        playbackWatchdogRef.current = null;
+      }
       try {
         const destroyPromise = vadRef.current?.destroy();
         if (destroyPromise && typeof destroyPromise.catch === 'function') {
@@ -420,6 +476,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, []);
 
   const interrupt = useCallback(() => {
+    if (playbackWatchdogRef.current) {
+      clearTimeout(playbackWatchdogRef.current);
+      playbackWatchdogRef.current = null;
+    }
     audioQueueRef.current = [];
     isPlayingRef.current = false;
     isWaitingForMoreRef.current = false;

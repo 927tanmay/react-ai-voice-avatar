@@ -169,13 +169,14 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === 'switchTts') {
     const { ttsVoice, ttsLanguage, ttsEngine } = payload;
+    const oldLanguage = currentTtsLanguage;
     if (ttsVoice) currentTtsVoice = ttsVoice;
     if (ttsLanguage) currentTtsLanguage = ttsLanguage;
     if (ttsEngine) currentTtsEngine = ttsEngine;
     console.log(`[ML Worker] Switched TTS configuration → Engine: ${currentTtsEngine}, Voice: ${currentTtsVoice}, Language: ${currentTtsLanguage}`);
     
-    // Load MMS pipeline for the new language if needed
-    if (!ttsPipeline || (ttsLanguage && ttsLanguage !== currentTtsLanguage)) {
+    // Load MMS pipeline only when running in MMS mode and either uninitialized or language changed
+    if (currentTtsEngine !== 'kokoro' && (!ttsPipeline || (ttsLanguage && ttsLanguage !== oldLanguage))) {
       const ttsRepo = currentTtsLanguage === 'hi-IN' ? 'Xenova/mms-tts-hin' : 'Xenova/mms-tts-eng';
       ttsPipeline = await pipeline('text-to-speech', ttsRepo, { device: 'wasm' });
     }
