@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "postinstall": "node ../scripts/fix-phonemizer.cjs",
+    "dev": "node ../scripts/fix-phonemizer.cjs && vite",
+    "build": "node ../scripts/fix-phonemizer.cjs && tsc && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
