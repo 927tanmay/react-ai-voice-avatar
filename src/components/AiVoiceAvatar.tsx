@@ -1,12 +1,13 @@
-import { forwardRef, useEffect, useState, useRef, useImperativeHandle } from 'react';
+import React, { forwardRef, useEffect, useState, useRef, useImperativeHandle, Suspense } from 'react';
 import { ThreeElements, useFrame } from '@react-three/fiber';
 import { useGLTF, Environment, Html } from '@react-three/drei';
-import { useControls, Leva } from 'leva';
 import * as THREE from 'three';
 import { resolveAvatarUrl } from '../lib/avatarAssets';
 import { StatusPill } from './StatusPill';
 import { useAiVoiceAvatar } from '../hooks/useAiVoiceAvatar';
 import { AudioLipSync } from '../lib/audioLipSync';
+
+const LazyLevaDebugPanel = React.lazy(() => import('./LevaDebugPanel'));
 import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
 import { AvatarDynamicsEngine } from '../lib/avatarDynamics';
 import type { VisemeWeights } from '../lib/visemeTable';
@@ -61,6 +62,12 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   lowMemoryMode?: boolean;
+
+  /** Optional overrides for self-hosting VAD and ONNX runtime WASM assets */
+  vadAssetPath?: string;
+  onnxWasmPath?: string;
+  /** Set to true to enable HTTP HEAD probe for local GLB files in / (disabled by default to prevent console 404s in SPAs) */
+  enableLocalAssetProbe?: boolean;
 
   showCaptions?: boolean;
   listenMode?: 'vad' | 'push-to-talk';
@@ -180,32 +187,7 @@ function AvatarModel({
     };
   }, [analyser]);
 
-  // Dev-only debug panel (Statically mapped so Leva doesn't break on lazy-load)
-  const controls = useControls(
-    'Morph Targets',
-    ARKIT_BLENDSHAPES.reduce((acc, key) => {
-      acc[key] = { value: 0, min: 0, max: 1 };
-      return acc;
-    }, {} as Record<string, any>),
-    { collapsed: true, render: () => Boolean(debug) }
-  );
-
-  // Apply debug controls to ALL morph target meshes if in debug mode
-  useFrame(() => {
-    if (typeof document !== 'undefined' && document.hidden) return;
-    if (debug && morphMeshesRef.current.length > 0) {
-      for (const mesh of morphMeshesRef.current) {
-        if (mesh.morphTargetInfluences && mesh.morphTargetDictionary) {
-          for (const key of Object.keys(controls)) {
-            const idx = mesh.morphTargetDictionary[key];
-            if (idx !== undefined) {
-              mesh.morphTargetInfluences[idx] = controls[key];
-            }
-          }
-        }
-      }
-    }
-  });
+  // Debug controls have been moved to LazyLevaDebugPanel (loaded dynamically only when debug={true})
 
   // ─── PHASE 5 & AVATAR DYNAMICS: Hybrid Lip Sync + Autonomous Micro-Expressions ───
   // Runs every frame. Reads FFT audio, text timing, and pointer coords → mutates meshes & bones directly at 60 FPS.
@@ -304,7 +286,16 @@ function AvatarModel({
     }
   });
 
-  return <primitive object={scene} />;
+  return (
+    <>
+      <primitive object={scene} />
+      {debug && (
+        <Suspense fallback={null}>
+          <LazyLevaDebugPanel blendshapes={ARKIT_BLENDSHAPES} morphMeshesRef={morphMeshesRef} />
+        </Suspense>
+      )}
+    </>
+  );
 }
 
 function StudioLighting({ preset = 'studio' }: { preset?: string }) {
@@ -423,6 +414,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
       props.loadingProgress?.(pct, label);
     },
     lowMemoryMode: props.lowMemoryMode,
+    vadAssetPath: props.vadAssetPath,
+    onnxWasmPath: props.onnxWasmPath,
     listenMode: props.listenMode,
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
@@ -461,7 +454,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
       return;
     }
     let isMounted = true;
-    resolveAvatarUrl(avatarPreset, loadingProgress).then(url => {
+    resolveAvatarUrl(avatarPreset, loadingProgress, props.enableLocalAssetProbe).then(url => {
       if (isMounted) setResolvedUrl(url);
     });
     return () => { isMounted = false; };
@@ -489,8 +482,6 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
       {(props.showCaptions || !props.hideStatusPill || !debug) && (
         <Html fullscreen zIndexRange={[100, 0]}>
           <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-            <Leva hidden={!debug} />
-
             {props.showCaptions && caption && (
               <div style={{
                 position: 'absolute', bottom: '110px', top: 'auto', left: '48px', transform: 'none',

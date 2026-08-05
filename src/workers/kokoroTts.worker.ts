@@ -52,9 +52,24 @@ const processTtsQueue = async () => {
     }
 
     try {
-      const ttsResult = await kokoroTts.generate(cleanText, {
-        voice: currentVoice || 'af_heart',
-      });
+      let ttsResult: any = null;
+      let generateRetries = 0;
+      while (generateRetries < 5) {
+        try {
+          ttsResult = await kokoroTts.generate(cleanText, {
+            voice: currentVoice || 'af_heart',
+          });
+          break;
+        } catch (genErr: any) {
+          const msg = genErr?.message || String(genErr);
+          if (msg.includes('Invalid language identifier') && generateRetries < 4) {
+            generateRetries++;
+            await new Promise(r => setTimeout(r, 250));
+          } else {
+            throw genErr;
+          }
+        }
+      }
       const audioData = ttsResult.audio instanceof Float32Array 
         ? ttsResult.audio 
         : new Float32Array(ttsResult.audio);
@@ -129,6 +144,26 @@ self.onmessage = async (e: MessageEvent) => {
           progress_callback: progressCallback,
         });
       }
+
+      // Warmup & Emscripten filesystem readiness verification:
+      // In production builds, eSpeak-NG dictionaries extract asynchronously via DecompressionStream.
+      // We run a lightweight warmup generation ('a') with auto-retries until voices are loaded.
+      let retries = 0;
+      while (retries < 15) {
+        try {
+          await kokoroTts.generate('a', { voice: currentVoice || 'af_heart' });
+          break;
+        } catch (warmupErr: any) {
+          const msg = warmupErr?.message || String(warmupErr);
+          if (msg.includes('Invalid language identifier') || msg.includes('eSpeakNGWorker') || msg.includes('not initialized')) {
+            retries++;
+            await new Promise(r => setTimeout(r, 200));
+          } else {
+            break;
+          }
+        }
+      }
+
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 100 } });
       self.postMessage({ type: 'ready' });
     } catch (err: any) {

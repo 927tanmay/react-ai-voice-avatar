@@ -17,21 +17,8 @@ export default defineConfig({
       fileName: (format) => `index.${format === 'es' ? 'js' : 'cjs'}`
     },
     rollupOptions: {
-      // Externalize all dependencies and peerDependencies so they aren't bundled into our library
-      external: [
-        'react',
-        'react-dom',
-        'three',
-        '@react-three/fiber',
-        '@react-three/drei',
-        '@huggingface/transformers',
-        '@ricky0123/vad-web',
-        'kokoro-js',
-        'phonemizer',
-        'leva',
-        'onnxruntime-web',
-        'web-audio-api',
-      ],
+      // Externalize all dependencies and peerDependencies (including subpaths like react/jsx-runtime)
+      external: (id) => /^(react|react-dom|three|@react-three\/(fiber|drei)|@huggingface\/transformers|@ricky0123\/vad-web|kokoro-js|phonemizer|leva|onnxruntime-web|web-audio-api)(\/|$)/.test(id),
       output: {
         globals: {
           react: 'React',
@@ -51,22 +38,6 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
-    rollupOptions: {
-      external: [
-        'react',
-        'react-dom',
-        'three',
-        '@react-three/fiber',
-        '@react-three/drei',
-        '@huggingface/transformers',
-        '@ricky0123/vad-web',
-        'kokoro-js',
-        'phonemizer',
-        'leva',
-        'onnxruntime-web',
-        'web-audio-api',
-      ]
-    }
   },
   server: {
     headers: {

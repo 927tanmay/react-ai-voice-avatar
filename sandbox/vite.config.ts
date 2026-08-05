@@ -19,6 +19,10 @@ export default defineConfig({
     format: 'es'
   },
   server: {
+    fs: {
+      // Allow serving worker files and assets from the parent workspace root (~/react-indic-avatar/src)
+      allow: ['..']
+    },
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'

@@ -1,6 +1,7 @@
 export async function resolveAvatarUrl(
   preset: 'ananya' | 'aarav' | 'default' | 'kiosk' = 'ananya',
-  onProgress?: (pct: number, label: string) => void
+  onProgress?: (pct: number, label: string) => void,
+  enableLocalAssetProbe: boolean = false
 ): Promise<string> {
   const fileMap: Record<string, string> = {
     ananya: 'ananya.glb',
@@ -16,20 +17,22 @@ export async function resolveAvatarUrl(
 
   let resolvedUrl = cdnUrl;
 
-  try {
-    // Perform a lightweight HTTP HEAD probe to check if the asset is hosted locally in public/
-    const headResponse = await fetch(localPath, { method: 'HEAD' });
-    
-    // Ensure status is OK (200) AND content-type is not an HTML 404 SPA routing fallback page
-    if (headResponse.ok) {
-      const contentType = headResponse.headers.get('content-type') || '';
-      if (!contentType.toLowerCase().includes('text/html')) {
-        resolvedUrl = localPath;
+  if (enableLocalAssetProbe) {
+    try {
+      // Perform a lightweight HTTP HEAD probe to check if the asset is hosted locally in public/
+      const headResponse = await fetch(localPath, { method: 'HEAD' });
+      
+      // Ensure status is OK (200) AND content-type is not an HTML 404 SPA routing fallback page
+      if (headResponse.ok) {
+        const contentType = headResponse.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().includes('text/html')) {
+          resolvedUrl = localPath;
+        }
       }
+    } catch (e) {
+      // Local check failed or offline without local file, seamlessly fall back to global CDN URL
+      resolvedUrl = cdnUrl;
     }
-  } catch (e) {
-    // Local check failed or offline without local file, seamlessly fall back to global CDN URL
-    resolvedUrl = cdnUrl;
   }
 
   // Stream asset download with real-time progress notifications if callback is attached

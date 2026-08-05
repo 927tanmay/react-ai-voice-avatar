@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import * as vad from '@ricky0123/vad-web';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
 import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
@@ -18,6 +17,8 @@ export interface UseAiVoiceAvatarConfig {
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
+  vadAssetPath?: string;
+  onnxWasmPath?: string;
   listenMode?: 'vad' | 'push-to-talk';
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
@@ -51,7 +52,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const [analyser, setAnalyser] = useState<AnalyserNode | undefined>(undefined);
   const [micError, setMicError] = useState<string | null>(null);
   
-  const vadRef = useRef<vad.MicVAD | null>(null);
+  const vadRef = useRef<any | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -71,6 +72,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const playNextInQueue = useCallback(() => {
     if (isPlayingRef.current || !audioContextRef.current) return;
     
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+
     if (audioQueueRef.current.length === 0) {
       if (!isWaitingForMoreRef.current) {
         setStatus('idle');
@@ -328,10 +333,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           setAnalyser(analyserNode);
         }
 
+        const vad = await import('@ricky0123/vad-web');
         const myvad = await vad.MicVAD.new({
           getStream: () => Promise.resolve(stream),
-          baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
-          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/",
+          baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
+          onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/",
           onSpeechStart: () => {
             if (!mounted) return;
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway

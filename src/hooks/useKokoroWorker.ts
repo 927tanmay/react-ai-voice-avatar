@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-// @ts-ignore
-import KokoroWorker from '../workers/kokoroTts.worker?worker';
 
 /**
  * useKokoroWorker — manages a dedicated Kokoro-82M TTS worker.
@@ -44,42 +42,62 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     }
 
     let isMounted = true;
-    // Lazy-load the Kokoro worker (managed by Vite as a dedicated ESM chunk, NOT inlined)
-    const kokoroWorker = new KokoroWorker();
-    workerRef.current = kokoroWorker;
+    let kokoroWorker: Worker | null = null;
 
-    kokoroWorker.postMessage({
-      type: 'init',
-      payload: { voice: configRef.current.voice || 'af_heart' },
-    });
+    try {
+      // Standard ECMAScript Worker instantiation for cross-bundler compatibility (Vite, Next.js, Webpack)
+      kokoroWorker = new Worker(new URL('../workers/kokoroTts.worker.ts', import.meta.url), { type: 'module' });
+      workerRef.current = kokoroWorker;
 
-    kokoroWorker.onmessage = (e: MessageEvent) => {
-      if (!isMounted) return;
-      const { type, payload } = e.data;
+      kokoroWorker.onerror = (err) => {
+        console.error('[Kokoro Worker] Runtime initialization or compilation error:', err);
+        configRef.current.onError?.('kokoro-worker', err.message || 'Failed to initialize Kokoro TTS worker thread.');
+      };
 
-      if (type === 'ready') {
-        setIsReady(true);
-        configRef.current.onReady?.();
-      } else if (type === 'loadingProgress') {
-        configRef.current.loadingProgress?.(payload.pct, payload.model);
-      } else if (type === 'speechOutput') {
-        configRef.current.onSpeechOutput?.(
-          payload.audio,
-          payload.sampleRate,
-          payload.text,
-          payload.isLast
-        );
-      } else if (type === 'speechEnd') {
-        configRef.current.onSpeechEnd?.();
-      } else if (type === 'error') {
-        console.error(`[Kokoro Worker] Error: ${payload.stage} — ${payload.message}`);
-        configRef.current.onError?.(payload.stage, payload.message);
-      }
-    };
+      kokoroWorker.onmessageerror = (err) => {
+        console.error('[Kokoro Worker] Message deserialization error:', err);
+        configRef.current.onError?.('kokoro-message', 'Failed to deserialize message from Kokoro TTS worker.');
+      };
+
+      kokoroWorker.postMessage({
+        type: 'init',
+        payload: { voice: configRef.current.voice || 'af_heart' },
+      });
+
+      kokoroWorker.onmessage = (e: MessageEvent) => {
+        if (!isMounted) return;
+        const { type, payload } = e.data;
+
+        if (type === 'ready') {
+          setIsReady(true);
+          configRef.current.onReady?.();
+        } else if (type === 'loadingProgress') {
+          configRef.current.loadingProgress?.(payload.pct, payload.model);
+        } else if (type === 'speechOutput') {
+          configRef.current.onSpeechOutput?.(
+            payload.audio,
+            payload.sampleRate,
+            payload.text,
+            payload.isLast
+          );
+        } else if (type === 'speechEnd') {
+          configRef.current.onSpeechEnd?.();
+        } else if (type === 'error') {
+          console.error(`[Kokoro Worker] Error: ${payload.stage} — ${payload.message}`);
+          configRef.current.onError?.(payload.stage, payload.message);
+        }
+      };
+    } catch (err: any) {
+      console.error('[Kokoro Worker] Failed to construct Web Worker:', err);
+      configRef.current.onError?.('kokoro-worker-construct', err?.message || 'Failed to instantiate Kokoro Worker.');
+      return;
+    }
 
     return () => {
       isMounted = false;
-      kokoroWorker.terminate();
+      if (kokoroWorker) {
+        kokoroWorker.terminate();
+      }
       workerRef.current = null;
       setIsReady(false);
     };
