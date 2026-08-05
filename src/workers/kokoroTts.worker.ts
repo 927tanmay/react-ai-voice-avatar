@@ -1,3 +1,13 @@
+// Silence benign ONNX Runtime optimization notices (e.g. shape node fallbacks to CPU EP) in DevTools console
+const origWarn = console.warn;
+const origError = console.error;
+const isBenignOrtNotice = (...args: any[]) => {
+  const str = args.map(a => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
+  return str.includes('VerifyEachNodeIsAssignedToAnEp') || str.includes('preferred execution providers');
+};
+console.warn = (...args: any[]) => { if (!isBenignOrtNotice(...args)) origWarn.apply(console, args as any); };
+console.error = (...args: any[]) => { if (!isBenignOrtNotice(...args)) origError.apply(console, args as any); };
+
 let KokoroTTS: any = null;
 let kokoroTts: any = null;
 let currentVoice: string = 'af_heart';
