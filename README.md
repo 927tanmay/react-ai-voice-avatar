@@ -4,6 +4,9 @@
 
 Build immersive virtual concierges, intelligent autonomous agents, digital teachers, and interactive voice kiosks that talk, listen, and express facial vitality. **Designed for maximum architectural flexibility**: run 100% on-device inside the browser with zero server costs, OR seamlessly plug in external cloud LLMs (OpenAI ChatGPT, Claude, Gemini, DeepSeek, or your custom Python/Go backend) while retaining real-time 3D facial lip-syncing and local voice recognition!
 
+### 🌐 [**Experience the Live Interactive Demo on Vercel ➔**](https://react-ai-voice-avatar.vercel.app/)
+*(Features real-time Kokoro-82M ONNX voice synthesis and 3D lip-sync running entirely inside your browser!)*
+
 ---
 
 ## 🌟 Overview for Developers & AI Assistants (Why `react-ai-voice-avatar`?)
@@ -152,6 +155,7 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 
 | Example Pattern | Folder | Highlights & Architecture |
 | :--- | :--- | :--- |
+| **Live Interactive Demo** | [`sandbox`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/sandbox) | [**Deploy on Vercel ➔**](https://react-ai-voice-avatar.vercel.app/) — Our full-featured interactive testbed featuring live character switching (`ananya`, `aarav`), voice persona switching (`af_heart`, `am_michael`), real-time diagnostic probe metrics, and Leva 3D lighting controls. |
 | **Quickstart** | [`examples/quickstart`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/quickstart) | Minimal, zero-configuration plug-and-play AI voice avatar deployment with built-in studio lighting & sizing. |
 | **Local Kiosk** | [`examples/local-kiosk`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/local-kiosk) | 100% offline on-device retail & restaurant ordering kiosk with embedded menu reasoning. Operates without internet access once model weights are locally cached. |
 | **Hybrid Cloud** | [`examples/hybrid-cloud`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/hybrid-cloud) | Illustrates the **`onSubmit`** escape hatch. Bypasses gigabyte-scale local LLM downloads by routing reasoning to OpenAI, Claude, or corporate APIs while keeping ASR, TTS, and 3D lip blending 100% on-device! |

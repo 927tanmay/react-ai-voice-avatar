@@ -34,7 +34,7 @@
   "bugs": {
     "url": "https://github.com/927tanmay/react-ai-voice-avatar/issues"
   },
-  "homepage": "https://github.com/927tanmay/react-ai-voice-avatar#readme",
+  "homepage": "https://react-ai-voice-avatar.vercel.app/",
   "engines": {
     "node": ">=18"
   },
