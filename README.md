@@ -19,15 +19,15 @@ When implementing voice AI agents or 3D avatars in web applications, traditional
 
 **`react-ai-voice-avatar`** provides a complete, hybrid-ready conversational frontend architecture executing inside browser Web Workers and WebGPU memory:
 1. **Real-Time Speech Recognition (ASR)**: On-device **WebGPU Whisper** streaming transcribing with automated VAD (Voice Activity Detection), ensuring raw microphone audio never eavesdrops over network channels.
-2. **Hybrid-Ready Neural Reasoning (LLM)**: Run ultra-fast client-side **SmolLM2 (~80MB)** models out of the box for lightweight offline usage, or use our simple **`onSubmit` escape hatch** to route transcripts instantly to external cloud LLM endpoints (OpenAI, Claude, LangChain, or custom APIs) with zero client-side LLM downloading!
+2. **Hybrid-Ready Neural Reasoning (LLM)**: Connect your existing cloud LLM endpoints (OpenAI, Claude, LangChain, or custom APIs) via our simple **`onSubmit` escape hatch** for instant zero-download initialization, or run client-side **Qwen 2.5 (0.5B)** WebGPU models out of the box for completely airgapped offline privacy!
 3. **Natural Voice Synthesis (TTS)**: High-fidelity **Kokoro-82M ONNX** neural vocal synthesis with multi-voice emotion modeling and **Meta MMS** worldwide multilingual support (featuring first-class Indic languages: Hindi, Bengali, Tamil, Telugu, Marathi).
 4. **Autonomous Facial Vitality & Lip-Sync**: A dual-engine O(1) phonetic timeline and real-time audio FFT spectral blender driving 3D ARKit blendshapes at 60 FPS without touching React state. Features autonomous eye tracking, micro-saccade darting, acoustic eyebrow elevation, and spontaneous blinking!
 5. **Zero-Config CDN Asset Fallback**: Automatically serves packaged 3D `.glb` character models over global edge CDNs out of the box, with local-first offline caching.
 
 ### 🚀 The Enterprise Architecture Advantage: Zero-Download Cloud LLM Routing (`onSubmit`)
-While our engine supports completely local offline inference (powered by lightweight ~80MB **SmolLM2-135M** models out of the box so demo users don't face long load times), production web applications rarely want end users downloading LLM weights over the network.
+While our engine supports completely local offline inference (powered by **Qwen 2.5 WebGPU** models when offline execution is desired), production web applications rarely want end users waiting for heavy LLM weight downloads over the network.
 
-**`react-ai-voice-avatar` is engineered first and foremost as an autonomous conversational frontend architecture.** By simply providing an **`onSubmit`** callback, the avatar instantly stops all client-side LLM model downloading and seamlessly functions as a high-performance presentation engine for your cloud backends (OpenAI ChatGPT, Claude 3.5, Gemini, DeepSeek, LangChain, or proprietary servers). Your server outputs text, while our browser Web Workers autonomously handle real-time speech recognition (Whisper), neural voice synthesis (Kokoro), and 60 FPS 3D ARKit lip-syncing without server-side GPU video streaming costs!
+**`react-ai-voice-avatar` is engineered first and foremost as an autonomous conversational frontend architecture.** In our live Vercel demo and enterprise deployments, supplying an **`onSubmit`** callback instantly halts all client-side LLM model downloading and initializes in mere seconds. It seamlessly functions as a high-performance presentation engine for your cloud backends (OpenAI ChatGPT, Claude 3.5, Gemini, DeepSeek, LangChain, or proprietary servers). Your server outputs text, while our browser Web Workers autonomously execute real-time speech recognition (Whisper), neural voice synthesis (Kokoro), and 60 FPS 3D ARKit lip-syncing without server-side GPU video streaming costs!
 
 ---
 
@@ -184,7 +184,7 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 | `modelSrc` | `string` | `undefined` | Absolute local path or remote URL to a custom GLTF/GLB humanoid armature avatar model. |
 | `lightingPreset` | `'studio' \| 'cyberpunk_violet' \| 'cool_azure' \| 'warm_amber' \| 'clean_white' \| 'none'` | `'studio'` | Pre-built cinematic studio lighting atmospheres directly applied to your 3D viewport without manual Three.js configuration! |
 | `systemPrompt` | `string` | `"You are Ananya..."`| Conversational persona directives and context injected into active LLMs. |
-| `llmModel` | `string` | `"onnx-community/SmolLM2-135M-Instruct"` | Lightweight Hugging Face identifier (~80MB in q4) for rapid-loading client-side WebGPU reasoning weights when `onSubmit` is not used. |
+| `llmModel` | `string` | `"onnx-community/Qwen2.5-0.5B-Instruct"` | Hugging Face identifier for local client-side WebGPU Transformer reasoning weights when offline mode is used without `onSubmit`. |
 | `ttsEngine` | `'kokoro' \| 'mms'` | `'kokoro'` | High-fidelity neural voice synthesis engine executing inside dedicated Web Workers. |
 | `ttsVoice` | `string` | `'af_heart'` | Neural voice profile timbre (e.g., `af_heart`, `am_michael`, `af_bella`, `hi_female`). |
 | `ttsLanguage`| `'en-US' \| 'hi-IN' \| 'bn-IN' \| 'ta-IN' \| 'te-IN' \| 'mr-IN'` | `'en-US'` | Primary speech vocalization dialect routing. |

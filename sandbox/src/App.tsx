@@ -70,6 +70,17 @@ export const App: React.FC = () => {
   const [_avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [activePersonaId, setActivePersonaId] = useState<'ananya' | 'aarav'>('aarav');
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
+  const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud');
+
+  const handleCloudSubmit = async (text: string): Promise<string> => {
+    // Simulated cloud API response demonstrating instant conversational lip-sync without local model downloads
+    await new Promise(r => setTimeout(r, 600));
+    const lower = text.toLowerCase();
+    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
+      return `Hello there! I heard you say "${text}". Notice how my speech recognition and 3D lip-sync run entirely in your browser with zero local LLM downloads!`;
+    }
+    return `I heard you say: "${text}". In production, your cloud backend or OpenAI endpoint supplies this response via our onSubmit prop, skipping heavy local model downloads completely while keeping facial animation 100% client-side!`;
+  };
   
   // Dynamic TTS Engine Configuration & Seamless Switching
   const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>('mms');
@@ -133,31 +144,6 @@ export const App: React.FC = () => {
             {ttsEngine === 'kokoro' ? 'Kokoro-82M Natural Voice' : 'Meta MMS-TTS Engine Ready'}
           </span>
         </div>
-      </div>
-
-      {/* Architectural Highlights - Top Left beneath Branding */}
-      <div style={{
-        position: 'absolute',
-        top: '196px',
-        left: '24px',
-        zIndex: 500,
-        background: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(56, 189, 248, 0.3)',
-        padding: '14px 18px',
-        borderRadius: '16px',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-        maxWidth: '320px',
-      }}>
-        <div style={{ fontSize: '12px', fontWeight: 700, color: '#38BDF8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>🏗️</span> Production Hybrid Architecture
-        </div>
-        <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#CBD5E1', lineHeight: '1.4' }}>
-          <strong>⚡ Ultra-Fast Demo Mode:</strong> Powered locally by lightweight <strong>SmolLM2-135M (~80MB)</strong> for rapid interactive startup.
-        </p>
-        <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', lineHeight: '1.4', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '8px' }}>
-          <strong>🚀 Zero-Download Enterprise APIs:</strong> In production apps, connect OpenAI, Claude, or custom LLMs via the <code>onSubmit</code> prop to skip client-side LLM downloads completely while keeping 60 FPS 3D lip-sync & Whisper recognition 100% on-device!
-        </p>
       </div>
 
       {/* Avatar Persona & TTS Engine Selector - Top Right */}
@@ -318,6 +304,59 @@ export const App: React.FC = () => {
           )}
         </div>
 
+        {/* Intelligence Architecture Switcher Card */}
+        <div style={{
+          background: 'rgba(20, 22, 28, 0.85)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '20px',
+          padding: '14px 16px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
+        }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            🧠 Intelligence Architecture
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+            <button
+              onClick={() => setLlmMode('cloud')}
+              style={{
+                background: llmMode === 'cloud' ? '#0284C7' : 'rgba(255, 255, 255, 0.05)',
+                color: llmMode === 'cloud' ? '#FFFFFF' : '#94A3B8',
+                border: llmMode === 'cloud' ? '1px solid transparent' : '1px solid rgba(255, 255, 255, 0.1)',
+                padding: '8px 8px',
+                borderRadius: '10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              ☁️ Cloud API (0 MB)
+            </button>
+            <button
+              onClick={() => setLlmMode('local')}
+              style={{
+                background: llmMode === 'local' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)',
+                color: llmMode === 'local' ? '#FFFFFF' : '#94A3B8',
+                border: llmMode === 'local' ? '1px solid transparent' : '1px solid rgba(255, 255, 255, 0.1)',
+                padding: '8px 8px',
+                borderRadius: '10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              🔒 Edge Qwen 0.5B
+            </button>
+          </div>
+          <p style={{ margin: 0, fontSize: '11px', color: '#64748B', lineHeight: '1.3' }}>
+            {llmMode === 'cloud'
+              ? '⚡ Instant setup! Uses onSubmit to simulate cloud endpoints (OpenAI), skipping heavy local LLM downloads entirely!'
+              : '📥 Downloads Qwen 0.5B (~350MB) via WebGPU for completely airgapped offline reasoning.'}
+          </p>
+        </div>
+
         {/* Cinematic Lighting Atmosphere Card */}
         <div style={{
           background: 'rgba(20, 22, 28, 0.85)',
@@ -375,10 +414,11 @@ export const App: React.FC = () => {
         {/* React AI Voice Avatar component with dual-worker TTS architecture */}
         <AiVoiceAvatar
           ref={avatarRef}
-          key={currentPersona.id}
+          key={`${currentPersona.id}-${llmMode}`}
           avatarPreset={currentPersona.preset}
           lightingPreset={lightingPreset}
-          llmModel="onnx-community/SmolLM2-135M-Instruct"
+          llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
+          onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
           systemPrompt={currentPersona.systemPrompt}
           ttsEngine={ttsEngine}
           ttsVoice={ttsVoice}
