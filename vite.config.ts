@@ -10,8 +10,8 @@ const usePrebuiltWorkersPlugin = () => ({
     if (id.includes('useKokoroWorker') || id.includes('useMLWorker')) {
       return {
         code: code
-          .replace("new URL('../workers/kokoroTts.worker.ts', import.meta.url)", "new URL(/* @vite-ignore */ 'assets/kokoroTts.worker.js', import.meta.url)")
-          .replace("new URL('../workers/mlPipeline.worker.ts', import.meta.url)", "new URL(/* @vite-ignore */ 'assets/mlPipeline.worker.js', import.meta.url)"),
+          .replace("new Worker(new URL('../workers/kokoroTts.worker.ts', import.meta.url), { type: 'module' })", "new Worker(String(new URL(/* @vite-ignore */ 'assets/kokoroTts.worker.js?url', import.meta.url)), { type: 'module' })")
+          .replace("new Worker(new URL('../workers/mlPipeline.worker.ts', import.meta.url), { type: 'module' })", "new Worker(String(new URL(/* @vite-ignore */ 'assets/mlPipeline.worker.js?url', import.meta.url)), { type: 'module' })"),
         map: null
       };
     }

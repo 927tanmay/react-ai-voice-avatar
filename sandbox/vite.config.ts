@@ -3,13 +3,13 @@ import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   resolve: {
-    alias: {
+    alias: mode === 'development' ? {
       // Resolve directly from source so Vite handles workers natively in dev
       'react-ai-voice-avatar': resolve(import.meta.dirname, '../src/index.ts'),
-    },
+    } : {},
     dedupe: ['react', 'react-dom', 'three', '@react-three/fiber', '@react-three/drei']
   },
   optimizeDeps: {
@@ -29,4 +29,4 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp'
     }
   }
-})
+}))

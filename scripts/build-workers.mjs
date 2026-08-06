@@ -1,5 +1,6 @@
 import * as esbuild from 'esbuild';
 import fs from 'fs/promises';
+import crypto from 'crypto';
 
 const nodeBuiltins = [
   'fs', 'path', 'crypto', 'os', 'url', 'module', 'worker_threads', 'perf_hooks',
@@ -68,6 +69,20 @@ async function build() {
     minify: true,
     plugins: [stubNodeBuiltinsPlugin, ignoreWasmPlugin],
   });
+
+  // Build-time asset validation and SHA-256 generation
+  const kokoroBuffer = await fs.readFile('dist/assets/kokoroTts.worker.js');
+  const mlBuffer = await fs.readFile('dist/assets/mlPipeline.worker.js');
+  
+  const kokoroHash = crypto.createHash('sha256').update(kokoroBuffer).digest('hex');
+  const mlHash = crypto.createHash('sha256').update(mlBuffer).digest('hex');
+
+  console.log(`[Esbuild Verification] Kokoro Worker -> Size: ${kokoroBuffer.length} bytes | SHA-256: ${kokoroHash}`);
+  console.log(`[Esbuild Verification] ML Pipeline Worker -> Size: ${mlBuffer.length} bytes | SHA-256: ${mlHash}`);
+
+  if (kokoroBuffer.length < 2000000) {
+    throw new Error(`Build failure: Kokoro worker size (${kokoroBuffer.length} bytes) is unusually small (<2MB). Emscripten dependencies may not have bundled correctly.`);
+  }
 
   // Remove @vite-ignore comments from the published library so consumer bundlers (Vite/Webpack)
   // properly recognize and copy the pre-bundled worker assets into their production outputs.

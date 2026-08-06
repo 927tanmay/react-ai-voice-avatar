@@ -23,6 +23,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
   const workerRef = useRef<Worker | null>(null);
   const [isReady, setIsReady] = useState(false);
   const configRef = useRef(config);
+  const recreateAttemptsRef = useRef(0);
 
   useEffect(() => {
     configRef.current = config;
@@ -43,67 +44,94 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
 
     let isMounted = true;
     let kokoroWorker: Worker | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    try {
-      // Standard ECMAScript Worker instantiation for cross-bundler compatibility (Vite, Next.js, Webpack)
-      kokoroWorker = new Worker(new URL('../workers/kokoroTts.worker.ts', import.meta.url), { type: 'module' });
-      workerRef.current = kokoroWorker;
+    const spawnWorker = () => {
+      if (!isMounted || !config.enabled) return;
+      try {
+        // Standard ECMAScript Worker instantiation for cross-bundler compatibility (Vite, Next.js, Webpack)
+        kokoroWorker = new Worker(new URL('../workers/kokoroTts.worker.ts', import.meta.url), { type: 'module' });
+        workerRef.current = kokoroWorker;
 
-      kokoroWorker.onerror = (err) => {
-        console.error('[Kokoro Worker] Runtime initialization or compilation error:', err);
-        configRef.current.onError?.('kokoro-worker', err.message || 'Failed to initialize Kokoro TTS worker thread.');
-      };
+        kokoroWorker.onerror = (err) => {
+          console.error('[Kokoro Worker] Runtime initialization or compilation error:', err);
+          configRef.current.onError?.('kokoro-worker', err.message || 'Failed to initialize Kokoro TTS worker thread.');
+        };
 
-      kokoroWorker.onmessageerror = (err) => {
-        console.error('[Kokoro Worker] Message deserialization error:', err);
-        configRef.current.onError?.('kokoro-message', 'Failed to deserialize message from Kokoro TTS worker.');
-      };
+        kokoroWorker.onmessageerror = (err) => {
+          console.error('[Kokoro Worker] Message deserialization error:', err);
+          configRef.current.onError?.('kokoro-message', 'Failed to deserialize message from Kokoro TTS worker.');
+        };
 
-      kokoroWorker.postMessage({
-        type: 'init',
-        payload: { voice: configRef.current.voice || 'af_heart' },
-      });
+        kokoroWorker.postMessage({
+          type: 'init',
+          payload: { voice: configRef.current.voice || 'af_heart' },
+        });
 
-      kokoroWorker.onmessage = (e: MessageEvent) => {
-        if (!isMounted) return;
-        const { type, payload } = e.data;
+        kokoroWorker.onmessage = (e: MessageEvent) => {
+          if (!isMounted) return;
+          const { type, payload } = e.data;
 
-        if (type === 'ready') {
-          setIsReady(true);
-          configRef.current.onReady?.();
-        } else if (type === 'loadingProgress') {
-          configRef.current.loadingProgress?.(payload.pct, payload.model);
-        } else if (type === 'speechOutput') {
-          configRef.current.onSpeechOutput?.(
-            payload.audio,
-            payload.sampleRate,
-            payload.text,
-            payload.isLast
-          );
-        } else if (type === 'speechEnd') {
-          configRef.current.onSpeechEnd?.();
-        } else if (type === 'error') {
-          console.error(`[Kokoro Worker] Error: ${payload.stage} — ${payload.message}`);
-          if (payload.stage === 'kokoro-init') {
+          if (type === 'ready') {
+            recreateAttemptsRef.current = 0;
+            setIsReady(true);
+            configRef.current.onReady?.();
+          } else if (type === 'loadingProgress') {
+            configRef.current.loadingProgress?.(payload.pct, payload.model);
+          } else if (type === 'recreate_required') {
             setIsReady(false);
+            console.warn(`[Kokoro Worker] Re-creation required: ${payload?.message || 'Espeak C memory uninitialized'}`);
             try {
               kokoroWorker?.terminate();
-              workerRef.current = null;
             } catch (termErr) {
-              console.warn('Error terminating failed worker on init failure:', termErr);
+              console.warn('Error terminating worker for clean re-creation:', termErr);
             }
+            workerRef.current = null;
+
+            if (recreateAttemptsRef.current < 10) {
+              recreateAttemptsRef.current += 1;
+              const delay = Math.min(400 * recreateAttemptsRef.current, 2000);
+              console.log(`[Kokoro Worker] Spawning fresh worker instance to reset C memory (attempt ${recreateAttemptsRef.current}/10 in ${delay}ms)...`);
+              retryTimer = setTimeout(() => spawnWorker(), delay);
+            } else {
+              console.error('[Kokoro Worker] Initialization timed out after 10 clean worker re-creation attempts.');
+              configRef.current.onError?.('kokoro-init', payload?.message || 'Initialization timed out after 10 worker re-creations.');
+            }
+          } else if (type === 'speechOutput') {
+            configRef.current.onSpeechOutput?.(
+              payload.audio,
+              payload.sampleRate,
+              payload.text,
+              payload.isLast
+            );
+          } else if (type === 'speechEnd') {
+            configRef.current.onSpeechEnd?.();
+          } else if (type === 'error') {
+            console.error(`[Kokoro Worker] Error: ${payload.stage} — ${payload.message}`);
+            if (payload.stage === 'kokoro-init') {
+              setIsReady(false);
+              try {
+                kokoroWorker?.terminate();
+                workerRef.current = null;
+              } catch (termErr) {
+                console.warn('Error terminating failed worker on init failure:', termErr);
+              }
+            }
+            configRef.current.onError?.(payload.stage, payload.message);
           }
-          configRef.current.onError?.(payload.stage, payload.message);
-        }
-      };
-    } catch (err: any) {
-      console.error('[Kokoro Worker] Failed to construct Web Worker:', err);
-      configRef.current.onError?.('kokoro-worker-construct', err?.message || 'Failed to instantiate Kokoro Worker.');
-      return;
-    }
+        };
+      } catch (err: any) {
+        console.error('[Kokoro Worker] Failed to construct Web Worker:', err);
+        configRef.current.onError?.('kokoro-worker-construct', err?.message || 'Failed to instantiate Kokoro Worker.');
+      }
+    };
+
+    recreateAttemptsRef.current = 0;
+    spawnWorker();
 
     return () => {
       isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
       if (kokoroWorker) {
         kokoroWorker.terminate();
       }

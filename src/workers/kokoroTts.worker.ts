@@ -8,6 +8,26 @@ const isBenignOrtNotice = (...args: any[]) => {
 console.warn = (...args: any[]) => { if (!isBenignOrtNotice(...args)) origWarn.apply(console, args as any); };
 console.error = (...args: any[]) => { if (!isBenignOrtNotice(...args)) origError.apply(console, args as any); };
 
+// Runtime integrity check: Verify that bundlers have copied this worker verbatim rather than re-compiling it
+if (typeof fetch !== 'undefined' && self.location && self.location.href) {
+  fetch(self.location.href).then(async (res) => {
+    const buffer = await res.arrayBuffer();
+    if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
+      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      console.log(`[Kokoro Worker Runtime] Script byte length: ${buffer.byteLength} bytes | SHA-256: ${hashHex}`);
+    } else {
+      console.log(`[Kokoro Worker Runtime] Script byte length: ${buffer.byteLength} bytes`);
+    }
+    if (buffer.byteLength < 2000000 && !self.location.href.includes('localhost') && !self.location.href.includes('127.0.0.1')) {
+      console.warn(`[Kokoro Worker Runtime] WARNING: Worker script size is ${buffer.byteLength} bytes (<2MB). A consumer bundler may have re-bundled or code-split this script instead of copying it verbatim, which can disrupt Emscripten initialization order.`);
+    }
+  }).catch(() => {
+    // Ignore fetch errors in restrictive CSP or cross-origin worker setups
+  });
+}
+
 let KokoroTTS: any = null;
 let kokoroTts: any = null;
 let currentVoice: string = 'af_heart';
@@ -173,37 +193,27 @@ self.onmessage = async (e: MessageEvent) => {
       // Warmup & Emscripten filesystem readiness verification:
       // In production builds, eSpeak-NG dictionaries extract asynchronously via DecompressionStream.
       // We validate operational status by verifying audio output length on a diagnostic probe sentence.
-      let retries = 0;
-      let probeSuccess = false;
+      // NOTE: Because espeak-ng caches an empty voice array in C memory permanently if probed before voice tables
+      // finish decompressing, retrying generate() on the same instance cannot recover. If the probe fails (<2.0s),
+      // we immediately request full worker termination and clean re-creation from scratch.
       const probeText = 'The quick brown fox jumps over the lazy dog.';
-      while (retries < 15) {
-        try {
-          const probe: any = await Promise.race([
-            kokoroTts.generate(probeText, { voice: currentVoice || 'af_heart' }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Warmup generation timeout')), 15000))
-          ]);
-          const audioLen = probe?.audio?.length || (probe?.audio instanceof Float32Array ? probe.audio.length : 0);
-          const sampleRate = probe?.sampling_rate || 24000;
-          const seconds = audioLen / sampleRate;
-          if (seconds < 2.0) {
-            throw new Error(`espeak voices not loaded (probe produced ${seconds.toFixed(2)}s, expected >2s)`);
-          }
-          console.log(`[Kokoro Worker] Warmup probe verified: ${seconds.toFixed(2)}s generated.`);
-          probeSuccess = true;
-          break;
-        } catch (warmupErr: any) {
-          const msg = warmupErr?.message || String(warmupErr);
-          console.warn(`[Kokoro Worker] Warmup probe attempt ${retries + 1} failed: ${msg}. Retrying in 400ms...`);
-          retries++;
-          if (retries >= 15) {
-            throw new Error(`Kokoro initialization failed: espeak dictionary verification timed out after 15 attempts (${msg})`);
-          }
-          await new Promise(r => setTimeout(r, 400));
+      try {
+        const probe: any = await Promise.race([
+          kokoroTts.generate(probeText, { voice: currentVoice || 'af_heart' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Warmup generation timeout')), 15000))
+        ]);
+        const audioLen = probe?.audio?.length || (probe?.audio instanceof Float32Array ? probe.audio.length : 0);
+        const sampleRate = probe?.sampling_rate || 24000;
+        const seconds = audioLen / sampleRate;
+        if (seconds < 2.0) {
+          throw new Error(`espeak voices not loaded in C memory (probe produced ${seconds.toFixed(2)}s, expected >2s)`);
         }
-      }
-
-      if (!probeSuccess) {
-        throw new Error('Kokoro initialization failed: espeak dictionary verification unsuccessful.');
+        console.log(`[Kokoro Worker] Warmup probe verified: ${seconds.toFixed(2)}s generated.`);
+      } catch (warmupErr: any) {
+        const msg = warmupErr?.message || String(warmupErr);
+        console.warn(`[Kokoro Worker] Warmup probe failed: ${msg}. Requesting clean worker recreation to reset C memory...`);
+        self.postMessage({ type: 'recreate_required', payload: { stage: 'kokoro-init', message: msg } });
+        return;
       }
 
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 100 } });
