@@ -135,6 +135,31 @@ export const App: React.FC = () => {
         </div>
       </div>
 
+      {/* Architectural Highlights - Top Left beneath Branding */}
+      <div style={{
+        position: 'absolute',
+        top: '196px',
+        left: '24px',
+        zIndex: 500,
+        background: 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(16px)',
+        border: '1px solid rgba(56, 189, 248, 0.3)',
+        padding: '14px 18px',
+        borderRadius: '16px',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        maxWidth: '320px',
+      }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: '#38BDF8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>🏗️</span> Production Hybrid Architecture
+        </div>
+        <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#CBD5E1', lineHeight: '1.4' }}>
+          <strong>⚡ Ultra-Fast Demo Mode:</strong> Powered locally by lightweight <strong>SmolLM2-135M (~80MB)</strong> for rapid interactive startup.
+        </p>
+        <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', lineHeight: '1.4', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '8px' }}>
+          <strong>🚀 Zero-Download Enterprise APIs:</strong> In production apps, connect OpenAI, Claude, or custom LLMs via the <code>onSubmit</code> prop to skip client-side LLM downloads completely while keeping 60 FPS 3D lip-sync & Whisper recognition 100% on-device!
+        </p>
+      </div>
+
       {/* Avatar Persona & TTS Engine Selector - Top Right */}
       <div style={{
         position: 'absolute',
@@ -353,6 +378,7 @@ export const App: React.FC = () => {
           key={currentPersona.id}
           avatarPreset={currentPersona.preset}
           lightingPreset={lightingPreset}
+          llmModel="onnx-community/SmolLM2-135M-Instruct"
           systemPrompt={currentPersona.systemPrompt}
           ttsEngine={ttsEngine}
           ttsVoice={ttsVoice}

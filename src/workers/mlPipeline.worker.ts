@@ -95,7 +95,7 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === 'init') {
     const { 
-      llmModel = 'onnx-community/Qwen2.5-0.5B-Instruct', 
+      llmModel = 'onnx-community/SmolLM2-135M-Instruct', 
       asrModel = 'onnx-community/whisper-base', 
       ttsLanguage = 'en-US', 
       ttsEngine = 'mms',
