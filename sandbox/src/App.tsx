@@ -350,11 +350,19 @@ export const App: React.FC = () => {
               🔒 Edge Qwen 0.5B
             </button>
           </div>
-          <p style={{ margin: 0, fontSize: '11px', color: '#64748B', lineHeight: '1.3' }}>
-            {llmMode === 'cloud'
-              ? '⚡ Instant setup! Uses onSubmit to simulate cloud endpoints (OpenAI), skipping heavy local LLM downloads entirely!'
-              : '📥 Downloads Qwen 0.5B (~350MB) via WebGPU for completely airgapped offline reasoning.'}
-          </p>
+          <div style={{ margin: 0, fontSize: '11px', color: '#94A3B8', lineHeight: '1.4', background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            {llmMode === 'cloud' ? (
+              <>
+                <span style={{ color: '#38BDF8', fontWeight: 600, display: 'block', marginBottom: '4px' }}>☁️ Zero-Download API Routing (`onSubmit`)</span>
+                Ideal for production. By providing an <code>onSubmit</code> prop, the engine <strong>skips local LLM downloads entirely</strong>. Speech recognition (Whisper) and 60 FPS 3D lip-sync execute on-device instantly, while conversational text reasoning is seamlessly routed to your custom cloud backend (e.g., OpenAI, Claude).
+              </>
+            ) : (
+              <>
+                <span style={{ color: '#10B981', fontWeight: 600, display: 'block', marginBottom: '4px' }}>🔒 100% Airgapped Local Execution</span>
+                Ideal for privacy-strict kiosks. Triggers a one-time download of <strong>Qwen2.5-0.5B (~350MB)</strong> into your browser's WebGPU cache. Once loaded, all speech recognition, LLM reasoning, and vocal synthesis execute entirely offline with zero server data sharing.
+              </>
+            )}
+          </div>
         </div>
 
         {/* Cinematic Lighting Atmosphere Card */}
