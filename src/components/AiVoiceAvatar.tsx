@@ -159,18 +159,6 @@ function AvatarModel({
     }
 
     return () => {
-      // P2 Optimization: Systematic WebGL resource disposal to prevent VRAM memory leaks on unmount
-      scene.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh;
-          mesh.geometry?.dispose();
-          if (Array.isArray(mesh.material)) {
-            mesh.material.forEach((mat) => mat.dispose());
-          } else if (mesh.material) {
-            mesh.material.dispose();
-          }
-        }
-      });
       morphMeshesRef.current = [];
       headBoneRef.current = null;
     };
@@ -257,10 +245,10 @@ function AvatarModel({
     // Apply autonomous micro-expression blendshapes (blinking, saccades, eyebrows, cheek accentuation)
     for (const mesh of morphMeshesRef.current) {
       if (!mesh.morphTargetInfluences || !mesh.morphTargetDictionary) continue;
-      for (const [key, value] of Object.entries(dynamics.blendshapes)) {
+      for (const key in dynamics.blendshapes) {
         const idx = mesh.morphTargetDictionary[key];
         if (idx !== undefined) {
-          mesh.morphTargetInfluences[idx] = value;
+          mesh.morphTargetInfluences[idx] = dynamics.blendshapes[key as keyof typeof dynamics.blendshapes];
         }
       }
     }
@@ -384,10 +372,12 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(modelSrc || null);
   const [caption, setCaption] = useState<{ text: string; speaker: 'user' | 'avatar' } | null>(null);
   const [loadingInfo, setLoadingInfo] = useState<{ pct?: number; label?: string }>({});
+  const loadingProgressRef = useRef(loadingProgress);
+  useEffect(() => { loadingProgressRef.current = loadingProgress; }, [loadingProgress]);
 
   const {
     status, isLoading, isIdle, isListening, isThinking, isSpeaking, micError,
-    analyser, startListening, stopListening, interrupt, speak,
+    analyser, startListening, stopListening, interrupt, speak, clearHistory,
     currentSpeechTextRef, currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
   } = useAiVoiceAvatar({
     llmModel: props.llmModel,
@@ -433,7 +423,10 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
 
   // Expose methods and explicit state booleans to parent component handle
   useImperativeHandle(_ref, () => ({
-    clearHistory: () => { setCaption(null); },
+    clearHistory: () => {
+      clearHistory();
+      setCaption(null);
+    },
     interrupt,
     startListening,
     stopListening,
@@ -454,11 +447,11 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
       return;
     }
     let isMounted = true;
-    resolveAvatarUrl(avatarPreset, loadingProgress, props.enableLocalAssetProbe).then(url => {
+    resolveAvatarUrl(avatarPreset, (pct, label) => loadingProgressRef.current?.(pct, label), props.enableLocalAssetProbe).then(url => {
       if (isMounted) setResolvedUrl(url);
     });
     return () => { isMounted = false; };
-  }, [modelSrc, avatarPreset, loadingProgress]);
+  }, [modelSrc, avatarPreset, props.enableLocalAssetProbe]);
 
   if (!resolvedUrl) return null;
 
@@ -479,7 +472,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
         />
       </group>
 
-      {(props.showCaptions || !props.hideStatusPill || !debug) && (
+      {(props.showCaptions || !props.hideStatusPill) && (
         <Html fullscreen zIndexRange={[100, 0]}>
           <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
             {props.showCaptions && caption && (
