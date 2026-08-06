@@ -56,10 +56,20 @@ const KOKORO_VOICES = [
   { id: 'bm_george', label: 'George (bm_george - British Male)' },
 ];
 
+const LIGHTING_PRESETS: Array<{ id: 'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'; label: string; icon: string }> = [
+  { id: 'studio', label: 'Studio HDR', icon: '🎬' },
+  { id: 'cyberpunk_violet', label: 'Cyberpunk', icon: '👾' },
+  { id: 'cool_azure', label: 'Cool Azure', icon: '❄️' },
+  { id: 'warm_amber', label: 'Warm Amber', icon: '🔥' },
+  { id: 'clean_white', label: 'Clean White', icon: '💡' },
+  { id: 'none', label: 'Ambient Only', icon: '🌑' },
+];
+
 export const App: React.FC = () => {
   const avatarRef = useRef<AiVoiceAvatarHandle>(null);
   const [_avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [activePersonaId, setActivePersonaId] = useState<'ananya' | 'aarav'>('aarav');
+  const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   
   // Dynamic TTS Engine Configuration & Seamless Switching
   const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>('mms');
@@ -282,6 +292,49 @@ export const App: React.FC = () => {
             </p>
           )}
         </div>
+
+        {/* Cinematic Lighting Atmosphere Card */}
+        <div style={{
+          background: 'rgba(20, 22, 28, 0.85)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '20px',
+          padding: '14px 16px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
+        }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            💡 Studio Lighting Atmosphere
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+            {LIGHTING_PRESETS.map((preset) => {
+              const isSelected = lightingPreset === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  onClick={() => setLightingPreset(preset.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: isSelected ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.04)',
+                    color: isSelected ? '#FFFFFF' : '#94A3B8',
+                    border: isSelected ? '1px solid transparent' : '1px solid rgba(255, 255, 255, 0.08)',
+                    padding: '8px 10px',
+                    borderRadius: '10px',
+                    fontSize: '11px',
+                    fontWeight: isSelected ? 700 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span>{preset.icon}</span>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{preset.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* 3D Studio Viewport - Delicate Wide Studio Framing */}
@@ -299,6 +352,7 @@ export const App: React.FC = () => {
           ref={avatarRef}
           key={currentPersona.id}
           avatarPreset={currentPersona.preset}
+          lightingPreset={lightingPreset}
           systemPrompt={currentPersona.systemPrompt}
           ttsEngine={ttsEngine}
           ttsVoice={ttsVoice}
