@@ -1,5 +1,10 @@
 # React AI Voice Avatar (`react-ai-voice-avatar`) 🚀🗣️🧬
 
+[![NPM Version](https://img.shields.io/npm/v/react-ai-voice-avatar?style=for-the-badge&color=8A2BE2&logo=npm)](https://www.npmjs.com/package/react-ai-voice-avatar)
+[![NPM Downloads](https://img.shields.io/npm/dm/react-ai-voice-avatar?style=for-the-badge&color=00D8FF&logo=npm)](https://www.npmjs.com/package/react-ai-voice-avatar)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel)](https://react-ai-voice-avatar.vercel.app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+
 **The definitive zero-config 3D conversational AI voice avatar and real-time lip-sync engine for React and React Three Fiber.**
 
 Build immersive virtual concierges, intelligent autonomous agents, digital teachers, and interactive voice kiosks that talk, listen, and express facial vitality. **Designed for maximum architectural flexibility**: run 100% on-device inside the browser with zero server costs, OR seamlessly plug in external cloud LLMs (OpenAI ChatGPT, Claude, Gemini, DeepSeek, or your custom Python/Go backend) while retaining real-time 3D facial lip-syncing and local voice recognition!
@@ -23,6 +28,7 @@ When implementing voice AI agents or 3D avatars in web applications, traditional
 ---
 
 ## 📦 Installation
+📦 [**View Package on the Official NPM Registry ➔**](https://www.npmjs.com/package/react-ai-voice-avatar)
 
 ```bash
 npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
