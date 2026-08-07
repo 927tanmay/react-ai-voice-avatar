@@ -252,6 +252,27 @@ onSubmit={async function* (text) {
 
 ---
 
+## 🎨 Bring Your Own 3D Avatar (Custom GLB)
+
+You are not locked into our built-in avatars (`ananya` and `aarav`)! You can use any custom `.glb` humanoid model by passing its URL or local path to the `modelSrc` prop:
+
+```tsx
+<AiVoiceAvatar
+  modelSrc="/models/my-custom-avatar.glb"
+  // ...
+/>
+```
+
+### 📋 Custom Avatar Requirements
+To ensure the lip-sync and procedural facial dynamics engines work correctly, your custom model must meet the following standard requirements:
+1. **Format**: `.glb` (GLTF Binary).
+2. **Facial Blendshapes (Morph Targets)**: The model's head/face mesh must contain the **standard 52 Apple ARKit blendshapes** (e.g., `jawOpen`, `eyeBlinkLeft`, `mouthSmileRight`). Our engine automatically traverses your model to find these targets.
+3. **Bone Naming**: For the interactive mouse-tracking and head-tilting physics to function, the armature should use standard bone names (e.g., a neck/head bone named `Head`, `head`, `Neck`, or `neck`).
+
+*(Note: Official support and testing for **Ready Player Me** avatars is currently on our roadmap for an upcoming release!)*
+
+---
+
 ## 🏗️ Architecture & Deployment Modes
 
 Explore our structured canonical architecture patterns in the `examples/` directory:
