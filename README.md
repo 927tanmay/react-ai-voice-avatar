@@ -23,8 +23,18 @@ For the actual "thinking" (the LLM reasoning), the avatar supports **Two Brains*
 
 ### 🧠 1. The Connected Brain (Default Recommendation)
 By supplying an `onSubmit` prop, your avatar talks to your existing cloud LLM endpoints (OpenAI, Claude, Vercel AI SDK, or custom APIs). 
-- **Zero Model Downloads**: Your avatar initializes in seconds.
+- **Zero LLM Downloads**: Your backend handles the reasoning, dropping the gigabyte-scale LLM from the client.
 - **High-Performance**: It functions as an autonomous presentation engine. Your server streams text, while our browser Web Workers autonomously execute speech recognition, voice synthesis, and lip-syncing without server-side GPU video streaming costs!
+
+> [!NOTE]
+> **Base Payload Size (Cached First Visit):**
+> While the LLM lives in the cloud, the avatar still runs ASR and TTS locally for privacy and real-time lip-sync.
+> | Model | Size | Details |
+> | :--- | :--- | :--- |
+> | **Kokoro TTS** | ~90 MB | High-fidelity voice synthesis |
+> | **Whisper ASR** | ~150 MB | Default base model for local speech recognition |
+> 
+> *Tip: You can reduce the ASR payload to ~40MB by passing `asrModel="Xenova/whisper-tiny"` if aggressive initial load times are required!*
 
 ### 🔒 2. The On-Device Brain (Offline & Private)
 If you omit the `onSubmit` prop, the avatar runs completely airgapped using client-side **Qwen 2.5 (0.5B)** WebGPU models.
@@ -268,6 +278,7 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 | `lightingPreset` | `'studio' \| 'cyberpunk_violet' \| 'cool_azure' \| 'warm_amber' \| 'clean_white' \| 'none'` | `'studio'` | Pre-built cinematic studio lighting atmospheres directly applied to your 3D viewport without manual Three.js configuration! |
 | `systemPrompt` | `string` | `"You are Ananya..."`| Conversational persona directives and context injected into active LLMs. |
 | `llmModel` | `string` | `"onnx-community/Qwen2.5-0.5B-Instruct"` | Hugging Face identifier for local client-side WebGPU Transformer reasoning weights when offline mode is used without `onSubmit`. |
+| `asrModel` | `string` | `"onnx-community/whisper-base"` | Hugging Face identifier for the local WebGPU Whisper speech recognition model. Pass `"Xenova/whisper-tiny"` for faster downloads. |
 | `ttsEngine` | `'kokoro' \| 'mms'` | `'kokoro'` | High-fidelity neural voice synthesis engine executing inside dedicated Web Workers. |
 | `ttsVoice` | `string` | `'af_heart'` | Neural voice profile timbre (e.g., `af_heart`, `am_michael`, `af_bella`, `hi_female`). |
 | `ttsLanguage`| `'en-US' \| 'hi-IN' \| 'bn-IN' \| 'ta-IN' \| 'te-IN' \| 'mr-IN'` | `'en-US'` | Primary speech vocalization dialect routing. |
