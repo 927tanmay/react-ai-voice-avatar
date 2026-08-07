@@ -199,7 +199,7 @@ onSubmit={async function* (text) {
     buffer = lines.pop() ?? ''; // keep the trailing partial chunk
     for (const line of lines) {
       if (line.startsWith('0:')) {
-        try { yield JSON.parse(line.substring(2)); } catch (e) {}
+        try { yield JSON.parse(line.substring(2)); } catch { /* ignore keep-alive / non-JSON frames */ }
       }
     }
   }
@@ -227,11 +227,13 @@ onSubmit={async function* (text) {
       if (line.startsWith('data: ') && line !== 'data: [DONE]') {
         try {
           const parsed = JSON.parse(line.substring(6));
-          // Adjust this extraction path based on your provider (e.g., parsed.delta for Vercel AI v5)
-          if (parsed.choices?.[0]?.delta?.content) {
+          // AI SDK v5 emits {type:'text-delta', delta:'...'}; OpenAI emits choices[0].delta.content
+          if (parsed.type === 'text-delta' && parsed.delta) {
+            yield parsed.delta;
+          } else if (parsed.choices?.[0]?.delta?.content) {
             yield parsed.choices[0].delta.content;
           }
-        } catch (e) {}
+        } catch { /* ignore keep-alive / non-JSON frames */ }
       }
     }
   }
