@@ -170,8 +170,18 @@ The `onSubmit` prop natively accepts a `string`, an `AsyncIterable<string>`, or 
 > [!CAUTION]
 > **API Keys Belong on the Server!** Never put your OpenAI or Anthropic API keys directly in the frontend browser code. Always route through your own backend endpoint (`/api/chat`).
 
-### Recipe 1: Vercel AI SDK
-The Vercel AI SDK streams data using a specific protocol (e.g., `0:"Hello"`). This recipe parses those chunks into clean text for the TTS engine.
+### Recipe 0: Plain Text Stream (Fastest & Simplest)
+If your backend uses Vercel AI SDK's `streamText(...).toTextStreamResponse()` or otherwise streams plain raw text, you can pass the stream natively without any parsing!
+
+```tsx
+onSubmit={async (text) => {
+  const res = await fetch('/api/chat', { method: 'POST', body: JSON.stringify({ prompt: text }) });
+  return res.body; // Natively supported!
+}}
+```
+
+### Recipe 1: Vercel AI SDK (≤v4 Data Stream)
+Older versions of the Vercel AI SDK stream data using a specific protocol (e.g., `0:"Hello"`). This recipe parses those chunks into clean text with a carry-over buffer for safe network boundaries.
 
 ```tsx
 onSubmit={async function* (text) {
@@ -179,11 +189,14 @@ onSubmit={async function* (text) {
   if (!res.body) return;
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
   
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const lines = decoder.decode(value, { stream: true }).split('\n');
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? ''; // keep the trailing partial chunk
     for (const line of lines) {
       if (line.startsWith('0:')) {
         try { yield JSON.parse(line.substring(2)); } catch (e) {}
@@ -193,8 +206,8 @@ onSubmit={async function* (text) {
 }}
 ```
 
-### Recipe 2: OpenAI-Compatible SSE Endpoint
-Standard Server-Sent Events (SSE) stream `data: {...}` blocks.
+### Recipe 2: OpenAI-Compatible SSE Endpoint (and AI SDK v5)
+Standard Server-Sent Events (SSE) stream `data: {...}` blocks. This handles safe parsing across broken network chunk boundaries.
 
 ```tsx
 onSubmit={async function* (text) {
@@ -202,15 +215,19 @@ onSubmit={async function* (text) {
   if (!res.body) return;
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
   
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const lines = decoder.decode(value, { stream: true }).split('\n');
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? ''; // keep the trailing partial chunk
     for (const line of lines) {
       if (line.startsWith('data: ') && line !== 'data: [DONE]') {
         try {
           const parsed = JSON.parse(line.substring(6));
+          // Adjust this extraction path based on your provider (e.g., parsed.delta for Vercel AI v5)
           if (parsed.choices?.[0]?.delta?.content) {
             yield parsed.choices[0].delta.content;
           }
