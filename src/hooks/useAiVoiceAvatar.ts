@@ -399,7 +399,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           setAnalyser(analyserNode);
         }
 
-        const vad = await import('@ricky0123/vad-web');
+        // @ricky0123/vad-web is CJS, so the shape of the namespace depends on whether
+        // the consumer's bundler pre-bundled it: named exports may sit directly on the
+        // namespace or be nested under `default`. Accept both.
+        const vadModule: any = await import('@ricky0123/vad-web');
+        const vad = vadModule?.MicVAD ? vadModule : (vadModule?.default ?? vadModule);
         const myvad = await vad.MicVAD.new({
           getStream: () => Promise.resolve(stream),
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",

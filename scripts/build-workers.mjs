@@ -85,8 +85,8 @@ async function build() {
   }
 
   // Convert worker output to TypeScript string modules for zero-config blob loading
-  const kokoroCodeStr = kokoroBuffer.toString('utf8') + '\\n//# sourceURL=kokoroTts.worker.js\\n';
-  const mlCodeStr = mlBuffer.toString('utf8') + '\\n//# sourceURL=mlPipeline.worker.js\\n';
+  const kokoroCodeStr = kokoroBuffer.toString('utf8') + '\n//# sourceURL=kokoroTts.worker.js\n';
+  const mlCodeStr = mlBuffer.toString('utf8') + '\n//# sourceURL=mlPipeline.worker.js\n';
 
   await fs.mkdir('src/workers/generated', { recursive: true });
   await fs.writeFile('src/workers/generated/kokoroTts.worker.code.ts', `export const kokoroWorkerCode = ${JSON.stringify(kokoroCodeStr)};`);
