@@ -42,6 +42,7 @@ export interface UseAiVoiceAvatarReturn {
   clearHistory: () => void;
   speak: (text: string) => void;
   currentSpeechTextRef: React.RefObject<string>;
+  currentSpeechPhonemesRef: React.RefObject<string>;
   currentAudioDurationRef: React.RefObject<number>;
   playbackStartTimeRef: React.RefObject<number>;
   audioContextRef: React.RefObject<AudioContext | null>;
@@ -56,10 +57,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const audioQueueRef = useRef<Array<{ audioData: Float32Array; sampleRate: number; text: string; isLast: boolean }>>([]);
+  const audioQueueRef = useRef<Array<{ audioData: Float32Array; sampleRate: number; text: string; phonemes: string; isLast: boolean }>>([]);
   const isPlayingRef = useRef<boolean>(false);
   const isWaitingForMoreRef = useRef<boolean>(false);
   const currentSpeechTextRef = useRef<string>('');
+  const currentSpeechPhonemesRef = useRef<string>('');
   const currentAudioDurationRef = useRef<number>(0);
   const playbackStartTimeRef = useRef<number>(0);
   const playbackWatchdogRef = useRef<any>(null);
@@ -143,6 +145,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       source.onended = () => {
         isPlayingRef.current = false;
         currentSpeechTextRef.current = '';
+        currentSpeechPhonemesRef.current = '';
         currentAudioDurationRef.current = 0;
         if (item.isLast) {
           isWaitingForMoreRef.current = false;
@@ -152,6 +155,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
       // Expose text + timing for the lip sync engine
       currentSpeechTextRef.current = item.text;
+      currentSpeechPhonemesRef.current = item.phonemes;
       currentAudioDurationRef.current = buffer.duration;
       playbackStartTimeRef.current = ctx.currentTime;
 
@@ -169,7 +173,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   }, [analyser]);
 
-  const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, isLast: boolean = true) => {
+  const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, phonemes: string = '', isLast: boolean = true) => {
     if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
       isWaitingForMoreRef.current = !isLast;
     } else if (!isLast) {
@@ -177,7 +181,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     } else {
       isWaitingForMoreRef.current = false;
     }
-    audioQueueRef.current.push({ audioData, sampleRate, text, isLast });
+    audioQueueRef.current.push({ audioData, sampleRate, text, phonemes, isLast });
     playNextInQueue();
   }, [playNextInQueue]);
 
@@ -226,7 +230,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (config.ttsEngine === 'kokoro') {
         kokoroSynthesize(text, isLast);
       } else if (audio && sampleRate) {
-        handleSpeechOutput(audio, sampleRate, text, isLast);
+        handleSpeechOutput(audio, sampleRate, text, '', isLast);
       }
     },
     onStreamWord: (word) => {
@@ -507,6 +511,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     clearHistory,
     speak,
     currentSpeechTextRef,
+    currentSpeechPhonemesRef,
     currentAudioDurationRef,
     playbackStartTimeRef,
     audioContextRef,

@@ -225,7 +225,7 @@ self.onmessage = async (e: MessageEvent) => {
       // 2. LLM Inference & Streaming Phrase-by-Phrase TTS
       chatHistory.push({ role: 'user', content: transcript });
 
-      if (!ttsPipeline) {
+      if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
         self.postMessage({ type: 'error', payload: { stage: 'tts', message: 'TTS not initialized' } });
         return;
       }
@@ -286,7 +286,7 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === 'ttsOnly') {
     const { text, isLast = true } = payload;
-    if (!ttsPipeline) {
+    if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
       self.postMessage({ type: 'error', payload: { stage: 'tts', message: 'TTS not initialized' } });
       return;
     }

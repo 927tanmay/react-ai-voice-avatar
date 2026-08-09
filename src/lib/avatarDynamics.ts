@@ -23,10 +23,10 @@ import type { AudioLipSyncState } from './audioLipSync';
 export interface DynamicsOutputs {
   /** Map of ARKit target names to computed weights (0 to 1). */
   blendshapes: Record<string, number>;
-  /** Damped rotational offset (in radians) to apply to the Head or Neck bone. */
-  headRotation: { x: number; y: number; z: number };
-  /** Root scene breathing and idle micro-movement offset. */
-  sceneOffset: { positionY: number; rotationY: number; rotationZ: number };
+  /** Map of Bone names to computed rotational offsets (x, y, z in radians). */
+  boneRotations: Record<string, { x: number; y: number; z: number }>;
+  /** Root scene fallback offsets for models lacking bones. */
+  sceneOffset: { positionY: number; rotationY: number; rotationZ: number; rotationX?: number };
 }
 
 export interface DynamicsInput {
@@ -40,12 +40,14 @@ export interface DynamicsInput {
   pointerY: number;
   /** Current acoustic energy from AudioLipSync engine. */
   audioState?: AudioLipSyncState | null;
+  /** Current conversational status to drive behavioral modes. */
+  conversationState?: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
 }
 
 // ─── Configuration & Limits ─────────────────────────────────────────────────
 
-const BLINK_MIN_INTERVAL = 2.5; // Minimum seconds between spontaneous blinks
-const BLINK_MAX_INTERVAL = 5.5; // Maximum seconds between spontaneous blinks
+const BLINK_MIN_INTERVAL = 5.0; // Increased fallback interval for semantic blinking
+const BLINK_MAX_INTERVAL = 10.0; // Maximum seconds between spontaneous blinks
 const BLINK_DURATION = 0.16;    // Total duration of a blink cycle in seconds
 
 const SACCADE_MIN_INTERVAL = 0.8; // Seconds between tiny ocular saccade shifts
@@ -80,6 +82,11 @@ export class AvatarDynamicsEngine {
   private nextBlinkTime: number = 2.0;
   private isBlinking: boolean = false;
   private blinkStartTime: number = 0;
+  private wasSpeaking: boolean = false;
+  private lastState: string = 'idle';
+  private breathRiseTime: number = -10.0;
+  private breathPhase: number = 0;
+  private smoothedSceneRotZ: number = 0;
 
   // Saccadic Eye Darting State
   private nextSaccadeTime: number = 1.0;
@@ -99,17 +106,34 @@ export class AvatarDynamicsEngine {
     this.scheduleNextSaccade(0);
   }
 
-  private scheduleNextBlink(currentTime: number): void {
-    this.nextBlinkTime = currentTime + randomRange(BLINK_MIN_INTERVAL, BLINK_MAX_INTERVAL);
+  private scheduleNextBlink(currentTime: number, isListening: boolean = false): void {
+    const min = isListening ? BLINK_MIN_INTERVAL * 2.0 : BLINK_MIN_INTERVAL;
+    const max = isListening ? BLINK_MAX_INTERVAL * 2.0 : BLINK_MAX_INTERVAL;
+    this.nextBlinkTime = currentTime + randomRange(min, max);
   }
 
-  private scheduleNextSaccade(currentTime: number): void {
-    this.nextSaccadeTime = currentTime + randomRange(SACCADE_MIN_INTERVAL, SACCADE_MAX_INTERVAL);
-    // Generate gentle random saccade target (-1 to +1 range)
-    this.targetSaccade = {
-      x: randomRange(-SACCADE_STRENGTH, SACCADE_STRENGTH),
-      y: randomRange(-SACCADE_STRENGTH, SACCADE_STRENGTH),
-    };
+  private forceBlink(currentTime: number): void {
+    // Don't force a blink if we literally just blinked
+    if (!this.isBlinking && (currentTime - this.blinkStartTime) > 0.8) {
+      this.nextBlinkTime = Math.min(this.nextBlinkTime, currentTime);
+    }
+  }
+
+  private scheduleNextSaccade(currentTime: number, isIdle: boolean = false): void {
+    const saccadeMin = isIdle ? SACCADE_MIN_INTERVAL * 2.5 : SACCADE_MIN_INTERVAL;
+    const saccadeMax = isIdle ? SACCADE_MAX_INTERVAL * 2.5 : SACCADE_MAX_INTERVAL;
+    this.nextSaccadeTime = currentTime + randomRange(saccadeMin, saccadeMax);
+    
+    const nextX = randomRange(-SACCADE_STRENGTH, SACCADE_STRENGTH);
+    const nextY = randomRange(-SACCADE_STRENGTH, SACCADE_STRENGTH);
+    
+    // Semantic blink on large saccades
+    const dist = Math.hypot(nextX - this.currentSaccade.x, nextY - this.currentSaccade.y);
+    if (dist > SACCADE_STRENGTH * 1.2) {
+      this.forceBlink(currentTime);
+    }
+    
+    this.targetSaccade = { x: nextX, y: nextY };
   }
 
   /**
@@ -117,11 +141,34 @@ export class AvatarDynamicsEngine {
    * Call once per animation frame (inside useFrame) before updating mesh blendshapes and armatures.
    */
   update(input: DynamicsInput): DynamicsOutputs {
-    const { elapsedTime, pointerX, pointerY, audioState } = input;
+    const { elapsedTime, pointerX, pointerY, audioState, conversationState = 'idle' } = input;
     const outputs: Record<string, number> = {};
+
+    const isListening = conversationState === 'listening';
+    const isThinking = conversationState === 'thinking';
+    const isIdle = conversationState === 'idle';
+
+    // Semantic blink on utterance boundary (speech stops)
+    const isCurrentlySpeaking = conversationState === 'speaking';
+    if (this.wasSpeaking && !isCurrentlySpeaking) {
+      this.forceBlink(elapsedTime);
+    }
+    this.wasSpeaking = isCurrentlySpeaking;
+
+    // Deep breath when beginning to think (anticipating long utterance)
+    if (conversationState === 'thinking' && this.lastState !== 'thinking') {
+      this.breathRiseTime = elapsedTime;
+    }
+    this.lastState = conversationState;
 
     // ─── 1. Autonomous Blinking (Part 1.1) ──────────────────────────────────
     let blinkWeight = 0;
+    
+    // Cognitive load (thinking) elevates blink rate
+    if (isThinking && !this.isBlinking && (this.nextBlinkTime - elapsedTime) > 2.0) {
+      this.nextBlinkTime = elapsedTime + randomRange(0.2, 0.8);
+    }
+
     if (!this.isBlinking && elapsedTime >= this.nextBlinkTime) {
       this.isBlinking = true;
       this.blinkStartTime = elapsedTime;
@@ -131,7 +178,7 @@ export class AvatarDynamicsEngine {
       const elapsedInBlink = elapsedTime - this.blinkStartTime;
       if (elapsedInBlink >= BLINK_DURATION) {
         this.isBlinking = false;
-        this.scheduleNextBlink(elapsedTime);
+        this.scheduleNextBlink(elapsedTime, isListening);
         blinkWeight = 0;
       } else {
         // Smooth sine bell curve for eyelid closure (0 -> 1 -> 0)
@@ -147,7 +194,7 @@ export class AvatarDynamicsEngine {
 
     // ─── 2. Saccades & Cursor Eye-Contact Tracking (Part 1.1 & 2.1) ─────────
     if (elapsedTime >= this.nextSaccadeTime) {
-      this.scheduleNextSaccade(elapsedTime);
+      this.scheduleNextSaccade(elapsedTime, isIdle);
     }
     // Smoothly transition saccade position
     this.currentSaccade.x = lerp(this.currentSaccade.x, this.targetSaccade.x, 0.08);
@@ -156,8 +203,14 @@ export class AvatarDynamicsEngine {
     // Combine deliberate pointer tracking with unconscious saccade shifts.
     // In R3F screen coordinates: -pointerX is left of screen, +pointerX is right of screen.
     // Note: Viewer's left is the avatar's right eye perspective, so signs reverse appropriately!
-    const effectiveGazeX = clamp(pointerX * 0.8 + this.currentSaccade.x, -1, 1);
-    const effectiveGazeY = clamp(pointerY * 0.8 + this.currentSaccade.y, -1, 1);
+    let effectiveGazeX = clamp(pointerX * 0.8 + this.currentSaccade.x, -1, 1);
+    let effectiveGazeY = clamp(pointerY * 0.8 + this.currentSaccade.y, -1, 1);
+    
+    // State override: Gaze aversion when thinking (look up and away)
+    if (isThinking) {
+      effectiveGazeX = lerp(effectiveGazeX, 0.7, 0.5); // Look away horizontally
+      effectiveGazeY = lerp(effectiveGazeY, 0.6, 0.5); // Look up
+    }
 
     // Horizontal gaze distribution
     if (effectiveGazeX < 0) {
@@ -210,6 +263,10 @@ export class AvatarDynamicsEngine {
       targetBrowInner = clamp(audioState.energy * 0.7 + audioState.highBand * 0.4);
       targetBrowOuter = clamp(audioState.energy * 0.45 + audioState.midBand * 0.25);
       targetCheek = clamp(audioState.energy * 0.3);
+    } else if (isListening) {
+      // Subtle attentive brow raise when actively listening to the user
+      targetBrowInner = 0.3;
+      targetBrowOuter = 0.2;
     }
 
     // Smooth temporal transition for expressive forehead muscles
@@ -226,25 +283,110 @@ export class AvatarDynamicsEngine {
     // ─── 4. Interactive Head & Neck Rotation (Part 2.1) ─────────────────────
     // Calculate targeted head yaw (y-axis) and pitch (x-axis) toward cursor coordinates.
     // Notice sign inversion on yaw: positive pointerX moves head towards positive X rotation.
-    const targetHeadYaw = clamp(pointerX * 0.6, -MAX_NECK_YAW, MAX_NECK_YAW);
-    const targetHeadPitch = clamp(-pointerY * 0.35, -MAX_NECK_PITCH, MAX_NECK_PITCH);
+    let targetHeadYaw = clamp(pointerX * 0.6, -MAX_NECK_YAW, MAX_NECK_YAW);
+    let targetHeadPitch = clamp(-pointerY * 0.35, -MAX_NECK_PITCH, MAX_NECK_PITCH);
 
-    this.currentHeadRotation.y = lerp(this.currentHeadRotation.y, targetHeadYaw, HEAD_DAMPING);
-    this.currentHeadRotation.x = lerp(this.currentHeadRotation.x, targetHeadPitch, HEAD_DAMPING);
-    this.currentHeadRotation.z = lerp(this.currentHeadRotation.z, -pointerX * 0.08, HEAD_DAMPING * 0.5); // Slight roll tilt for natural aesthetics
+    // State override: Thinking head aversion and Listening lean
+    if (isThinking) {
+      targetHeadYaw = lerp(targetHeadYaw, 0.3, 0.4);
+      targetHeadPitch = lerp(targetHeadPitch, -0.2, 0.4);
+    } else if (isListening) {
+      targetHeadPitch += 0.08; // Subtle forward tilt for attentiveness
+    }
 
-    // ─── 5. Root Scene Idle Dynamics ────────────────────────────────────────
-    const sceneOffsetY = Math.sin(elapsedTime * 1.5) * 0.02;
-    const sceneRotY = Math.sin(elapsedTime * 0.5) * 0.04;
-    const sceneRotZ = Math.cos(elapsedTime * 0.3) * 0.015;
+    const currentDamping = isIdle ? HEAD_DAMPING * 0.4 : HEAD_DAMPING;
+    this.currentHeadRotation.y = lerp(this.currentHeadRotation.y, targetHeadYaw, currentDamping);
+    this.currentHeadRotation.x = lerp(this.currentHeadRotation.x, targetHeadPitch, currentDamping);
+    this.currentHeadRotation.z = lerp(this.currentHeadRotation.z, -pointerX * 0.08, currentDamping * 0.5); // Slight roll tilt for natural aesthetics
+
+    // ─── 5. Full Body Procedural Dynamics (IK/FK) ───────────────────────────
+    const boneRotations: Record<string, {x: number, y: number, z: number}> = {};
+    const getRot = (name: string) => { 
+      if (!boneRotations[name]) boneRotations[name] = {x:0, y:0, z:0}; 
+      return boneRotations[name]; 
+    };
+
+    // 5.1 Rest Pose: Relax the RPM A-pose (arms down)
+    // RPM exports A-pose at ~45-50°. Dropping by 0.75 radians (~43°) brings them to a relaxed 5-10° resting state.
+    getRot('LeftArm').z -= 0.75;  // Drop left arm
+    getRot('RightArm').z += 0.75; // Drop right arm
+
+    // Accumulate breath phase to prevent snap-jumps on speed changes
+    const respirationSpeed = isIdle ? 1.0 : 1.5;
+    this.breathPhase += input.delta * respirationSpeed;
+    
+    // 5.2 Chest Breathing (instead of bobbing the root scene)
+    let chestRiseX = Math.sin(this.breathPhase) * 0.015;
+    let shoulderRiseZ = Math.sin(this.breathPhase) * 0.02;
+
+    // Deep breath-rise animation just before long utterances begin
+    const timeSinceBreath = elapsedTime - this.breathRiseTime;
+    if (timeSinceBreath > 0 && timeSinceBreath < 2.0) {
+      const breathBump = Math.sin((timeSinceBreath / 2.0) * Math.PI);
+      chestRiseX -= breathBump * 0.04;
+      shoulderRiseZ += breathBump * 0.03;
+    }
+    
+    getRot('Spine2').x += chestRiseX;
+    getRot('LeftShoulder').z += shoulderRiseZ;
+    getRot('RightShoulder').z -= shoulderRiseZ;
+
+    // 5.3 Asymmetric Arm Drift
+    const leftArmPhase = this.breathPhase * 0.31;
+    const rightArmPhase = this.breathPhase * 0.27;
+    getRot('LeftArm').z += Math.sin(leftArmPhase) * 0.015;
+    getRot('LeftArm').x += Math.cos(leftArmPhase) * 0.015;
+    
+    getRot('RightArm').z -= Math.sin(rightArmPhase) * 0.015;
+    getRot('RightArm').x += Math.cos(rightArmPhase) * 0.015;
+
+    // 5.4 Weight Shift
+    const weightShiftPhase = this.breathPhase * 0.15;
+    const hipsYaw = Math.sin(weightShiftPhase) * 0.03;
+    const hipsRoll = Math.cos(weightShiftPhase) * 0.02;
+    
+    getRot('Hips').y += hipsYaw;
+    getRot('Hips').z += hipsRoll;
+    getRot('Spine').y -= hipsYaw * 0.8; // Counter rotation
+    getRot('Spine').z -= hipsRoll * 0.8;
+
+    // 5.5 Cervical Chain Distribution (50% Head, 30% Neck, 20% Spine2)
+    getRot('Head').y += this.currentHeadRotation.y * 0.5;
+    getRot('Head').x += this.currentHeadRotation.x * 0.5;
+    getRot('Head').z += this.currentHeadRotation.z * 0.5;
+
+    getRot('Neck').y += this.currentHeadRotation.y * 0.3;
+    getRot('Neck').x += this.currentHeadRotation.x * 0.3;
+    getRot('Neck').z += this.currentHeadRotation.z * 0.3;
+
+    getRot('Spine2').y += this.currentHeadRotation.y * 0.2;
+    getRot('Spine2').x += this.currentHeadRotation.x * 0.2;
+    getRot('Spine2').z += this.currentHeadRotation.z * 0.2;
+
+    // 5.6 Shoulder Coupling to Speech
+    if (audioState && audioState.isSpeaking) {
+      // Small rise applied to shoulders on emphatic peaks
+      const shoulderLift = audioState.energy * 0.08;
+      getRot('LeftShoulder').z += shoulderLift;
+      getRot('RightShoulder').z -= shoulderLift;
+    }
+
+    // Attentive tilt during listening (applied to Spine1 for body language)
+    let targetSceneRotZ = Math.cos(elapsedTime * 0.3) * 0.015;
+    if (isListening) {
+      targetSceneRotZ += -0.05; // Subtle head tilt to the side
+    }
+    this.smoothedSceneRotZ = lerp(this.smoothedSceneRotZ, targetSceneRotZ, 0.08);
+    getRot('Spine1').z += this.smoothedSceneRotZ;
+    getRot('Spine1').y += Math.sin(elapsedTime * 0.5) * 0.02; // Idle ambient look around
 
     return {
       blendshapes: outputs,
-      headRotation: { ...this.currentHeadRotation },
+      boneRotations,
       sceneOffset: {
-        positionY: sceneOffsetY,
-        rotationY: sceneRotY,
-        rotationZ: sceneRotZ,
+        positionY: 0, // Root vertical bobbing removed; shifted to chest breathing
+        rotationY: Math.sin(elapsedTime * 0.5) * 0.04, // Fallback
+        rotationZ: this.smoothedSceneRotZ,
       },
     };
   }
@@ -252,6 +394,7 @@ export class AvatarDynamicsEngine {
   /** Resets engine internal state. */
   reset(): void {
     this.isBlinking = false;
+    this.wasSpeaking = false;
     this.currentHeadRotation = { x: 0, y: 0, z: 0 };
     this.smoothedBrowInner = 0;
     this.smoothedBrowOuter = 0;

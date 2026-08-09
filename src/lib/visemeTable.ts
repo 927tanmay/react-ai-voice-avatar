@@ -298,6 +298,16 @@ const CHAR_TO_VISEME: Record<string, VisemeId> = {
   'फ़': 'FF',   // fa — true labiodental f (English-like)
   'ड़': 'DD_RETRO', // ṛa (retroflex flap)
   'ढ़': 'ASPIRATE', // ṛha (retroflex aspirated flap)
+
+  // ── IPA (International Phonetic Alphabet) used by eSpeak-ng / Kokoro ──────
+  'ə': 'AA', 'ʌ': 'AA', 'æ': 'AA', 'ɑ': 'AA', 'ɒ': 'AA', 'ɐ': 'AA',
+  'ɪ': 'IH', 'ɛ': 'IH',
+  'ʊ': 'OO', 'ɔ': 'OH',
+  'θ': 'TH', 'ð': 'TH',
+  'ʃ': 'CH', 'ʒ': 'CH', 'ʧ': 'CH', 'ʤ': 'CH',
+  'ŋ': 'NN',
+  'ɹ': 'RR', 'ɾ': 'RR',
+  'ˈ': 'sil', 'ˌ': 'sil', 'ː': 'sil', 'ˑ': 'sil', // Stress and length markers
 };
 
 /**

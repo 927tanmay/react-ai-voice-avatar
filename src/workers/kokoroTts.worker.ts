@@ -73,7 +73,7 @@ const processTtsQueue = async () => {
         // Emit an empty speechOutput chunk so the main thread doesn't stall waiting for a dropped non-last chunk
         self.postMessage({
           type: 'speechOutput',
-          payload: { audio: new Float32Array(0), sampleRate: 24000, text: '', isLast: false }
+          payload: { audio: new Float32Array(0), sampleRate: 24000, text: '', phonemes: '', isLast: false }
         });
       }
       continue;
@@ -113,6 +113,7 @@ const processTtsQueue = async () => {
           audio: audioData,
           sampleRate: ttsResult.sampling_rate,
           text: cleanText,
+          phonemes: ttsResult.phonemes || '',
           isLast: item.isLast,
         },
       });
@@ -128,6 +129,7 @@ const processTtsQueue = async () => {
             audio: new Float32Array(0),
             sampleRate: 24000,
             text: cleanText,
+            phonemes: '',
             isLast: false,
           },
         });

@@ -410,7 +410,7 @@ export const App: React.FC = () => {
       </div>
 
       {/* 3D Studio Viewport - Delicate Wide Studio Framing */}
-      <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }} style={{ width: '100%', height: '100%' }}>
+      <Canvas camera={{ position: [0, 0.15, 1.8], fov: 32 }} style={{ width: '100%', height: '100%' }}>
         <color attach="background" args={['#101116']} />
         
         {/* Subtle studio back-lighting accents representing saffron / peacock teal */}

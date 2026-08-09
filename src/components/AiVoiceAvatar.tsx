@@ -106,17 +106,19 @@ const LIP_SYNC_TARGETS = [
 
 interface AvatarModelProps {
   url: string;
+  status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
   debug?: boolean;
   analyser?: AnalyserNode;
   currentSpeechTextRef: React.RefObject<string>;
+  currentSpeechPhonemesRef: React.RefObject<string>;
   currentAudioDurationRef: React.RefObject<number>;
   playbackStartTimeRef: React.RefObject<number>;
   audioContextRef: React.RefObject<AudioContext | null>;
 }
 
 function AvatarModel({
-  url, debug, analyser,
-  currentSpeechTextRef, currentAudioDurationRef,
+  url, status, debug, analyser,
+  currentSpeechTextRef, currentSpeechPhonemesRef, currentAudioDurationRef,
   playbackStartTimeRef, audioContextRef,
 }: AvatarModelProps) {
   const { scene } = useGLTF(url);
@@ -129,9 +131,9 @@ function AvatarModel({
   const prevWeightsRef = useRef<VisemeWeights | null>(null);
   const lastTextRef = useRef<string>('');
 
-  // Skeletal armature tracking refs for interactive head posture
-  const headBoneRef = useRef<THREE.Object3D | null>(null);
-  const initialHeadRotRef = useRef<THREE.Euler | null>(null);
+  // Skeletal armature tracking refs for interactive head posture and body IK
+  const bonesRef = useRef<Record<string, THREE.Object3D>>({});
+  const initialRotationsRef = useRef<Record<string, THREE.Euler>>({});
 
   // Find all meshes with morph targets and locate head armature bones
   useEffect(() => {
@@ -143,24 +145,26 @@ function AvatarModel({
     });
     morphMeshesRef.current = meshes;
 
-    // Locate standard humanoid neck/head armature joints for smooth pointer tracking
-    const foundHeadBone = (
-      scene.getObjectByName('Head') ||
-      scene.getObjectByName('Neck') ||
-      scene.getObjectByName('head') ||
-      scene.getObjectByName('neck') ||
-      scene.getObjectByName('Head_01') ||
-      null
-    );
+    // Cache standard humanoid armature joints for procedural posing
+    const boneNames = [
+      'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+      'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+      'Spine', 'Spine1', 'Spine2', 'Hips',
+      'Neck', 'Head'
+    ];
 
-    if (foundHeadBone) {
-      headBoneRef.current = foundHeadBone;
-      initialHeadRotRef.current = foundHeadBone.rotation.clone();
+    for (const name of boneNames) {
+      const b = scene.getObjectByName(name) || scene.getObjectByName(name.toLowerCase());
+      if (b) {
+        bonesRef.current[name] = b;
+        initialRotationsRef.current[name] = b.rotation.clone();
+      }
     }
 
     return () => {
       morphMeshesRef.current = [];
-      headBoneRef.current = null;
+      bonesRef.current = {};
+      initialRotationsRef.current = {};
     };
   }, [scene]);
 
@@ -192,10 +196,12 @@ function AvatarModel({
       const currentText = currentSpeechTextRef.current ?? '';
       if (currentText !== lastTextRef.current) {
         lastTextRef.current = currentText;
+        const phonemes = currentSpeechPhonemesRef.current ?? '';
         if (currentText.length > 0) {
           phonemeEngineRef.current.setUtterance(
             currentText,
-            currentAudioDurationRef.current ?? undefined
+            currentAudioDurationRef.current ?? undefined,
+            phonemes
           );
         } else {
           phonemeEngineRef.current.clear();
@@ -240,6 +246,7 @@ function AvatarModel({
       pointerX: state.pointer.x,
       pointerY: state.pointer.y,
       audioState,
+      conversationState: status,
     });
 
     // Apply autonomous micro-expression blendshapes (blinking, saccades, eyebrows, cheek accentuation)
@@ -253,23 +260,25 @@ function AvatarModel({
       }
     }
 
-    // Step 6: Apply interactive cursor head & neck rotation toward user mouse pointer
-    if (headBoneRef.current && initialHeadRotRef.current) {
-      headBoneRef.current.rotation.x = initialHeadRotRef.current.x + dynamics.headRotation.x;
-      headBoneRef.current.rotation.y = initialHeadRotRef.current.y + dynamics.headRotation.y;
-      headBoneRef.current.rotation.z = initialHeadRotRef.current.z + dynamics.headRotation.z;
-    } else if (scene) {
-      // Gentle scene fallback tilt if model has no exposed Neck/Head armature joint
-      scene.rotation.y = dynamics.sceneOffset.rotationY + dynamics.headRotation.y * 0.45;
-      scene.rotation.x = dynamics.headRotation.x * 0.25;
+    // Step 6: Apply all calculated procedural IK/FK rotations to the cached bones
+    for (const [boneName, rot] of Object.entries(dynamics.boneRotations)) {
+      const bone = bonesRef.current[boneName];
+      const initial = initialRotationsRef.current[boneName];
+      if (bone && initial) {
+        bone.rotation.x = initial.x + rot.x;
+        bone.rotation.y = initial.y + rot.y;
+        bone.rotation.z = initial.z + rot.z;
+      }
     }
 
-    // Step 7: Root scene respiration and idle presence
+    // Step 7: Root scene fallback presentation (for models without proper bones)
     if (scene) {
       scene.position.y = dynamics.sceneOffset.positionY;
-      if (headBoneRef.current) {
+      if (!bonesRef.current['Head'] && !bonesRef.current['Spine2']) {
+        // Fallback gentle scene rotations if no bones are available
         scene.rotation.y = dynamics.sceneOffset.rotationY;
         scene.rotation.z = dynamics.sceneOffset.rotationZ;
+        scene.rotation.x = dynamics.sceneOffset.rotationX ?? 0;
       }
     }
   });
@@ -378,7 +387,9 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
   const {
     status, isLoading, isIdle, isListening, isThinking, isSpeaking, micError,
     analyser, startListening, stopListening, interrupt, speak, clearHistory,
-    currentSpeechTextRef, currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
+    currentSpeechTextRef,
+    currentSpeechPhonemesRef,
+    currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
   } = useAiVoiceAvatar({
     llmModel: props.llmModel,
     asrModel: props.asrModel,
@@ -463,9 +474,11 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
 
         <AvatarModel
           url={resolvedUrl}
+          status={status}
           debug={debug}
           analyser={analyser}
           currentSpeechTextRef={currentSpeechTextRef}
+          currentSpeechPhonemesRef={currentSpeechPhonemesRef}
           currentAudioDurationRef={currentAudioDurationRef}
           playbackStartTimeRef={playbackStartTimeRef}
           audioContextRef={audioContextRef}

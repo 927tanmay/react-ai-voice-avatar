@@ -12,7 +12,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 export interface UseKokoroWorkerConfig {
   enabled: boolean;
   voice?: string;
-  onSpeechOutput?: (audio: Float32Array, sampleRate: number, text: string, isLast?: boolean) => void;
+  onSpeechOutput?: (audio: Float32Array, sampleRate: number, text: string, phonemes: string, isLast?: boolean) => void;
   onSpeechEnd?: () => void;
   onReady?: () => void;
   onError?: (stage: string, message: string) => void;
@@ -102,6 +102,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
               payload.audio,
               payload.sampleRate,
               payload.text,
+              payload.phonemes,
               payload.isLast
             );
           } else if (type === 'speechEnd') {
