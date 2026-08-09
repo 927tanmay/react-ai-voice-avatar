@@ -89,8 +89,8 @@ async function build() {
   const mlCodeStr = mlBuffer.toString('utf8') + '\n//# sourceURL=mlPipeline.worker.js\n';
 
   await fs.mkdir('src/workers/generated', { recursive: true });
-  await fs.writeFile('src/workers/generated/kokoroTts.worker.code.ts', `export const kokoroWorkerCode = ${JSON.stringify(kokoroCodeStr)};`);
-  await fs.writeFile('src/workers/generated/mlPipeline.worker.code.ts', `export const mlWorkerCode = ${JSON.stringify(mlCodeStr)};`);
+  await fs.writeFile('src/workers/generated/kokoroTts.worker.code.ts', `export const kokoroWorkerCode: string = ${JSON.stringify(kokoroCodeStr)};`);
+  await fs.writeFile('src/workers/generated/mlPipeline.worker.code.ts', `export const mlWorkerCode: string = ${JSON.stringify(mlCodeStr)};`);
 
   console.log('[Esbuild] Workers successfully pre-bundled and stringified into src/workers/generated/ !');
 }
