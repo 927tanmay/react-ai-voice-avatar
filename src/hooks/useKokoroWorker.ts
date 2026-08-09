@@ -52,15 +52,17 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
       try {
         let kokoroWorkerInst: Worker | null = null;
         let usedBlob = false;
+        let pendingBlobUrl: string | null = null;
         
         if (!useFallback) {
           try {
             const { kokoroWorkerCode } = await import('../workers/generated/kokoroTts.worker.code');
-            const blobUrl = URL.createObjectURL(new Blob([kokoroWorkerCode], { type: 'application/javascript' }));
-            kokoroWorkerInst = new Worker(blobUrl, { type: 'module' });
-            URL.revokeObjectURL(blobUrl);
+            pendingBlobUrl = URL.createObjectURL(new Blob([kokoroWorkerCode], { type: 'application/javascript' }));
+            kokoroWorkerInst = new Worker(pendingBlobUrl, { type: 'module' });
+            // Do NOT revoke yet — module workers fetch the blob asynchronously
             usedBlob = true;
           } catch (blobErr: any) {
+            if (pendingBlobUrl) URL.revokeObjectURL(pendingBlobUrl);
             console.warn('[Kokoro Worker] Sync fallback triggered.', blobErr);
             return spawnWorker(true);
           }
@@ -79,7 +81,8 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
 
         kokoroWorker.onerror = (err) => {
           if (usedBlob && !hasReceivedMessage) {
-            console.warn('[Kokoro Worker] Async init error (CSP block). Falling back...', err);
+            console.warn('[Kokoro Worker] Async init error. Retrying without blob...', err);
+            if (pendingBlobUrl) { URL.revokeObjectURL(pendingBlobUrl); pendingBlobUrl = null; }
             kokoroWorker?.terminate();
             spawnWorker(true);
             return;
@@ -101,7 +104,11 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
 
         kokoroWorker.onmessage = (e: MessageEvent) => {
           if (!isMounted) return;
-          hasReceivedMessage = true;
+          if (!hasReceivedMessage) {
+            hasReceivedMessage = true;
+            // Module has loaded; safe to revoke the blob URL now
+            if (pendingBlobUrl) { URL.revokeObjectURL(pendingBlobUrl); pendingBlobUrl = null; }
+          }
           const { type, payload } = e.data;
 
           if (type === 'ready') {

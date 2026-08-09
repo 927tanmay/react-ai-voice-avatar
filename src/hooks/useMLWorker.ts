@@ -53,15 +53,17 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
           if (!isMounted) return;
           let newWorker: Worker | null = null;
           let usedBlob = false;
+          let pendingBlobUrl: string | null = null;
 
           if (!useFallback) {
             try {
               const { mlWorkerCode } = await import('../workers/generated/mlPipeline.worker.code');
-              const blobUrl = URL.createObjectURL(new Blob([mlWorkerCode], { type: 'application/javascript' }));
-              newWorker = new Worker(blobUrl, { type: 'module' });
-              URL.revokeObjectURL(blobUrl);
+              pendingBlobUrl = URL.createObjectURL(new Blob([mlWorkerCode], { type: 'application/javascript' }));
+              newWorker = new Worker(pendingBlobUrl, { type: 'module' });
+              // Do NOT revoke yet — module workers fetch the blob asynchronously
               usedBlob = true;
             } catch (blobErr: any) {
+              if (pendingBlobUrl) URL.revokeObjectURL(pendingBlobUrl);
               console.warn('[ML Worker] Sync fallback triggered.', blobErr);
               return attemptWorkerSpawn(true);
             }
@@ -80,7 +82,8 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
 
           newWorker.onerror = (err) => {
             if (usedBlob && !hasReceivedMessage) {
-              console.warn('[ML Worker] Async init error (CSP block). Falling back...', err);
+              console.warn('[ML Worker] Async init error. Retrying without blob...', err);
+              if (pendingBlobUrl) { URL.revokeObjectURL(pendingBlobUrl); pendingBlobUrl = null; }
               newWorker?.terminate();
               attemptWorkerSpawn(true);
               return;
@@ -111,7 +114,11 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
           });
 
           newWorker.onmessage = (e: MessageEvent) => {
-            hasReceivedMessage = true;
+            if (!hasReceivedMessage) {
+              hasReceivedMessage = true;
+              // Module has loaded; safe to revoke the blob URL now
+              if (pendingBlobUrl) { URL.revokeObjectURL(pendingBlobUrl); pendingBlobUrl = null; }
+            }
             const { type, payload } = e.data;
 
             if (type === 'ready') {
