@@ -1,3 +1,23 @@
+> A real-time, edge-based conversational 3D avatar component for React.
+
+## Deployment & CSP Gotchas (Next.js / Vercel)
+If you deploy your app and see errors like:
+- `[ML Worker] Blob worker failed...`
+- `Error: Could not load studio_small_03_1k.hdr: Failed to fetch`
+
+This is because strict Content-Security-Policy (CSP) headers (often set by default in Next.js or Vercel) block `blob:` workers and external CDN fetches. You have two options:
+
+**1. Adjust your CSP (Recommended for easy setup):**
+Add `blob:` to your `worker-src` and the CDNs to `connect-src`:
+```http
+worker-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://raw.githubusercontent.com;
+```
+
+**2. Self-Host the Workers (Strict CSP):**
+Copy the worker files from `node_modules/react-ai-voice-avatar/dist/*.worker.js` to your app's `public/` directory and pass `workerBaseUrl="/"` to the component.
+
+---
+
 # React AI Voice Avatar (`react-ai-voice-avatar`) 🚀🗣️🧬
 
 [![NPM Version](https://img.shields.io/npm/v/react-ai-voice-avatar?style=for-the-badge&color=8A2BE2&logo=npm)](https://www.npmjs.com/package/react-ai-voice-avatar)
