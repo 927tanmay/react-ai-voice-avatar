@@ -56,24 +56,23 @@ npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 > npm install @react-three/drei@^9 @react-three/fiber@^8
 > ```
 
-### ⚙️ Bundler & Server Configuration (Vite, Next.js & Webpack)
+### ⚙️ Server Configuration (Optional Performance Boost)
 
-Because our multi-threaded WASM and WebGPU engines leverage modern browser `SharedArrayBuffer` memory pipelines, your hosting server or bundler must emit standard Cross-Origin Isolation HTTP headers (`COOP`/`COEP`). Choose your framework configuration below:
+The `react-ai-voice-avatar` engine is truly **zero-config**. You do not need to configure Vite `optimizeDeps`, Next.js Webpack overrides, or manually host Web Worker files—everything is dynamically bundled and executed automatically!
 
-#### ⚡ Vite (`vite.config.ts`)
+However, because our ONNX WebGPU engine leverages modern multi-threaded `SharedArrayBuffer` memory pipelines for maximum inference speed, your hosting server can optionally emit standard Cross-Origin Isolation HTTP headers (`COOP`/`COEP`) to unlock peak performance. If these headers are not present, the engine automatically falls back to single-threaded WebAssembly without crashing.
+
+#### 🌐 Enabling Multi-threading on Production (Vercel, Netlify & Cloudflare)
+To unlock multi-threaded performance, specify these isolation headers in your routing manifests:
+- **Vercel (`vercel.json`)**: Add `"headers": [{ "source": "/(.*)", "headers": [{ "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }, { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }] }]`.
+- **Netlify / Cloudflare Pages (`_headers` or `netlify.toml`)**: Add `/*\n  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp` to `public/_headers`.
+
+#### ⚡ Enabling Multi-threading in Local Dev (Vite & Next.js)
+
+**Vite (`vite.config.ts`)**:
 ```ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-
 export default defineConfig({
   plugins: [react()],
-  optimizeDeps: {
-    exclude: ['react-ai-voice-avatar', 'kokoro-js', 'phonemizer'],
-    include: ['@ricky0123/vad-web'], // CJS — must stay pre-bundled by Vite or VAD mic init fails with "exports is not defined"
-  },
-  worker: {
-    format: 'es'
-  },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
@@ -83,15 +82,9 @@ export default defineConfig({
 });
 ```
 
-> [!TIP]
-> **Why is `optimizeDeps` needed in Vite?**  
-> Excluding `react-ai-voice-avatar` keeps `import.meta.url` properly pointing at its shipped worker assets during local development (`npm run dev`), preventing 404 worker loading errors. However, because `@ricky0123/vad-web` is a CommonJS dependency, it must stay in `include` so Vite pre-bundles it into ESM; otherwise, microphone initialization crashes with `ReferenceError: exports is not defined`. Note that this `optimizeDeps` block is strictly **dev-only**—production builds (`vite build`) do not require it!
-
-#### 🔺 Next.js (`next.config.mjs` or `next.config.js`)
-In Next.js (Webpack & Turbopack), register cross-origin headers directly inside your config export:
+**Next.js (`next.config.mjs`)**:
 ```js
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+export default {
   async headers() {
     return [
       {
@@ -103,34 +96,11 @@ const nextConfig = {
       },
     ];
   },
-  // Ensure Web Workers and WASM binaries bundle cleanly
-  webpack: (config) => {
-    config.output.webassemblyModuleFilename = 'static/wasm/[modulehash].wasm';
-    config.experiments = { ...config.experiments, asyncWebAssembly: true, layers: true };
-    return config;
-  },
 };
-
-export default nextConfig;
 ```
 
-#### 📦 Webpack & Create React App (`webpack.config.js` or `src/setupProxy.js`)
-If you are running custom Webpack or Create React App, configure your local development server headers via `devServer` or middleware proxy:
-```js
-// In webpack.config.js (devServer section):
-devServer: {
-  headers: {
-    'Cross-Origin-Opener-Policy': 'same-origin',
-    'Cross-Origin-Embedder-Policy': 'require-corp',
-  },
-}
-```
-*(For CRA without ejecting, place a `setupProxy.js` file inside your `src/` directory setting these headers via `res.setHeader()` on incoming dev requests).*
-
-#### 🌐 Production Deployment (Vercel, Netlify & Cloudflare)
-When deploying to CDN static hosts, specify the isolation headers in your routing manifests:
-- **Vercel (`vercel.json`)**: Add `"headers": [{ "source": "/(.*)", "headers": [{ "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }, { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }] }]`. *(Note: Vercel serverless SPA rewrites can sometimes interfere with static asset header inheritance; if you experience WASM threading errors on Vercel, Netlify or Cloudflare Pages provide reliable static COOP/COEP isolation out of the box).*
-- **Netlify / Cloudflare Pages (`_headers` or `netlify.toml`)**: Add `/*\n  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp` to `public/_headers`.
+> [!CAUTION]
+> **Strict CSP Policies:** If your enterprise enforces strict Content Security Policies that block `blob:` workers (`worker-src 'self'`), you can bypass our zero-config Blob loaders by passing the `workerBaseUrl` prop to the avatar and hosting the pre-compiled `.worker.js` files from our `dist/assets/` directory yourself.
 
 ---
 

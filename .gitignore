@@ -8,6 +8,7 @@ dist/
 sandbox/dist/
 examples/**/dist/
 *.tgz
+src/workers/generated/
 
 # Logs & temp
 *.log

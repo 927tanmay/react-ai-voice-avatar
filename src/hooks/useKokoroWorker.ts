@@ -17,6 +17,7 @@ export interface UseKokoroWorkerConfig {
   onReady?: () => void;
   onError?: (stage: string, message: string) => void;
   loadingProgress?: (pct: number, label: string) => void;
+  workerBaseUrl?: string;
 }
 
 export function useKokoroWorker(config: UseKokoroWorkerConfig) {
@@ -46,11 +47,27 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     let kokoroWorker: Worker | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const spawnWorker = () => {
+    const spawnWorker = async () => {
       if (!isMounted || !config.enabled) return;
       try {
-        // Standard ECMAScript Worker instantiation for cross-bundler compatibility (Vite, Next.js, Webpack)
-        kokoroWorker = new Worker(new URL('../workers/kokoroTts.worker.ts', import.meta.url), { type: 'module' });
+        let kokoroWorkerInst: Worker | null = null;
+        
+        try {
+          const { kokoroWorkerCode } = await import('../workers/generated/kokoroTts.worker.code');
+          const blobUrl = URL.createObjectURL(new Blob([kokoroWorkerCode], { type: 'text/javascript' }));
+          kokoroWorkerInst = new Worker(blobUrl, { type: 'module' });
+          URL.revokeObjectURL(blobUrl);
+        } catch (blobErr: any) {
+          console.warn('[Kokoro Worker] Failed to instantiate worker from Blob (possibly due to strict CSP). Falling back to network URL...', blobErr);
+          if (configRef.current.workerBaseUrl) {
+            const baseUrl = configRef.current.workerBaseUrl.endsWith('/') ? configRef.current.workerBaseUrl : configRef.current.workerBaseUrl + '/';
+            kokoroWorkerInst = new Worker(baseUrl + 'kokoroTts.worker.js', { type: 'module' });
+          } else {
+            throw new Error('Blob workers are blocked (CSP) and no workerBaseUrl was provided.');
+          }
+        }
+        
+        kokoroWorker = kokoroWorkerInst;
         workerRef.current = kokoroWorker;
 
         kokoroWorker.onerror = (err) => {

@@ -86,7 +86,7 @@
     "vite-plugin-dts": "^4.0.0"
   },
   "scripts": {
-    "build": "vite build && node scripts/build-workers.mjs",
+    "build": "node scripts/build-workers.mjs && vite build",
     "dev": "vite",
     "lint": "tsc --noEmit",
     "format": "prettier --write src",

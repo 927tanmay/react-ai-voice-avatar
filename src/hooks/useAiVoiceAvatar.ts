@@ -19,6 +19,7 @@ export interface UseAiVoiceAvatarConfig {
   loadingProgress?: (pct: number, label: string) => void;
   vadAssetPath?: string;
   onnxWasmPath?: string;
+  workerBaseUrl?: string;
   listenMode?: 'vad' | 'push-to-talk';
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
@@ -207,6 +208,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     onSpeechOutput: config.ttsEngine === 'kokoro' ? handleSpeechOutput : undefined,
     onSpeechEnd: config.ttsEngine === 'kokoro' ? handleSpeechEnd : undefined,
     loadingProgress: config.loadingProgress,
+    workerBaseUrl: config.workerBaseUrl,
     onError: (_stage, _msg) => {
       console.error('[AiVoiceAvatar] Kokoro error, audio may be unavailable');
     },
@@ -216,6 +218,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const { isReady: isMLReady, processAudio, synthesizeText: mmsSynthesize, clearHistory } = useMLWorker({
     llmModel: config.llmModel,
     asrModel: config.asrModel,
+    asrLanguage: config.asrLanguage,
+    onnxWasmPath: config.onnxWasmPath,
+    workerBaseUrl: config.workerBaseUrl,
     ttsLanguage: config.ttsLanguage,
     ttsEngine: config.ttsEngine,
     ttsVoice: config.ttsVoice,

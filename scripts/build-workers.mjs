@@ -84,19 +84,15 @@ async function build() {
     throw new Error(`Build failure: Kokoro worker size (${kokoroBuffer.length} bytes) is unusually small (<2MB). Emscripten dependencies may not have bundled correctly.`);
   }
 
-  // Remove @vite-ignore comments from the published library so consumer bundlers (Vite/Webpack)
-  // properly recognize and copy the pre-bundled worker assets into their production outputs.
-  for (const file of ['dist/index.js', 'dist/index.cjs']) {
-    try {
-      let content = await fs.readFile(file, 'utf8');
-      content = content.replace(/\/\*\s*@vite-ignore\s*\*\//g, '');
-      await fs.writeFile(file, content, 'utf8');
-    } catch {
-      // Ignore if file doesn't exist
-    }
-  }
+  // Convert worker output to TypeScript string modules for zero-config blob loading
+  const kokoroCodeStr = kokoroBuffer.toString('utf8') + '\\n//# sourceURL=kokoroTts.worker.js\\n';
+  const mlCodeStr = mlBuffer.toString('utf8') + '\\n//# sourceURL=mlPipeline.worker.js\\n';
 
-  console.log('[Esbuild] Workers successfully pre-bundled and consumer asset links cleaned!');
+  await fs.mkdir('src/workers/generated', { recursive: true });
+  await fs.writeFile('src/workers/generated/kokoroTts.worker.code.ts', `export const kokoroWorkerCode = ${JSON.stringify(kokoroCodeStr)};`);
+  await fs.writeFile('src/workers/generated/mlPipeline.worker.code.ts', `export const mlWorkerCode = ${JSON.stringify(mlCodeStr)};`);
+
+  console.log('[Esbuild] Workers successfully pre-bundled and stringified into src/workers/generated/ !');
 }
 
 build().catch((err) => {

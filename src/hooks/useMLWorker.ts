@@ -4,6 +4,9 @@ import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
 export interface UseMLWorkerConfig {
   llmModel?: string;
   asrModel?: string;
+  asrLanguage?: string;
+  onnxWasmPath?: string;
+  workerBaseUrl?: string;
   ttsLanguage?: string;
   ttsEngine?: 'kokoro' | 'mms';
   ttsVoice?: string;
@@ -35,10 +38,25 @@ export function useMLWorker(config: UseMLWorkerConfig) {
     let isMounted = true;
     let worker: Worker | null = null;
 
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       if (!isMounted) return;
       try {
-        const newWorker = new Worker(new URL('../workers/mlPipeline.worker.ts', import.meta.url), { type: 'module' });
+        let newWorker: Worker | null = null;
+        try {
+          const { mlWorkerCode } = await import('../workers/generated/mlPipeline.worker.code');
+          const blobUrl = URL.createObjectURL(new Blob([mlWorkerCode], { type: 'text/javascript' }));
+          newWorker = new Worker(blobUrl, { type: 'module' });
+          URL.revokeObjectURL(blobUrl);
+        } catch (blobErr: any) {
+          console.warn('[ML Worker] Failed to instantiate worker from Blob (possibly due to strict CSP). Falling back to network URL...', blobErr);
+          if (configRef.current.workerBaseUrl) {
+            const baseUrl = configRef.current.workerBaseUrl.endsWith('/') ? configRef.current.workerBaseUrl : configRef.current.workerBaseUrl + '/';
+            newWorker = new Worker(baseUrl + 'mlPipeline.worker.js', { type: 'module' });
+          } else {
+            throw new Error('Blob workers are blocked (CSP) and no workerBaseUrl was provided.');
+          }
+        }
+        
         worker = newWorker;
         workerRef.current = newWorker;
 

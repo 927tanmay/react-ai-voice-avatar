@@ -66,6 +66,8 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   /** Optional overrides for self-hosting VAD and ONNX runtime WASM assets */
   vadAssetPath?: string;
   onnxWasmPath?: string;
+  /** CSP Escape Hatch: if blob workers are blocked, fetch pre-compiled workers from this URL base */
+  workerBaseUrl?: string;
   /** Set to true to enable HTTP HEAD probe for local GLB files in / (disabled by default to prevent console 404s in SPAs) */
   enableLocalAssetProbe?: boolean;
 
@@ -427,6 +429,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     lowMemoryMode: props.lowMemoryMode,
     vadAssetPath: props.vadAssetPath,
     onnxWasmPath: props.onnxWasmPath,
+    workerBaseUrl: props.workerBaseUrl,
     listenMode: props.listenMode,
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
