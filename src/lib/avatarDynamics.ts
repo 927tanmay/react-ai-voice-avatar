@@ -306,10 +306,16 @@ export class AvatarDynamicsEngine {
       return boneRotations[name]; 
     };
 
-    // 5.1 Rest Pose: Relax the RPM A-pose (arms down)
-    // RPM exports A-pose at ~45-50°. Dropping by 0.75 radians (~43°) brings them to a relaxed 5-10° resting state.
-    getRot('LeftArm').z -= 0.75;  // Drop left arm
-    getRot('RightArm').z += 0.75; // Drop right arm
+    // 5.1 Rest Pose: Relax the RPM A-pose (arms down, slightly forward, and rotated inward)
+    // RPM exports A-pose at ~45-50°. Dropping by 0.95 rad (~54°), pitching 0.15 rad forward, and rolling inward
+    // allows the hands to fall naturally in front of the thighs/hips rather than sticking out wide laterally.
+    getRot('LeftArm').z -= 0.95;  // Drop left arm
+    getRot('LeftArm').x += 0.15;  // Pitch left arm slightly forward
+    getRot('LeftArm').y += 0.10;  // Roll left arm inward towards body
+
+    getRot('RightArm').z += 0.95; // Drop right arm
+    getRot('RightArm').x += 0.15; // Pitch right arm slightly forward
+    getRot('RightArm').y -= 0.10; // Roll right arm inward towards body
 
     // Accumulate breath phase to prevent snap-jumps on speed changes
     const respirationSpeed = isIdle ? 1.0 : 1.5;
