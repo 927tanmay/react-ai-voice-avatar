@@ -23,10 +23,10 @@ import type { AudioLipSyncState } from './audioLipSync';
 export interface DynamicsOutputs {
   /** Map of ARKit target names to computed weights (0 to 1). */
   blendshapes: Record<string, number>;
-  /** Map of Bone names to computed rotational offsets (x, y, z in radians). */
-  boneRotations: Record<string, { x: number; y: number; z: number }>;
-  /** Root scene fallback offsets for models lacking bones. */
-  sceneOffset: { positionY: number; rotationY: number; rotationZ: number; rotationX?: number };
+  /** Damped rotational offset (in radians) to apply to the Head or Neck bone. */
+  headRotation: { x: number; y: number; z: number };
+  /** Root scene breathing and idle micro-movement offset. */
+  sceneOffset: { positionY: number; rotationY: number; rotationZ: number };
 }
 
 export interface DynamicsInput {
@@ -83,8 +83,6 @@ export class AvatarDynamicsEngine {
   private isBlinking: boolean = false;
   private blinkStartTime: number = 0;
   private wasSpeaking: boolean = false;
-  private lastState: string = 'idle';
-  private breathRiseTime: number = -10.0;
   private breathPhase: number = 0;
   private smoothedSceneRotZ: number = 0;
 
@@ -154,12 +152,6 @@ export class AvatarDynamicsEngine {
       this.forceBlink(elapsedTime);
     }
     this.wasSpeaking = isCurrentlySpeaking;
-
-    // Deep breath when beginning to think (anticipating long utterance)
-    if (conversationState === 'thinking' && this.lastState !== 'thinking') {
-      this.breathRiseTime = elapsedTime;
-    }
-    this.lastState = conversationState;
 
     // ─── 1. Autonomous Blinking (Part 1.1) ──────────────────────────────────
     let blinkWeight = 0;
@@ -299,99 +291,26 @@ export class AvatarDynamicsEngine {
     this.currentHeadRotation.x = lerp(this.currentHeadRotation.x, targetHeadPitch, currentDamping);
     this.currentHeadRotation.z = lerp(this.currentHeadRotation.z, -pointerX * 0.08, currentDamping * 0.5); // Slight roll tilt for natural aesthetics
 
-    // ─── 5. Full Body Procedural Dynamics (IK/FK) ───────────────────────────
-    const boneRotations: Record<string, {x: number, y: number, z: number}> = {};
-    const getRot = (name: string) => { 
-      if (!boneRotations[name]) boneRotations[name] = {x:0, y:0, z:0}; 
-      return boneRotations[name]; 
-    };
-
-    // 5.1 Rest Pose: Relax the RPM A-pose (arms down, slightly forward, and rotated inward)
-    // RPM exports A-pose at ~45-50°. Dropping by 0.95 rad (~54°), pitching 0.15 rad forward, and rolling inward
-    // allows the hands to fall naturally in front of the thighs/hips rather than sticking out wide laterally.
-    getRot('LeftArm').z -= 0.95;  // Drop left arm
-    getRot('LeftArm').x += 0.15;  // Pitch left arm slightly forward
-    getRot('LeftArm').y += 0.10;  // Roll left arm inward towards body
-
-    getRot('RightArm').z += 0.95; // Drop right arm
-    getRot('RightArm').x += 0.15; // Pitch right arm slightly forward
-    getRot('RightArm').y -= 0.10; // Roll right arm inward towards body
-
-    // Accumulate breath phase to prevent snap-jumps on speed changes
+    // ─── 5. Scene Breathing & Idle Presence ────────────────────────────────────
     const respirationSpeed = isIdle ? 1.0 : 1.5;
     this.breathPhase += input.delta * respirationSpeed;
-    
-    // 5.2 Chest Breathing (instead of bobbing the root scene)
-    let chestRiseX = Math.sin(this.breathPhase) * 0.015;
-    let shoulderRiseZ = Math.sin(this.breathPhase) * 0.02;
+    const respirationDepth = isIdle ? 0.025 : 0.02;
+    const sceneOffsetY = Math.sin(this.breathPhase) * respirationDepth;
+    const sceneRotY = Math.sin(elapsedTime * 0.5) * 0.04;
 
-    // Deep breath-rise animation just before long utterances begin
-    const timeSinceBreath = elapsedTime - this.breathRiseTime;
-    if (timeSinceBreath > 0 && timeSinceBreath < 2.0) {
-      const breathBump = Math.sin((timeSinceBreath / 2.0) * Math.PI);
-      chestRiseX -= breathBump * 0.04;
-      shoulderRiseZ += breathBump * 0.03;
-    }
-    
-    getRot('Spine2').x += chestRiseX;
-    getRot('LeftShoulder').z += shoulderRiseZ;
-    getRot('RightShoulder').z -= shoulderRiseZ;
-
-    // 5.3 Asymmetric Arm Drift
-    const leftArmPhase = this.breathPhase * 0.31;
-    const rightArmPhase = this.breathPhase * 0.27;
-    getRot('LeftArm').z += Math.sin(leftArmPhase) * 0.015;
-    getRot('LeftArm').x += Math.cos(leftArmPhase) * 0.015;
-    
-    getRot('RightArm').z -= Math.sin(rightArmPhase) * 0.015;
-    getRot('RightArm').x += Math.cos(rightArmPhase) * 0.015;
-
-    // 5.4 Weight Shift
-    const weightShiftPhase = this.breathPhase * 0.15;
-    const hipsYaw = Math.sin(weightShiftPhase) * 0.03;
-    const hipsRoll = Math.cos(weightShiftPhase) * 0.02;
-    
-    getRot('Hips').y += hipsYaw;
-    getRot('Hips').z += hipsRoll;
-    getRot('Spine').y -= hipsYaw * 0.8; // Counter rotation
-    getRot('Spine').z -= hipsRoll * 0.8;
-
-    // 5.5 Cervical Chain Distribution (50% Head, 30% Neck, 20% Spine2)
-    getRot('Head').y += this.currentHeadRotation.y * 0.5;
-    getRot('Head').x += this.currentHeadRotation.x * 0.5;
-    getRot('Head').z += this.currentHeadRotation.z * 0.5;
-
-    getRot('Neck').y += this.currentHeadRotation.y * 0.3;
-    getRot('Neck').x += this.currentHeadRotation.x * 0.3;
-    getRot('Neck').z += this.currentHeadRotation.z * 0.3;
-
-    getRot('Spine2').y += this.currentHeadRotation.y * 0.2;
-    getRot('Spine2').x += this.currentHeadRotation.x * 0.2;
-    getRot('Spine2').z += this.currentHeadRotation.z * 0.2;
-
-    // 5.6 Shoulder Coupling to Speech
-    if (audioState && audioState.isSpeaking) {
-      // Small rise applied to shoulders on emphatic peaks
-      const shoulderLift = audioState.energy * 0.08;
-      getRot('LeftShoulder').z += shoulderLift;
-      getRot('RightShoulder').z -= shoulderLift;
-    }
-
-    // Attentive tilt during listening (applied to Spine1 for body language)
-    let targetSceneRotZ = Math.cos(elapsedTime * 0.3) * 0.015;
+    // Attentive tilt during listening
+    let targetTilt = 0;
     if (isListening) {
-      targetSceneRotZ += -0.05; // Subtle head tilt to the side
+      targetTilt = -0.03;
     }
-    this.smoothedSceneRotZ = lerp(this.smoothedSceneRotZ, targetSceneRotZ, 0.08);
-    getRot('Spine1').z += this.smoothedSceneRotZ;
-    getRot('Spine1').y += Math.sin(elapsedTime * 0.5) * 0.02; // Idle ambient look around
+    this.smoothedSceneRotZ = lerp(this.smoothedSceneRotZ, targetTilt, 0.08);
 
     return {
       blendshapes: outputs,
-      boneRotations,
+      headRotation: { ...this.currentHeadRotation },
       sceneOffset: {
-        positionY: 0, // Root vertical bobbing removed; shifted to chest breathing
-        rotationY: Math.sin(elapsedTime * 0.5) * 0.04, // Fallback
+        positionY: sceneOffsetY,
+        rotationY: sceneRotY,
         rotationZ: this.smoothedSceneRotZ,
       },
     };
