@@ -5,9 +5,8 @@ import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import './style.css';
 
 interface Persona {
-  id: 'ananya' | 'aarav';
+  id: 'nova' | 'orion';
   name: string;
-  hindiName: string;
   role: string;
   avatarIcon: string;
   preset: 'ananya' | 'aarav';
@@ -20,37 +19,35 @@ interface Persona {
 
 const PERSONAS: Persona[] = [
   {
-    id: 'ananya',
-    name: 'Ananya',
-    hindiName: 'अनन्या',
+    id: 'nova',
+    name: 'Nova',
     role: 'Female Voice Companion',
     avatarIcon: '👩🏽',
     preset: 'ananya',
     accentColor: '#E67E22', // Warm Saffron Gold / Peach
     borderColor: 'rgba(230, 126, 34, 0.6)',
-    systemPrompt: "You are Ananya, an empathetic, warm, and lively conversational companion. You speak the way a person actually talks out loud, never like a written assistant or textbook. Keep your replies to 1-3 short, naturally spoken sentences unless explicitly asked for more detail. Never use lists, bullet points, markdown, or section headers—all of those sound absurd out loud. Always use contractions like I'm, that's, let's, and don't. To keep our chat feeling alive and flowing, occasionally end your answer by asking a short, friendly follow-up question.",
+    systemPrompt: "You are Nova, an empathetic, warm, and lively conversational companion. You speak the way a person actually talks out loud, never like a written assistant or textbook. Keep your replies to 1-3 short, naturally spoken sentences unless explicitly asked for more detail. Never use lists, bullet points, markdown, or section headers—all of those sound absurd out loud. Always use contractions like I'm, that's, let's, and don't. To keep our chat feeling alive and flowing, occasionally end your answer by asking a short, friendly follow-up question.",
     description: 'Empathetic, warm, and highly expressive conversationalist.',
     defaultVoice: 'af_heart',
   },
   {
-    id: 'aarav',
-    name: 'Aarav',
-    hindiName: 'आरव',
+    id: 'orion',
+    name: 'Orion',
     role: 'Male Voice Companion',
     avatarIcon: '👨🏽',
     preset: 'aarav',
     accentColor: '#1A73E8', // Royal Peacock Indigo / Blue
     borderColor: 'rgba(26, 115, 232, 0.6)',
-    systemPrompt: "You are Aarav, a charismatic, sharp, and confident technical guide and voice companion. You communicate like a real human conversing out loud, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 concise, spoken sentences unless explicitly prompted for depth. Absolutely avoid lists, numbered steps, markdown, and headers—just speak naturally. Use common contractions like I'm, that's, can't, and don't. To maintain an authentic conversational dialogue rather than a Q&A terminal, occasionally weave in a brief, engaging follow-up question.",
+    systemPrompt: "You are Orion, a charismatic, sharp, and confident technical guide and voice companion. You communicate like a real human conversing out loud, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 concise, spoken sentences unless explicitly prompted for depth. Absolutely avoid lists, numbered steps, markdown, and headers—just speak naturally. Use common contractions like I'm, that's, can't, and don't. To maintain an authentic conversational dialogue rather than a Q&A terminal, occasionally weave in a brief, engaging follow-up question.",
     description: 'Confident, articulate, and dynamic technical assistant.',
     defaultVoice: 'am_michael',
   },
 ];
 
 const KOKORO_VOICES = [
-  { id: 'af_heart', label: 'Ananya (af_heart - Warm Female A-Grade)' },
+  { id: 'af_heart', label: 'Nova (af_heart - Warm Female A-Grade)' },
   { id: 'af_bella', label: 'Bella (af_bella - Expressive Female)' },
-  { id: 'am_michael', label: 'Aarav (am_michael - Engaging Male)' },
+  { id: 'am_michael', label: 'Orion (am_michael - Engaging Male)' },
   { id: 'am_fenrir', label: 'Fenrir (am_fenrir - Authoritative Male)' },
   { id: 'bf_emma', label: 'Emma (bf_emma - British Female)' },
   { id: 'bm_george', label: 'George (bm_george - British Male)' },
@@ -68,7 +65,7 @@ const LIGHTING_PRESETS: Array<{ id: 'studio' | 'cyberpunk_violet' | 'cool_azure'
 export const App: React.FC = () => {
   const avatarRef = useRef<AiVoiceAvatarHandle>(null);
   const [_avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
-  const [activePersonaId, setActivePersonaId] = useState<'ananya' | 'aarav'>('aarav');
+  const [activePersonaId, setActivePersonaId] = useState<'nova' | 'orion'>('orion');
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud');
 
@@ -83,7 +80,7 @@ export const App: React.FC = () => {
   };
   
   // Dynamic TTS Engine Configuration & Seamless Switching
-  const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>('mms');
+  const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>('kokoro');
   const [ttsVoice, setTtsVoice] = useState<string>('af_heart');
 
   const currentPersona = PERSONAS.find(p => p.id === activePersonaId) || PERSONAS[0];
@@ -95,84 +92,71 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#0C0D10', overflow: 'hidden', fontFamily: "'Inter', -apple-system, sans-serif" }}>
-      {/* Top Tricolor Accent Bar */}
+      {/* Top Accent Bar */}
       <div style={{
         position: 'absolute',
         top: 0,
         left: 0,
         width: '100%',
         height: '4px',
-        background: 'linear-gradient(90deg, #FF9933 0%, #FFFFFF 50%, #138808 100%)',
+        background: `linear-gradient(90deg, ${currentPersona.accentColor} 0%, #FFFFFF 100%)`,
         zIndex: 1000,
+        transition: 'background 0.5s ease',
       }} />
 
-      {/* Header Branding - Top Left */}
+      {/* Left Column Controls */}
       <div style={{
         position: 'absolute',
         top: '24px',
         left: '24px',
         zIndex: 500,
-        background: 'rgba(20, 22, 28, 0.75)',
-        backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        padding: '16px 22px',
-        borderRadius: '16px',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-        maxWidth: '320px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-          <span style={{ fontSize: '24px' }}>🇮🇳</span>
-          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.3px' }}>
-            Indic<span style={{ color: currentPersona.accentColor }}>Avatar</span>
-          </h1>
-          <span style={{
-            fontSize: '11px',
-            backgroundColor: 'rgba(255, 153, 51, 0.2)',
-            color: '#FF9933',
-            padding: '2px 8px',
-            borderRadius: '10px',
-            fontWeight: 600,
-            border: '1px solid rgba(255, 153, 51, 0.4)',
-          }}>v0.2.0</span>
-        </div>
-        <p style={{ margin: 0, fontSize: '13px', color: '#A0A6B2', lineHeight: '1.4' }}>
-          Real-time Edge WebGPU conversational voice AI featuring human-like prosody & 3D virtual presence.
-        </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
-          <span style={{ fontSize: '12px', color: '#138808', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '8px', height: '8px', backgroundColor: '#138808', borderRadius: '50%', display: 'inline-block', boxShadow: '0 0 8px #138808' }}></span>
-            {ttsEngine === 'kokoro' ? 'Kokoro-82M Natural Voice' : 'Meta MMS-TTS Engine Ready'}
-          </span>
-        </div>
-      </div>
-
-      {/* Avatar Persona & TTS Engine Selector - Top Right */}
-      <div style={{
-        position: 'absolute',
-        top: '24px',
-        right: '24px',
-        zIndex: 500,
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px',
-        width: '330px',
+        gap: '20px',
+        width: '320px',
         maxHeight: 'calc(100vh - 48px)',
         overflowY: 'auto',
+        paddingRight: '8px', // Scrollbar padding
       }}>
+        {/* Header Branding */}
+        <div style={{
+          background: 'rgba(20, 22, 28, 0.75)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          padding: '20px',
+          borderRadius: '20px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.3px' }}>
+              React <span style={{ color: currentPersona.accentColor, transition: 'color 0.5s ease' }}>AI Voice Avatar</span>
+            </h1>
+          </div>
+          <p style={{ margin: 0, fontSize: '13px', color: '#94A3B8', lineHeight: '1.5' }}>
+            Real-time Edge WebGPU conversational voice AI featuring human-like prosody & 3D virtual presence.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+            <span style={{ fontSize: '12px', color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '8px', height: '8px', backgroundColor: '#10B981', borderRadius: '50%', display: 'inline-block', boxShadow: '0 0 8px #10B981' }}></span>
+              {ttsEngine === 'kokoro' ? 'Kokoro-82M Natural Voice' : 'Meta MMS-TTS Engine Ready'}
+            </span>
+          </div>
+        </div>
+
         {/* Persona Selector Card */}
         <div style={{
-          background: 'rgba(20, 22, 28, 0.85)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          background: 'rgba(20, 22, 28, 0.75)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '20px',
-          padding: '14px 16px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
+          padding: '16px 20px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
         }}>
-          <h2 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
+          <h2 style={{ margin: '0 0 16px 0', fontSize: '12px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
             ✨ Select Persona
           </h2>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {PERSONAS.map((persona) => {
               const isSelected = activePersonaId === persona.id;
               return (
@@ -183,23 +167,23 @@ export const App: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
-                    padding: '10px 12px',
-                    borderRadius: '14px',
+                    padding: '12px 14px',
+                    borderRadius: '16px',
                     cursor: 'pointer',
                     transition: 'all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
-                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                    background: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.02)',
                     border: '1.5px solid',
-                    borderColor: isSelected ? persona.borderColor : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: isSelected ? persona.borderColor : 'rgba(255, 255, 255, 0.05)',
                     boxShadow: isSelected ? `0 4px 20px ${persona.accentColor}33` : 'none',
                     transform: isSelected ? 'scale(1.02)' : 'scale(1)',
                   }}
                 >
                   <div style={{
-                    fontSize: '24px',
+                    fontSize: '26px',
                     background: isSelected ? `${persona.accentColor}22` : 'rgba(255,255,255,0.05)',
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '10px',
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '12px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -208,26 +192,40 @@ export const App: React.FC = () => {
                     {persona.avatarIcon}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                      <span style={{ fontWeight: 700, fontSize: '14px', color: '#FFFFFF' }}>{persona.name}</span>
-                      <span style={{ fontWeight: 500, fontSize: '12px', color: persona.accentColor }}>({persona.hindiName})</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '15px', color: '#FFFFFF' }}>{persona.name}</span>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 500 }}>{persona.role}</div>
+                    <div style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 500 }}>{persona.role}</div>
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+      </div>
 
+      {/* Right Column Controls */}
+      <div style={{
+        position: 'absolute',
+        top: '24px',
+        right: '24px',
+        zIndex: 500,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px',
+        width: '330px',
+        maxHeight: 'calc(100vh - 48px)',
+        overflowY: 'auto',
+        paddingLeft: '8px', // Scrollbar padding
+      }}>
         {/* Dynamic TTS Engine Switcher Card */}
         <div style={{
-          background: 'rgba(20, 22, 28, 0.85)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          background: 'rgba(20, 22, 28, 0.75)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '20px',
-          padding: '14px 16px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
+          padding: '16px 20px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
         }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
             🔊 Voice & Prosody Engine
@@ -306,12 +304,12 @@ export const App: React.FC = () => {
 
         {/* Intelligence Architecture Switcher Card */}
         <div style={{
-          background: 'rgba(20, 22, 28, 0.85)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          background: 'rgba(20, 22, 28, 0.75)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '20px',
-          padding: '14px 16px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
+          padding: '16px 20px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
         }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
             🧠 Intelligence Architecture
@@ -354,7 +352,7 @@ export const App: React.FC = () => {
             {llmMode === 'cloud' ? (
               <>
                 <span style={{ color: '#38BDF8', fontWeight: 600, display: 'block', marginBottom: '4px' }}>☁️ Zero-Download API Routing (`onSubmit`)</span>
-                Ideal for production. By providing an <code>onSubmit</code> prop, the engine <strong>skips local LLM downloads entirely</strong>. Speech recognition (Whisper) and 60 FPS 3D lip-sync execute on-device instantly, while conversational text reasoning is seamlessly routed to your custom cloud backend (e.g., OpenAI, Claude).
+                Ideal for production. By providing an <code style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', color: '#E2E8F0', margin: '0 2px' }}>onSubmit</code> prop, the engine <strong>skips local LLM downloads entirely</strong>. Speech recognition (Whisper) and 60 FPS 3D lip-sync execute on-device instantly, while conversational text reasoning is seamlessly routed to your custom cloud backend (e.g., OpenAI, Claude).
               </>
             ) : (
               <>
@@ -367,12 +365,12 @@ export const App: React.FC = () => {
 
         {/* Cinematic Lighting Atmosphere Card */}
         <div style={{
-          background: 'rgba(20, 22, 28, 0.85)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          background: 'rgba(20, 22, 28, 0.75)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '20px',
-          padding: '14px 16px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
+          padding: '16px 20px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
         }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>
             💡 Studio Lighting Atmosphere
@@ -414,8 +412,8 @@ export const App: React.FC = () => {
         <color attach="background" args={['#101116']} />
         
         {/* Subtle studio back-lighting accents representing saffron / peacock teal */}
-        <pointLight position={[-3, 2, -2]} intensity={25} color={activePersonaId === 'ananya' ? '#FF9933' : '#1A73E8'} distance={6} />
-        <pointLight position={[3, 1, -2]} intensity={20} color={activePersonaId === 'ananya' ? '#138808' : '#FF9933'} distance={6} />
+        <pointLight position={[-3, 2, -2]} intensity={25} color={activePersonaId === 'nova' ? '#E67E22' : '#1A73E8'} distance={6} />
+        <pointLight position={[3, 1, -2]} intensity={20} color={activePersonaId === 'nova' ? '#F39C12' : '#2980B9'} distance={6} />
         
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.5} maxDistance={4} />
         

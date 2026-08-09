@@ -23,10 +23,10 @@ import type { AudioLipSyncState } from './audioLipSync';
 export interface DynamicsOutputs {
   /** Map of ARKit target names to computed weights (0 to 1). */
   blendshapes: Record<string, number>;
-  /** Damped rotational offset (in radians) to apply to the Head or Neck bone. */
-  headRotation: { x: number; y: number; z: number };
-  /** Root scene breathing and idle micro-movement offset. */
-  sceneOffset: { positionY: number; rotationY: number; rotationZ: number };
+  /** Map of Bone names to computed rotational offsets (x, y, z in radians). */
+  boneRotations: Record<string, { x: number; y: number; z: number }>;
+  /** Root scene fallback offsets for models lacking bones. */
+  sceneOffset: { positionY: number; rotationY: number; rotationZ: number; rotationX?: number };
 }
 
 export interface DynamicsInput {
@@ -291,27 +291,66 @@ export class AvatarDynamicsEngine {
     this.currentHeadRotation.x = lerp(this.currentHeadRotation.x, targetHeadPitch, currentDamping);
     this.currentHeadRotation.z = lerp(this.currentHeadRotation.z, -pointerX * 0.08, currentDamping * 0.5); // Slight roll tilt for natural aesthetics
 
-    // ─── 5. Scene Breathing & Idle Presence ────────────────────────────────────
+    // ─── 5. Full Body Procedural Dynamics (IK/FK) ───────────────────────────
+    const boneRotations: Record<string, {x: number, y: number, z: number}> = {};
+    const getRot = (name: string) => { 
+      if (!boneRotations[name]) boneRotations[name] = {x:0, y:0, z:0}; 
+      return boneRotations[name]; 
+    };
+
+    // 5.1 Rest Pose: Relax the RPM A-pose (arms closer to body and slightly pitched forward)
+    getRot('LeftArm').z -= 0.2;
+    getRot('RightArm').z += 0.2;
+    
+    // Pitch arms slightly forward so they don't clip into hips
+    getRot('LeftArm').x += 0.1;
+    getRot('RightArm').x += 0.1;
+    
+    // Add natural elbow bend (forearms) - X is the hinge axis. Positive X bends elbows forward.
+    getRot('LeftForeArm').x += 0.25;
+    getRot('RightForeArm').x += 0.25;
+
+    // Relax the wrists (hands) - Positive X drops them slightly
+    getRot('LeftHand').x += 0.1;
+    getRot('RightHand').x += 0.1;
+
+    // Accumulate breath phase
     const respirationSpeed = isIdle ? 1.0 : 1.5;
     this.breathPhase += input.delta * respirationSpeed;
-    const respirationDepth = isIdle ? 0.025 : 0.02;
-    const sceneOffsetY = Math.sin(this.breathPhase) * respirationDepth;
-    const sceneRotY = Math.sin(elapsedTime * 0.5) * 0.04;
+    
+    // 5.2 Chest Breathing (Spine2 pitch)
+    const chestRiseX = Math.sin(this.breathPhase) * 0.012;
+    getRot('Spine2').x += chestRiseX;
 
-    // Attentive tilt during listening
+    // 5.3 Cervical Chain Distribution
+    // Yaw (Y) and pitch (X) are distributed across Head (50%), Neck (30%), Spine2 (20%).
+    // Because bone rotations compound, the head achieves 100% total rotation, but via a natural curve.
+    // Roll (Z) stays on the Head bone ONLY to prevent unnatural spine corkscrewing.
+    getRot('Head').y += this.currentHeadRotation.y * 0.5;
+    getRot('Head').x += this.currentHeadRotation.x * 0.5;
+    getRot('Head').z += this.currentHeadRotation.z; // All roll on Head only
+
+    getRot('Neck').y += this.currentHeadRotation.y * 0.3;
+    getRot('Neck').x += this.currentHeadRotation.x * 0.3;
+
+    getRot('Spine2').y += this.currentHeadRotation.y * 0.2;
+    getRot('Spine2').x += this.currentHeadRotation.x * 0.2;
+
+    // 5.4 Attentive tilt during listening (applied to Head)
     let targetTilt = 0;
     if (isListening) {
       targetTilt = -0.03;
     }
     this.smoothedSceneRotZ = lerp(this.smoothedSceneRotZ, targetTilt, 0.08);
+    getRot('Head').z += this.smoothedSceneRotZ;
 
     return {
       blendshapes: outputs,
-      headRotation: { ...this.currentHeadRotation },
+      boneRotations,
       sceneOffset: {
-        positionY: sceneOffsetY,
-        rotationY: sceneRotY,
-        rotationZ: this.smoothedSceneRotZ,
+        positionY: 0, // Root vertical bobbing removed; shifted to chest breathing
+        rotationY: Math.sin(elapsedTime * 0.5) * 0.04, // Fallback gentle idle turn
+        rotationZ: 0,
       },
     };
   }

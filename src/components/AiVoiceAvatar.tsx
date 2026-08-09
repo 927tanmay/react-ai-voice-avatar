@@ -131,14 +131,8 @@ function AvatarModel({
   const prevWeightsRef = useRef<VisemeWeights | null>(null);
   const lastTextRef = useRef<string>('');
 
-  // Skeletal armature tracking refs for interactive head posture
-  const headBoneRef = useRef<THREE.Object3D | null>(null);
-  const initialHeadRotRef = useRef<THREE.Euler | null>(null);
-  // Static arm rest pose refs (relax the RPM A-pose)
-  const leftArmBoneRef = useRef<THREE.Object3D | null>(null);
-  const rightArmBoneRef = useRef<THREE.Object3D | null>(null);
-  const initialLeftArmRotRef = useRef<THREE.Euler | null>(null);
-  const initialRightArmRotRef = useRef<THREE.Euler | null>(null);
+  // Skeletal armature tracking refs for interactive head posture and body IK
+  const bonesRef = useRef<Record<string, THREE.Object3D>>({});
 
   // Find all meshes with morph targets and locate head armature bones
   useEffect(() => {
@@ -150,60 +144,35 @@ function AvatarModel({
     });
     morphMeshesRef.current = meshes;
 
-    // Locate standard humanoid head bone for smooth pointer tracking
-    const foundHeadBone = (
-      scene.getObjectByName('Head') ||
-      scene.getObjectByName('Neck') ||
-      scene.getObjectByName('head') ||
-      scene.getObjectByName('neck') ||
-      null
-    );
+    // Cache standard humanoid armature joints for procedural posing
+    const boneNames = [
+      'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+      'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+      'Spine', 'Spine1', 'Spine2', 'Hips',
+      'Neck', 'Head'
+    ];
 
-    if (foundHeadBone) {
-      if (!foundHeadBone.userData.initialRotation) {
-        foundHeadBone.userData.initialRotation = foundHeadBone.rotation.clone();
+    for (const name of boneNames) {
+      const b = scene.getObjectByName(name) || scene.getObjectByName(name.toLowerCase());
+      if (b) {
+        if (!b.userData.initialRotation) {
+          b.userData.initialRotation = b.rotation.clone();
+        }
+        bonesRef.current[name] = b;
       }
-      headBoneRef.current = foundHeadBone;
-      initialHeadRotRef.current = foundHeadBone.userData.initialRotation;
-    }
-
-    // Locate arm bones for static rest pose adjustment
-    const leftArm = scene.getObjectByName('LeftArm');
-    const rightArm = scene.getObjectByName('RightArm');
-    
-    if (leftArm) {
-      if (!leftArm.userData.initialRotation) {
-        leftArm.userData.initialRotation = leftArm.rotation.clone();
-      }
-      leftArmBoneRef.current = leftArm;
-      initialLeftArmRotRef.current = leftArm.userData.initialRotation;
-    }
-    
-    if (rightArm) {
-      if (!rightArm.userData.initialRotation) {
-        rightArm.userData.initialRotation = rightArm.rotation.clone();
-      }
-      rightArmBoneRef.current = rightArm;
-      initialRightArmRotRef.current = rightArm.userData.initialRotation;
     }
 
     return () => {
       // On unmount, restore the bones to their true initial rotation
       // so if this cached scene is rendered again, it's back to neutral
-      if (headBoneRef.current && headBoneRef.current.userData.initialRotation) {
-        headBoneRef.current.rotation.copy(headBoneRef.current.userData.initialRotation);
-      }
-      if (leftArmBoneRef.current && leftArmBoneRef.current.userData.initialRotation) {
-        leftArmBoneRef.current.rotation.copy(leftArmBoneRef.current.userData.initialRotation);
-      }
-      if (rightArmBoneRef.current && rightArmBoneRef.current.userData.initialRotation) {
-        rightArmBoneRef.current.rotation.copy(rightArmBoneRef.current.userData.initialRotation);
+      for (const bone of Object.values(bonesRef.current)) {
+        if (bone && bone.userData.initialRotation) {
+          bone.rotation.copy(bone.userData.initialRotation);
+        }
       }
 
       morphMeshesRef.current = [];
-      headBoneRef.current = null;
-      leftArmBoneRef.current = null;
-      rightArmBoneRef.current = null;
+      bonesRef.current = {};
     };
   }, [scene]);
 
@@ -299,31 +268,27 @@ function AvatarModel({
       }
     }
 
-    // Step 6: Apply head rotation to head bone
-    if (headBoneRef.current && initialHeadRotRef.current) {
-      headBoneRef.current.rotation.x = initialHeadRotRef.current.x + dynamics.headRotation.x;
-      headBoneRef.current.rotation.y = initialHeadRotRef.current.y + dynamics.headRotation.y;
-      headBoneRef.current.rotation.z = initialHeadRotRef.current.z + dynamics.headRotation.z;
-    } else if (scene) {
-      // Gentle scene fallback tilt if model has no exposed Head bone
-      scene.rotation.y = dynamics.sceneOffset.rotationY + dynamics.headRotation.y * 0.45;
-      scene.rotation.x = dynamics.headRotation.x * 0.25;
+    // Step 6: Apply all calculated procedural IK/FK rotations to the cached bones
+    if (dynamics.boneRotations) {
+      for (const [boneName, rot] of Object.entries(dynamics.boneRotations)) {
+        const bone = bonesRef.current[boneName];
+        if (bone && bone.userData.initialRotation) {
+          const initial = bone.userData.initialRotation as THREE.Euler;
+          bone.rotation.x = initial.x + rot.x;
+          bone.rotation.y = initial.y + rot.y;
+          bone.rotation.z = initial.z + rot.z;
+        }
+      }
     }
 
-    // Step 6b: Static arm rest pose — relax RPM A-pose by dropping arms closer to body
-    if (leftArmBoneRef.current && initialLeftArmRotRef.current) {
-      leftArmBoneRef.current.rotation.z = initialLeftArmRotRef.current.z - 0.55;
-    }
-    if (rightArmBoneRef.current && initialRightArmRotRef.current) {
-      rightArmBoneRef.current.rotation.z = initialRightArmRotRef.current.z + 0.55;
-    }
-
-    // Step 7: Root scene breathing and idle presence
+    // Step 7: Root scene fallback presentation (for models without proper bones)
     if (scene) {
       scene.position.y = dynamics.sceneOffset.positionY;
-      if (headBoneRef.current) {
+      if (!bonesRef.current['Head'] && !bonesRef.current['Spine2']) {
+        // Fallback gentle scene rotations if no bones are available
         scene.rotation.y = dynamics.sceneOffset.rotationY;
         scene.rotation.z = dynamics.sceneOffset.rotationZ;
+        scene.rotation.x = dynamics.sceneOffset.rotationX ?? 0;
       }
     }
   });
