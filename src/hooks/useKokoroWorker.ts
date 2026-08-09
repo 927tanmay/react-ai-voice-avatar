@@ -71,7 +71,9 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
             const baseUrl = configRef.current.workerBaseUrl.endsWith('/') ? configRef.current.workerBaseUrl : configRef.current.workerBaseUrl + '/';
             kokoroWorkerInst = new Worker(baseUrl + 'kokoroTts.worker.js', { type: 'module' });
           } else {
-            throw new Error('Blob workers are blocked (CSP) and no workerBaseUrl was provided.');
+            console.error('[Kokoro Worker] Blob worker failed and no workerBaseUrl fallback configured. If your deployment uses COEP headers, either remove them or provide a workerBaseUrl prop.');
+            configRef.current.onError?.('kokoro-worker', 'Blob worker failed. Remove COEP headers or provide workerBaseUrl.');
+            return;
           }
         }
         

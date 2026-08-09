@@ -72,7 +72,9 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
               const baseUrl = configRef.current.workerBaseUrl.endsWith('/') ? configRef.current.workerBaseUrl : configRef.current.workerBaseUrl + '/';
               newWorker = new Worker(baseUrl + 'mlPipeline.worker.js', { type: 'module' });
             } else {
-              throw new Error('Blob workers blocked and no workerBaseUrl provided.');
+              console.error('[ML Worker] Blob worker failed and no workerBaseUrl fallback configured. If your deployment uses COEP headers, either remove them or provide a workerBaseUrl prop.');
+              configRef.current.onError?.('ml-worker-construct', 'Blob worker failed. Remove COEP headers or provide workerBaseUrl.');
+              return;
             }
           }
           
