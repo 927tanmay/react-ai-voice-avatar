@@ -8,7 +8,9 @@ dist/
 sandbox/dist/
 examples/**/dist/
 *.tgz
-src/workers/generated/
+# Generated worker code blobs (multi-MB, rebuilt by build-workers.mjs)
+# Type stubs (.d.ts) in this dir ARE committed so tsc resolves them in CI.
+src/workers/generated/*.worker.code.ts
 
 # Logs & temp
 *.log

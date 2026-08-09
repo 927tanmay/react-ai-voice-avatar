@@ -17,5 +17,7 @@ jobs:
           node-version: 20
           cache: 'npm'
       - run: npm ci
+      - name: Pre-bundle workers (generates code that tsc needs)
+        run: node scripts/build-workers.mjs
       - run: npm run lint
       - run: npm run build
