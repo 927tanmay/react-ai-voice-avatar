@@ -23,6 +23,7 @@ export interface AiVoiceAvatarHandle {
   startListening: () => void;
   stopListening: () => void;
   speak: (text: string) => void;
+  sendText: (text: string) => void;
   getAnalyser: () => AnalyserNode | undefined;
   status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
   isLoading: boolean;
@@ -393,12 +394,13 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(modelSrc || null);
   const [caption, setCaption] = useState<{ text: string; speaker: 'user' | 'avatar' } | null>(null);
   const [loadingInfo, setLoadingInfo] = useState<{ pct?: number; label?: string }>({});
+  const [engineWarning, setEngineWarning] = useState<string | null>(null);
   const loadingProgressRef = useRef(loadingProgress);
   useEffect(() => { loadingProgressRef.current = loadingProgress; }, [loadingProgress]);
 
   const {
     status, isLoading, isIdle, isListening, isThinking, isSpeaking, micError,
-    analyser, startListening, stopListening, interrupt, speak, clearHistory,
+    analyser, startListening, stopListening, interrupt, speak, sendText, clearHistory,
     currentSpeechTextRef,
     currentSpeechPhonemesRef,
     currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
@@ -421,7 +423,14 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onSpeechStart: (text) => {
       setCaption({ text, speaker: 'avatar' });
     },
-    onCapabilityDetected: props.onCapabilityDetected,
+    onCapabilityDetected: (caps) => {
+      if (!caps.webgpu) {
+        setEngineWarning('WebGPU unavailable — using WASM (slower)');
+      } else {
+        setEngineWarning(null);
+      }
+      props.onCapabilityDetected?.(caps);
+    },
     loadingProgress: (pct, label) => {
       setLoadingInfo({ pct, label });
       props.loadingProgress?.(pct, label);
@@ -455,6 +464,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     startListening,
     stopListening,
     speak,
+    sendText,
     getAnalyser: () => analyser,
     status,
     isLoading,
@@ -527,6 +537,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
                 onPillClick={startListening}
                 onStopClick={handleStopOrPause}
                 micError={micError}
+                engineWarning={engineWarning}
                 loadingLabel={loadingInfo.label}
                 loadingPct={loadingInfo.pct}
                 style={statusPillStyle}

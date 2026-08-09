@@ -7,12 +7,13 @@ export interface StatusPillProps {
   onPillClick?: () => void;
   onStopClick?: () => void;
   micError?: string | null;
+  engineWarning?: string | null;
   loadingLabel?: string;
   loadingPct?: number;
   style?: React.CSSProperties;
 }
 
-export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillClick, onStopClick, micError, loadingLabel, loadingPct, style }: StatusPillProps) {
+export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillClick, onStopClick, micError, engineWarning, loadingLabel, loadingPct, style }: StatusPillProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const formatLoadingText = () => {
@@ -130,6 +131,11 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
           <div style={{ width: '100%', height: '3px', background: 'rgba(255,255,255,0.15)', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }}>
             <div style={{ width: `${Math.min(100, Math.max(5, loadingPct))}%`, height: '100%', background: '#f59e0b', transition: 'width 0.3s ease' }} />
           </div>
+        )}
+        {engineWarning && (
+          <span style={{ fontSize: '11px', color: '#fcd34d', marginTop: '2px' }}>
+            ⚠️ {engineWarning}
+          </span>
         )}
       </div>
 

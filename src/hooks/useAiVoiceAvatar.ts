@@ -42,6 +42,7 @@ export interface UseAiVoiceAvatarReturn {
   interrupt: () => void;
   clearHistory: () => void;
   speak: (text: string) => void;
+  sendText: (text: string) => void;
   currentSpeechTextRef: React.RefObject<string>;
   currentSpeechPhonemesRef: React.RefObject<string>;
   currentAudioDurationRef: React.RefObject<number>;
@@ -215,7 +216,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   });
 
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
-  const { isReady: isMLReady, processAudio, synthesizeText: mmsSynthesize, clearHistory } = useMLWorker({
+  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory } = useMLWorker({
     llmModel: config.llmModel,
     asrModel: config.asrModel,
     asrLanguage: config.asrLanguage,
@@ -340,6 +341,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     setStatus('speaking');
     synthesizeText(text.trim(), true);
   }, [synthesizeText]);
+
+  // Imperative text submission skipping ASR, triggering normal pipeline/LLM
+  const sendText = useCallback((text: string) => {
+    if (!text || !text.trim()) return;
+    setStatus('thinking');
+    configRef.current.onInferenceStart?.();
+    processText(text.trim(), !!configRef.current.onSubmit);
+  }, [processText]);
 
   // Combined readiness
   const isReady = isMLReady && (config.ttsEngine !== 'kokoro' || isKokoroReady);
@@ -515,6 +524,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     interrupt,
     clearHistory,
     speak,
+    sendText,
     currentSpeechTextRef,
     currentSpeechPhonemesRef,
     currentAudioDurationRef,

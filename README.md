@@ -102,6 +102,20 @@ export default {
 > [!CAUTION]
 > **Strict CSP Policies:** If your enterprise enforces strict Content Security Policies that block `blob:` workers (`worker-src 'self'`), you can bypass our zero-config Blob loaders by passing the `workerBaseUrl` prop to the avatar and hosting the pre-compiled `.worker.js` files from our `dist/assets/` directory yourself.
 
+### 🌍 Browser Support Matrix
+
+The engine aggressively utilizes bleeding-edge web features (WebGPU, SharedArrayBuffer) for native-like performance, but is designed to gracefully fallback or clearly notify the user if their browser lacks support.
+
+| Browser | WebGPU Acceleration | WASM Fallback | Web Audio / Microphone |
+| :--- | :--- | :--- | :--- |
+| **Chrome / Edge** | ✅ Yes (Native) | ✅ Yes | ✅ Yes |
+| **Firefox** | ⚠️ Behind Flag | ✅ Yes (Slower initial load) | ✅ Yes |
+| **Safari** | ⚠️ Coming Soon | ✅ Yes (Slower initial load) | ✅ Yes |
+| **Mobile Chrome** | ✅ Yes (Android) | ✅ Yes | ✅ Yes |
+| **iOS Safari** | ❌ No | ✅ Yes | ✅ Requires manual interaction |
+
+*(Note: If WebGPU is unavailable, the UI pill will automatically notify the user that it is falling back to WASM mode).*
+
 ---
 
 ## ⚡ Quickstart

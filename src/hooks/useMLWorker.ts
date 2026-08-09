@@ -23,7 +23,15 @@ export interface UseMLWorkerConfig {
   onError?: (stage: string, message: string) => void;
 }
 
-export function useMLWorker(config: UseMLWorkerConfig) {
+export interface UseMLWorkerReturn {
+  isReady: boolean;
+  processAudio: (audioBlob: Float32Array, language: string, skipLlm?: boolean) => void;
+  processText: (text: string, skipLlm?: boolean) => void;
+  synthesizeText: (text: string, isLast?: boolean) => void;
+  clearHistory: () => void;
+}
+
+export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
   const workerRef = useRef<Worker | null>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -147,6 +155,14 @@ export function useMLWorker(config: UseMLWorkerConfig) {
     });
   }, []);
 
+  const processText = useCallback((text: string, skipLlm: boolean = false) => {
+    if (!workerRef.current) return;
+    workerRef.current.postMessage({
+      type: 'textInput',
+      payload: { text, skipLlm }
+    });
+  }, []);
+
   const synthesizeText = useCallback((text: string, isLast: boolean = true) => {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
@@ -162,6 +178,7 @@ export function useMLWorker(config: UseMLWorkerConfig) {
   return {
     isReady,
     processAudio,
+    processText,
     synthesizeText,
     clearHistory
   };

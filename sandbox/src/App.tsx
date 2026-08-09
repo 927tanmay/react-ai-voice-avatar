@@ -68,6 +68,14 @@ export const App: React.FC = () => {
   const [activePersonaId, setActivePersonaId] = useState<'nova' | 'orion'>('orion');
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud');
+  const [textInput, setTextInput] = useState('');
+
+  const handleTextSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textInput.trim() || !avatarRef.current) return;
+    avatarRef.current.sendText(textInput);
+    setTextInput('');
+  };
 
   const handleCloudSubmit = async (text: string): Promise<string> => {
     // Simulated cloud API response demonstrating instant conversational lip-sync without local model downloads
@@ -436,6 +444,62 @@ export const App: React.FC = () => {
           onStatusChange={(newStatus: any) => setAvatarStatus(newStatus)}
         />
       </Canvas>
+
+      {/* Text Input Overlay for silent users */}
+      <div style={{
+        position: 'absolute',
+        bottom: '40px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 1000,
+        width: '100%',
+        maxWidth: '400px',
+      }}>
+        <form 
+          onSubmit={handleTextSubmit}
+          style={{
+            display: 'flex',
+            background: 'rgba(20, 22, 28, 0.85)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '9999px',
+            padding: '6px 6px 6px 20px',
+            boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
+          }}
+        >
+          <input
+            type="text"
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            placeholder="Type a message (skips mic)..."
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              color: '#FFFFFF',
+              fontSize: '14px',
+              outline: 'none',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!textInput.trim()}
+            style={{
+              background: textInput.trim() ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.1)',
+              color: textInput.trim() ? '#FFFFFF' : '#64748B',
+              border: 'none',
+              borderRadius: '9999px',
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: textInput.trim() ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            Send
+          </button>
+        </form>
+      </div>
     </div>
   );
 };

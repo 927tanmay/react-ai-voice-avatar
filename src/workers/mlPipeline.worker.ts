@@ -182,6 +182,74 @@ self.onmessage = async (e: MessageEvent) => {
     }
   }
 
+  async function runLlmInference(transcript: string) {
+    if (!transcript || transcript.trim().length < 2) {
+      self.postMessage({ type: 'error', payload: { stage: 'pipeline', message: 'Empty or noise transcript ignored.' } });
+      return;
+    }
+
+    if (!llmPipeline) {
+      self.postMessage({ type: 'error', payload: { stage: 'llm', message: 'LLM not initialized' } });
+      return;
+    }
+
+    // 2. LLM Inference & Streaming Phrase-by-Phrase TTS
+    chatHistory.push({ role: 'user', content: transcript });
+
+    if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
+      self.postMessage({ type: 'error', payload: { stage: 'tts', message: 'TTS not initialized' } });
+      return;
+    }
+
+    let fullReplyText = '';
+    let sentenceBuffer = '';
+
+    const streamer = new TextStreamer(llmPipeline.tokenizer, {
+      skip_prompt: true,
+      skip_special_tokens: true,
+      callback_function: (text: string) => {
+        fullReplyText += text;
+        sentenceBuffer += text;
+        
+        self.postMessage({ type: 'streamWord', payload: { word: text, fullText: fullReplyText } });
+
+        const sentenceMatch = sentenceBuffer.match(/([.!?\u0964]|\n\n+)/);
+        const minLen = currentTtsEngine === 'kokoro' ? 5 : 35;
+        if ((sentenceMatch && sentenceBuffer.trim().length > minLen) || sentenceBuffer.trim().length > 150) {
+          const splitIdx = sentenceMatch 
+            ? sentenceBuffer.lastIndexOf(sentenceMatch[0]) + sentenceMatch[0].length 
+            : sentenceBuffer.lastIndexOf(' ') + 1;
+
+          if (splitIdx > 0) {
+            const chunk = sentenceBuffer.substring(0, splitIdx).trim();
+            sentenceBuffer = sentenceBuffer.substring(splitIdx);
+            
+            if (chunk.length > 0) {
+              pushPhraseToTts(chunk, false);
+            }
+          }
+        }
+      }
+    });
+
+    try {
+      // @ts-ignore
+      await llmPipeline(chatHistory, { max_new_tokens: 128, streamer });
+      
+      if (sentenceBuffer.trim().length > 0) {
+        pushPhraseToTts(sentenceBuffer.trim(), true);
+      } else if (ttsQueue.length > 0) {
+        ttsQueue[ttsQueue.length - 1].isLast = true;
+      } else {
+        self.postMessage({ type: 'speechEnd' });
+      }
+
+      chatHistory.push({ role: 'assistant', content: fullReplyText || 'I did not catch that.' });
+    } catch (error: any) {
+      self.postMessage({ type: 'error', payload: { stage: 'pipeline', message: error.message } });
+    }
+  }
+
   if (type === 'audioInput') {
     const { blob, language = 'en', skipLlm = false } = payload;
     
@@ -191,12 +259,10 @@ self.onmessage = async (e: MessageEvent) => {
     }
 
     try {
-      // 1. Transcribe
       const asrResult = await asrPipeline(blob, { language: language, task: 'transcribe' });
       // @ts-ignore
       const rawTranscript = asrResult.text || (Array.isArray(asrResult) ? asrResult[0].text : '');
       
-      // 2. Normalize script: Urdu/Romanized → Devanagari (only in Hindi mode)
       let transcript = rawTranscript;
       if (currentTtsLanguage === 'hi-IN') {
         transcript = normalizeToDevanagari(rawTranscript);
@@ -207,81 +273,19 @@ self.onmessage = async (e: MessageEvent) => {
       
       self.postMessage({ type: 'transcript', payload: { text: transcript } });
 
-      if (skipLlm) {
-        // Main thread will handle it and call ttsOnly
-        return;
-      }
-
-      if (!transcript || transcript.trim().length < 2) {
-        self.postMessage({ type: 'error', payload: { stage: 'pipeline', message: 'Empty or noise transcript ignored.' } });
-        return;
-      }
-
-      if (!llmPipeline) {
-        self.postMessage({ type: 'error', payload: { stage: 'llm', message: 'LLM not initialized' } });
-        return;
-      }
-
-      // 2. LLM Inference & Streaming Phrase-by-Phrase TTS
-      chatHistory.push({ role: 'user', content: transcript });
-
-      if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
-        self.postMessage({ type: 'error', payload: { stage: 'tts', message: 'TTS not initialized' } });
-        return;
-      }
-
-      let fullReplyText = '';
-      let sentenceBuffer = '';
-
-
-      const streamer = new TextStreamer(llmPipeline.tokenizer, {
-        skip_prompt: true,
-        skip_special_tokens: true,
-        callback_function: (text: string) => {
-          fullReplyText += text;
-          sentenceBuffer += text;
-          
-          // Post real-time word streaming event to UI
-          self.postMessage({ type: 'streamWord', payload: { word: text, fullText: fullReplyText } });
-
-          // When using Kokoro on an isolated worker thread, dispatch sentences instantly (5+ chars)
-          // to begin WebGPU TTS synthesis immediately while the LLM continues generating the remaining response in parallel.
-          const sentenceMatch = sentenceBuffer.match(/([.!?\u0964]|\n\n+)/);
-          const minLen = currentTtsEngine === 'kokoro' ? 5 : 35;
-          if ((sentenceMatch && sentenceBuffer.trim().length > minLen) || sentenceBuffer.trim().length > 150) {
-            const splitIdx = sentenceMatch 
-              ? sentenceBuffer.lastIndexOf(sentenceMatch[0]) + sentenceMatch[0].length 
-              : sentenceBuffer.lastIndexOf(' ') + 1;
-
-            if (splitIdx > 0) {
-              const chunk = sentenceBuffer.substring(0, splitIdx).trim();
-              sentenceBuffer = sentenceBuffer.substring(splitIdx);
-              
-              if (chunk.length > 0) {
-                pushPhraseToTts(chunk, false);
-              }
-            }
-          }
-        }
-      });
-
-      // @ts-ignore
-      await llmPipeline(chatHistory, { max_new_tokens: 128, streamer });
-      
-      // Flush remaining text when generation finishes
-      if (sentenceBuffer.trim().length > 0) {
-        pushPhraseToTts(sentenceBuffer.trim(), true);
-      } else if (ttsQueue.length > 0) {
-        ttsQueue[ttsQueue.length - 1].isLast = true;
-      } else {
-        self.postMessage({ type: 'speechEnd' });
-      }
-
-      chatHistory.push({ role: 'assistant', content: fullReplyText || 'I did not catch that.' });
-
+      if (skipLlm) return;
+      await runLlmInference(transcript);
     } catch (error: any) {
       self.postMessage({ type: 'error', payload: { stage: 'pipeline', message: error.message } });
     }
+  }
+
+  if (type === 'textInput') {
+    const { text, skipLlm = false } = payload;
+    self.postMessage({ type: 'transcript', payload: { text } });
+    
+    if (skipLlm) return;
+    await runLlmInference(text);
   }
 
   if (type === 'ttsOnly') {
