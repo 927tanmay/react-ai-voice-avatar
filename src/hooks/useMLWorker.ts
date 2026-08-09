@@ -49,74 +49,94 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     const timer = setTimeout(async () => {
       if (!isMounted) return;
       try {
-        let newWorker: Worker | null = null;
-        try {
-          const { mlWorkerCode } = await import('../workers/generated/mlPipeline.worker.code');
-          const blobUrl = URL.createObjectURL(new Blob([mlWorkerCode], { type: 'text/javascript' }));
-          newWorker = new Worker(blobUrl, { type: 'module' });
-          URL.revokeObjectURL(blobUrl);
-        } catch (blobErr: any) {
-          console.warn('[ML Worker] Failed to instantiate worker from Blob (possibly due to strict CSP). Falling back to network URL...', blobErr);
-          if (configRef.current.workerBaseUrl) {
-            const baseUrl = configRef.current.workerBaseUrl.endsWith('/') ? configRef.current.workerBaseUrl : configRef.current.workerBaseUrl + '/';
-            newWorker = new Worker(baseUrl + 'mlPipeline.worker.js', { type: 'module' });
+        const attemptWorkerSpawn = async (useFallback = false) => {
+          if (!isMounted) return;
+          let newWorker: Worker | null = null;
+          let usedBlob = false;
+
+          if (!useFallback) {
+            try {
+              const { mlWorkerCode } = await import('../workers/generated/mlPipeline.worker.code');
+              const blobUrl = URL.createObjectURL(new Blob([mlWorkerCode], { type: 'application/javascript' }));
+              newWorker = new Worker(blobUrl, { type: 'module' });
+              URL.revokeObjectURL(blobUrl);
+              usedBlob = true;
+            } catch (blobErr: any) {
+              console.warn('[ML Worker] Sync fallback triggered.', blobErr);
+              return attemptWorkerSpawn(true);
+            }
           } else {
-            throw new Error('Blob workers are blocked (CSP) and no workerBaseUrl was provided.');
+            if (configRef.current.workerBaseUrl) {
+              const baseUrl = configRef.current.workerBaseUrl.endsWith('/') ? configRef.current.workerBaseUrl : configRef.current.workerBaseUrl + '/';
+              newWorker = new Worker(baseUrl + 'mlPipeline.worker.js', { type: 'module' });
+            } else {
+              throw new Error('Blob workers blocked and no workerBaseUrl provided.');
+            }
           }
-        }
-        
-        worker = newWorker;
-        workerRef.current = newWorker;
+          
+          worker = newWorker;
+          workerRef.current = newWorker;
+          let hasReceivedMessage = false;
 
-        newWorker.onerror = (err) => {
-          console.error('[ML Worker] Runtime compilation or init error:', err);
-          configRef.current.onError?.('ml-worker-init', err.message || 'Failed to initialize ML Worker pipeline.');
+          newWorker.onerror = (err) => {
+            if (usedBlob && !hasReceivedMessage) {
+              console.warn('[ML Worker] Async init error (CSP block). Falling back...', err);
+              newWorker?.terminate();
+              attemptWorkerSpawn(true);
+              return;
+            }
+            console.error('[ML Worker] Runtime compilation or init error:', err);
+            // @ts-ignore
+            configRef.current.onError?.('ml-worker-init', err.message || 'Failed to initialize ML Worker pipeline.');
+          };
+
+          newWorker.onmessageerror = (err) => {
+            console.error('[ML Worker] Message deserialization error:', err);
+            configRef.current.onError?.('ml-worker-message', 'Failed to deserialize message from ML worker.');
+          };
+
+          newWorker.postMessage({
+            type: 'init',
+            payload: {
+              llmModel: configRef.current.llmModel,
+              asrModel: configRef.current.asrModel,
+              ttsLanguage: configRef.current.ttsLanguage,
+              ttsEngine: configRef.current.ttsEngine,
+              ttsVoice: configRef.current.ttsVoice,
+              fallbackMode: configRef.current.fallbackMode,
+              lowMemoryMode: configRef.current.lowMemoryMode,
+              systemPrompt: configRef.current.systemPrompt,
+              loadLlm: configRef.current.loadLlm,
+            }
+          });
+
+          newWorker.onmessage = (e: MessageEvent) => {
+            hasReceivedMessage = true;
+            const { type, payload } = e.data;
+
+            if (type === 'ready') {
+              setIsReady(true);
+            } else if (type === 'capabilities') {
+              configRef.current.onCapabilityDetected?.(payload);
+            } else if (type === 'loadingProgress') {
+              configRef.current.loadingProgress?.(payload.pct, payload.model);
+            } else if (type === 'transcript') {
+              configRef.current.onTranscriptUpdate?.(payload.text, 'user');
+            } else if (type === 'speechOutput') {
+              configRef.current.onTranscriptUpdate?.(payload.text, 'avatar');
+              configRef.current.onSpeechOutput?.(payload.audio, payload.sampleRate, payload.text, payload.isLast);
+            } else if (type === 'streamWord') {
+              configRef.current.onStreamWord?.(payload.word, payload.fullText);
+            } else if (type === 'speechEnd') {
+              configRef.current.onSpeechEnd?.();
+            } else if (type === 'error') {
+              console.error(`[ML Worker] Error in stage ${payload.stage}:`, payload.message);
+              configRef.current.onError?.(payload.stage, payload.message);
+            }
+          };
         };
 
-        newWorker.onmessageerror = (err) => {
-          console.error('[ML Worker] Message deserialization error:', err);
-          configRef.current.onError?.('ml-worker-message', 'Failed to deserialize message from ML worker.');
-        };
-
-        newWorker.postMessage({
-          type: 'init',
-          payload: {
-            llmModel: configRef.current.llmModel,
-            asrModel: configRef.current.asrModel,
-            ttsLanguage: configRef.current.ttsLanguage,
-            ttsEngine: configRef.current.ttsEngine,
-            ttsVoice: configRef.current.ttsVoice,
-            fallbackMode: configRef.current.fallbackMode,
-            lowMemoryMode: configRef.current.lowMemoryMode,
-            systemPrompt: configRef.current.systemPrompt,
-            loadLlm: configRef.current.loadLlm,
-          }
-        });
-
-        newWorker.onmessage = (e: MessageEvent) => {
-          const { type, payload } = e.data;
-
-          if (type === 'ready') {
-            setIsReady(true);
-          } else if (type === 'capabilities') {
-            configRef.current.onCapabilityDetected?.(payload);
-          } else if (type === 'loadingProgress') {
-            configRef.current.loadingProgress?.(payload.pct, payload.model);
-          } else if (type === 'transcript') {
-            configRef.current.onTranscriptUpdate?.(payload.text, 'user');
-          } else if (type === 'speechOutput') {
-            configRef.current.onTranscriptUpdate?.(payload.text, 'avatar');
-            // payload.audio is a Float32Array from transformers.js TTS
-            configRef.current.onSpeechOutput?.(payload.audio, payload.sampleRate, payload.text, payload.isLast);
-          } else if (type === 'streamWord') {
-            configRef.current.onStreamWord?.(payload.word, payload.fullText);
-          } else if (type === 'speechEnd') {
-            configRef.current.onSpeechEnd?.();
-          } else if (type === 'error') {
-            console.error(`[ML Worker] Error in stage ${payload.stage}:`, payload.message);
-            configRef.current.onError?.(payload.stage, payload.message);
-          }
-        };
+        await attemptWorkerSpawn();
       } catch (err: any) {
         console.error('[ML Worker] Failed to construct Web Worker:', err);
         configRef.current.onError?.('ml-worker-construct', err?.message || 'Failed to instantiate ML Worker.');

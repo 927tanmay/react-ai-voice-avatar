@@ -47,18 +47,24 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     let kokoroWorker: Worker | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const spawnWorker = async () => {
+    const spawnWorker = async (useFallback = false) => {
       if (!isMounted || !config.enabled) return;
       try {
         let kokoroWorkerInst: Worker | null = null;
+        let usedBlob = false;
         
-        try {
-          const { kokoroWorkerCode } = await import('../workers/generated/kokoroTts.worker.code');
-          const blobUrl = URL.createObjectURL(new Blob([kokoroWorkerCode], { type: 'text/javascript' }));
-          kokoroWorkerInst = new Worker(blobUrl, { type: 'module' });
-          URL.revokeObjectURL(blobUrl);
-        } catch (blobErr: any) {
-          console.warn('[Kokoro Worker] Failed to instantiate worker from Blob (possibly due to strict CSP). Falling back to network URL...', blobErr);
+        if (!useFallback) {
+          try {
+            const { kokoroWorkerCode } = await import('../workers/generated/kokoroTts.worker.code');
+            const blobUrl = URL.createObjectURL(new Blob([kokoroWorkerCode], { type: 'application/javascript' }));
+            kokoroWorkerInst = new Worker(blobUrl, { type: 'module' });
+            URL.revokeObjectURL(blobUrl);
+            usedBlob = true;
+          } catch (blobErr: any) {
+            console.warn('[Kokoro Worker] Sync fallback triggered.', blobErr);
+            return spawnWorker(true);
+          }
+        } else {
           if (configRef.current.workerBaseUrl) {
             const baseUrl = configRef.current.workerBaseUrl.endsWith('/') ? configRef.current.workerBaseUrl : configRef.current.workerBaseUrl + '/';
             kokoroWorkerInst = new Worker(baseUrl + 'kokoroTts.worker.js', { type: 'module' });
@@ -69,9 +75,17 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
         
         kokoroWorker = kokoroWorkerInst;
         workerRef.current = kokoroWorker;
+        let hasReceivedMessage = false;
 
         kokoroWorker.onerror = (err) => {
+          if (usedBlob && !hasReceivedMessage) {
+            console.warn('[Kokoro Worker] Async init error (CSP block). Falling back...', err);
+            kokoroWorker?.terminate();
+            spawnWorker(true);
+            return;
+          }
           console.error('[Kokoro Worker] Runtime initialization or compilation error:', err);
+          // @ts-ignore
           configRef.current.onError?.('kokoro-worker', err.message || 'Failed to initialize Kokoro TTS worker thread.');
         };
 
@@ -87,6 +101,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
 
         kokoroWorker.onmessage = (e: MessageEvent) => {
           if (!isMounted) return;
+          hasReceivedMessage = true;
           const { type, payload } = e.data;
 
           if (type === 'ready') {
