@@ -29,10 +29,11 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
+    emptyOutDir: false,
     lib: {
       entry: resolve(import.meta.dirname, 'src/index.ts'),
       name: 'ReactAiVoiceAvatar',
-      formats: ['es', 'cjs'],
+      formats: ['es'],
       fileName: (format) => `index.${format === 'es' ? 'js' : 'cjs'}`
     },
     rollupOptions: {

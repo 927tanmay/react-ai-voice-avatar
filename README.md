@@ -1,20 +1,13 @@
 > A real-time, edge-based conversational 3D avatar component for React.
 
-## Deployment & CSP Gotchas (Next.js / Vercel)
-If you deploy your app and see errors like:
-- `[ML Worker] Blob worker failed...`
-- `Error: Could not load studio_small_03_1k.hdr: Failed to fetch`
+## Strict CSP Environments
+If your deployment enforces a strict Content-Security-Policy that blocks `blob:` Web Workers, you can self-host the worker files:
 
-This is because strict Content-Security-Policy (CSP) headers (often set by default in Next.js or Vercel) block `blob:` workers and external CDN fetches. You have two options:
-
-**1. Adjust your CSP (Recommended for easy setup):**
-Add `blob:` to your `worker-src` and the CDNs to `connect-src`:
-```http
-worker-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://raw.githubusercontent.com;
+1. Copy `mlPipeline.worker.js` and `kokoroTts.worker.js` from `node_modules/react-ai-voice-avatar/dist/assets/` to your app's `public/` directory.
+2. Pass `workerBaseUrl="/"` to the component:
+```tsx
+<AiVoiceAvatar workerBaseUrl="/" />
 ```
-
-**2. Self-Host the Workers (Strict CSP):**
-Copy the worker files from `node_modules/react-ai-voice-avatar/dist/*.worker.js` to your app's `public/` directory and pass `workerBaseUrl="/"` to the component.
 
 ---
 
