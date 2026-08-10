@@ -1,16 +1,3 @@
-> A real-time, edge-based conversational 3D avatar component for React.
-
-## Strict CSP Environments
-If your deployment enforces a strict Content-Security-Policy that blocks `blob:` Web Workers, you can self-host the worker files:
-
-1. Copy `mlPipeline.worker.js` and `kokoroTts.worker.js` from `node_modules/react-ai-voice-avatar/dist/assets/` to your app's `public/` directory.
-2. Pass `workerBaseUrl="/"` to the component:
-```tsx
-<AiVoiceAvatar workerBaseUrl="/" />
-```
-
----
-
 # React AI Voice Avatar (`react-ai-voice-avatar`) 🚀🗣️🧬
 
 [![NPM Version](https://img.shields.io/npm/v/react-ai-voice-avatar?style=for-the-badge&color=8A2BE2&logo=npm)](https://www.npmjs.com/package/react-ai-voice-avatar)
@@ -114,22 +101,6 @@ export default {
 
 > [!CAUTION]
 > **Strict CSP Policies:** If your enterprise enforces strict Content Security Policies that block `blob:` workers (`worker-src 'self'`), you can bypass our zero-config Blob loaders by passing the `workerBaseUrl` prop to the avatar and hosting the pre-compiled `.worker.js` files from our `dist/assets/` directory yourself.
-
-### 🌍 Browser Support Matrix
-
-The engine aggressively utilizes bleeding-edge web features (WebGPU, SharedArrayBuffer) for native-like performance, but is designed to gracefully fallback or clearly notify the user if their browser lacks support.
-
-| Browser | WebGPU Acceleration | WASM Fallback | Web Audio / Microphone |
-| :--- | :--- | :--- | :--- |
-| **Chrome / Edge** | ✅ Yes (Native) | ✅ Yes | ✅ Yes |
-| **Firefox** | ⚠️ Behind Flag | ✅ Yes (Slower initial load) | ✅ Yes |
-| **Safari** | ⚠️ Coming Soon | ✅ Yes (Slower initial load) | ✅ Yes |
-| **Mobile Chrome** | ✅ Yes (Android) | ✅ Yes | ✅ Yes |
-| **iOS Safari** | ❌ No | ✅ Yes | ✅ Requires manual interaction |
-
-*(Note: If WebGPU is unavailable, the UI pill will automatically notify the user that it is falling back to WASM mode).*
-
----
 
 ## ⚡ Quickstart
 
