@@ -592,8 +592,8 @@ ${llmMode === 'cloud'
           ttsVoice={ttsVoice}
           debug={false}
           showCaptions={true}
-          scale={0.48}
-          position={[-0.15, -0.34, 0]}
+          scale={isMobile ? 0.38 : 0.48}
+          position={isMobile ? [0, -0.25, 0] : [-0.15, -0.34, 0]}
           hideStatusPill={_avatarStatus === 'loading'}
           statusPillStyle={isMobile ? { left: '50%', transform: 'translateX(-50%)', bottom: '80px', width: 'max-content' } : undefined}
           loadingProgress={(pct, label) => {
