@@ -70,8 +70,7 @@ const processTtsQueue = async () => {
         // Create a fresh copy to guarantee we don't transfer the WASM heap buffer, which would crash the worker.
         // Transferring the buffer is critical for flat memory profiles on mobile.
         const audioData = new Float32Array(ttsResult.audio as any);
-        // @ts-ignore
-        self.postMessage({ 
+        const payload = { 
           type: 'speechOutput', 
           payload: { 
             audio: audioData, 
@@ -79,7 +78,9 @@ const processTtsQueue = async () => {
             text: cleanText,
             isLast: item.isLast 
           } 
-        }, [audioData.buffer] as unknown as Transferable[]);
+        };
+        // @ts-ignore - TS mixes up Window.postMessage and DedicatedWorkerGlobalScope.postMessage
+        self.postMessage(payload, [audioData.buffer]);
       }
     } catch (e: any) {
       console.error('[ML Worker] TTS streaming chunk error:', e);
