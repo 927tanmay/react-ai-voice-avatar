@@ -203,28 +203,44 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   }, []);
 
+  // Internal state to track active TTS engine, allowing graceful fallback if Kokoro OOMs on Safari
+  const [activeTtsEngine, setActiveTtsEngine] = useState<'kokoro' | 'mms'>(config.ttsEngine || 'kokoro');
+  const [hasFallenBack, setHasFallenBack] = useState(false);
+
+  // Sync if parent explicitly changes it, but don't revert a fallback automatically unless it's a new instance
+  useEffect(() => {
+    if (!hasFallenBack) {
+      setActiveTtsEngine(config.ttsEngine || 'kokoro');
+    }
+  }, [config.ttsEngine, hasFallenBack]);
+
   // ─── Kokoro TTS Worker (loaded lazily, only when engine === 'kokoro') ───
   const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd } = useKokoroWorker({
-    enabled: config.ttsEngine === 'kokoro',
+    enabled: activeTtsEngine === 'kokoro',
     voice: config.ttsVoice,
-    onSpeechOutput: config.ttsEngine === 'kokoro' ? handleSpeechOutput : undefined,
-    onSpeechEnd: config.ttsEngine === 'kokoro' ? handleSpeechEnd : undefined,
+    onSpeechOutput: activeTtsEngine === 'kokoro' ? handleSpeechOutput : undefined,
+    onSpeechEnd: activeTtsEngine === 'kokoro' ? handleSpeechEnd : undefined,
     loadingProgress: config.loadingProgress,
     workerBaseUrl: config.workerBaseUrl,
-    onError: (_stage, _msg) => {
-      console.error('[AiVoiceAvatar] Kokoro error, audio may be unavailable');
+    onError: (_stage, msg) => {
+      console.warn(`[AiVoiceAvatar] Kokoro engine failed (${msg}). Automatically falling back to MMS TTS for audio...`);
+      setHasFallenBack(true);
+      setActiveTtsEngine('mms');
+      if (updateMLConfig) {
+        updateMLConfig({ ttsEngine: 'mms' });
+      }
     },
   });
 
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
-  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory } = useMLWorker({
+  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, updateConfig: updateMLConfig } = useMLWorker({
     llmModel: config.llmModel,
     asrModel: config.asrModel,
     asrLanguage: config.asrLanguage,
     onnxWasmPath: config.onnxWasmPath,
     workerBaseUrl: config.workerBaseUrl,
     ttsLanguage: config.ttsLanguage,
-    ttsEngine: config.ttsEngine,
+    ttsEngine: activeTtsEngine,
     ttsVoice: config.ttsVoice,
     fallbackMode: config.fallbackMode,
     lowMemoryMode: config.lowMemoryMode,
@@ -234,7 +250,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     loadingProgress: config.loadingProgress,
     // Route text to Kokoro if Kokoro is active, otherwise play MMS audio
     onSpeechOutput: (audio, sampleRate, text, isLast) => {
-      if (config.ttsEngine === 'kokoro') {
+      if (activeTtsEngine === 'kokoro') {
         kokoroSynthesize(text, isLast);
       } else if (audio && sampleRate) {
         handleSpeechOutput(audio, sampleRate, text, '', isLast);
@@ -244,7 +260,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       console.log('[AiVoiceAvatar] Streaming token:', word);
     },
     onSpeechEnd: () => {
-      if (config.ttsEngine === 'kokoro') {
+      if (activeTtsEngine === 'kokoro') {
         kokoroSpeechEnd();
       } else {
         handleSpeechEnd();
@@ -352,7 +368,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [processText]);
 
   // Combined readiness
-  const isReady = isMLReady && (config.ttsEngine !== 'kokoro' || isKokoroReady);
+  const isReady = isMLReady && (activeTtsEngine !== 'kokoro' || isKokoroReady);
 
   useEffect(() => {
     if (isReady && status === 'loading') {

@@ -29,6 +29,7 @@ export interface UseMLWorkerReturn {
   processText: (text: string, skipLlm?: boolean) => void;
   synthesizeText: (text: string, isLast?: boolean) => void;
   clearHistory: () => void;
+  updateConfig: (newConfig: Partial<UseMLWorkerConfig>) => void;
 }
 
 export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
@@ -204,11 +205,16 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     workerRef.current?.postMessage({ type: 'clearHistory' });
   }, []);
 
+  const updateConfig = useCallback((newConfig: Partial<UseMLWorkerConfig>) => {
+    workerRef.current?.postMessage({ type: 'updateConfig', payload: newConfig });
+  }, []);
+
   return {
     isReady,
     processAudio,
     processText,
     synthesizeText,
-    clearHistory
+    clearHistory,
+    updateConfig
   };
 }
