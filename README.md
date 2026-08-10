@@ -388,7 +388,6 @@ We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIB
 3. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
 4. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**: Streaming microphone energy to power custom UI visualizers and reactive HUDs.
 5. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**: Built-in 3D loading silhouettes while model meshes hydrate over networks.
-6. **♻️ Aggressive Audio Buffer Reclamation**: Dereferencing old audio FFT arrays to maintain flat JS memory consumption over multi-hour conversations.
 
 ---
 
@@ -399,11 +398,12 @@ This library heavily relies on modern Web APIs (WebGPU, WebGL, Web Audio, and We
 | Browser | OS | 3D Rendering (WebGL) | Voice Synthesis (WebGPU/WASM) | Voice Recognition (Web Audio) | Status |
 |---|---|---|---|---|---|
 | **Chrome / Edge** | Windows, macOS, Android | ✅ Native | ✅ WebGPU (Ultra Fast) | ✅ Native | 🟢 Tier 1 (Recommended) |
-| **Safari** | macOS, iOS | ✅ Native | ⚠️ WASM Fallback | ✅ Native | 🟡 Tier 2 (Slower TTS) |
+| **Safari / iOS** | macOS, iOS | ✅ Native | 🔄 Auto MMS Fallback (if OOM) | ✅ Native | 🟢 Tier 1 (Resilient) |
 | **Firefox** | Windows, macOS | ✅ Native | ⚠️ WASM Fallback | ✅ Native | 🟡 Tier 2 (Slower TTS) |
 
 > [!NOTE]
-> - **WebGPU** is currently enabled by default in Chrome/Edge. Safari and Firefox are actively developing WebGPU support. On browsers without WebGPU, the library automatically falls back to WASM execution for TTS, which increases latency (typically ~1-3 seconds vs ~150ms on WebGPU).
+> - **WebGPU** is currently enabled by default in Chrome/Edge. On browsers without WebGPU, the library automatically falls back to WASM execution. 
+> - **iOS/Safari Auto-Failover**: Safari imposes strict WebAssembly memory limits that often cause 80MB+ models (like Kokoro) to crash with `Out of memory`. The engine detects this and **transparently fails over** to a lightweight MMS TTS model (~30MB) so your audio never breaks!
 > - **Strict CSP Environments**: Safari and Firefox may block `blob:` worker execution depending on your Content-Security-Policy headers. If this occurs, host the `.worker.js` files statically and pass their base path via the `workerBaseUrl` prop.
 
 ---

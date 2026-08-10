@@ -149,6 +149,24 @@ export const App: React.FC = () => {
             Real-time Edge WebGPU conversational voice AI featuring human-like prosody & 3D virtual presence.
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+            <span style={{ 
+              fontSize: '11px', 
+              color: '#38BDF8', 
+              background: 'rgba(56, 189, 248, 0.1)',
+              border: '1px solid rgba(56, 189, 248, 0.2)',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              fontWeight: 700, 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              letterSpacing: '0.5px',
+              boxShadow: '0 0 10px rgba(56, 189, 248, 0.2)'
+            }}>
+              ⚡ 100% LOCAL INFERENCE
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
             <span style={{ fontSize: '12px', color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ width: '8px', height: '8px', backgroundColor: '#10B981', borderRadius: '50%', display: 'inline-block', boxShadow: '0 0 8px #10B981' }}></span>
               {ttsEngine === 'kokoro' ? 'Kokoro-82M Natural Voice' : 'Meta MMS-TTS Engine Ready'}
