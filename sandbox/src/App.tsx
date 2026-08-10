@@ -4,6 +4,22 @@ import { OrbitControls } from '@react-three/drei';
 import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import './style.css';
 
+const useMediaQuery = (query: string) => {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.matchMedia(query).matches;
+    }
+    return false;
+  });
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const listener = () => setMatches(media.matches);
+    media.addEventListener('change', listener);
+    return () => media.removeEventListener('change', listener);
+  }, [query]);
+  return matches;
+};
+
 interface Persona {
   id: 'retail' | 'support' | 'tutor' | 'dev';
   name: string;
@@ -233,6 +249,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   const [loadingLabel, setLoadingLabel] = useState<string>('asr');
   const [textInput, setTextInput] = useState('');
   const [copied, setCopied] = useState(false);
+  const isMobile = useMediaQuery('(max-width: 900px)');
 
   const [llmMode, setLlmMode] = useState<'cloud' | 'local'>(currentPersona.defaultLlmMode);
   
@@ -304,7 +321,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
       {/* Premium Loading Overlay (Floating Widget) */}
       {_avatarStatus === 'loading' && (
         <div style={{
-          position: 'absolute', bottom: '40px', left: '24px', zIndex: 2000,
+          position: 'absolute', bottom: isMobile ? '80px' : '40px', left: isMobile ? '20px' : '24px', right: isMobile ? '20px' : 'auto', zIndex: 2000,
           background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
           display: 'flex', alignItems: 'center', gap: '20px',
           animation: 'fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)', padding: '16px 24px', borderRadius: '24px',
@@ -368,7 +385,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
       )}
 
       {/* Dev Sandbox Sidebars */}
-      {personaId !== 'dev' && (
+      {personaId !== 'dev' && !isMobile && (
         <div style={{
           position: 'absolute', top: '70px', left: '24px', zIndex: 500, display: 'flex', flexDirection: 'column',
           gap: '20px', width: '340px', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingRight: '8px',
@@ -450,7 +467,8 @@ ${llmMode === 'cloud'
       {personaId === 'dev' && (
         <>
           {/* Left Column Controls */}
-          <div style={{
+          {!isMobile && (
+            <div style={{
             position: 'absolute', top: '70px', left: '24px', zIndex: 500, display: 'flex', flexDirection: 'column',
             gap: '20px', width: '320px', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingRight: '8px',
           }}>
@@ -477,11 +495,12 @@ ${llmMode === 'cloud'
               </div>
             </div>
           </div>
+          )}
 
-          {/* Right Column Controls */}
+          {/* Right Column Controls (Responsive) */}
           <div style={{
-            position: 'absolute', top: '70px', right: '24px', zIndex: 500, display: 'flex', flexDirection: 'column',
-            gap: '20px', width: '330px', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingLeft: '8px',
+            position: 'absolute', top: isMobile ? '70px' : '70px', right: isMobile ? '20px' : '24px', left: isMobile ? '20px' : 'auto', zIndex: 500, display: 'flex', flexDirection: 'column',
+            gap: '12px', width: isMobile ? 'auto' : '330px', maxHeight: 'calc(100vh - 140px)', overflowY: 'auto', paddingLeft: isMobile ? '0' : '8px',
           }}>
             <div style={{ background: 'rgba(20, 22, 28, 0.75)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '20px', padding: '16px 20px' }}>
               <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>🔊 Voice & Prosody</h3>
@@ -586,8 +605,8 @@ ${llmMode === 'cloud'
 
       {/* Text Input Overlay */}
       <div style={{
-        position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 1000, width: '100%', maxWidth: '400px',
+        position: 'absolute', bottom: isMobile ? '20px' : '40px', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 1000, width: isMobile ? 'calc(100% - 40px)' : '100%', maxWidth: '400px',
       }}>
         <form 
           onSubmit={handleTextSubmit}
