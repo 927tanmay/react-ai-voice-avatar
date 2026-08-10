@@ -5,7 +5,7 @@ import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import './style.css';
 
 interface Persona {
-  id: 'nova' | 'orion';
+  id: 'retail' | 'support' | 'tutor' | 'dev';
   name: string;
   role: string;
   avatarIcon: string;
@@ -15,32 +15,61 @@ interface Persona {
   systemPrompt: string;
   description: string;
   defaultVoice: string;
+  defaultLlmMode: 'cloud' | 'local';
 }
 
 const PERSONAS: Persona[] = [
   {
-    id: 'nova',
-    name: 'Nova',
-    role: 'Female Voice Companion',
-    avatarIcon: '👩🏽',
-    preset: 'ananya',
-    accentColor: '#E67E22', // Warm Saffron Gold / Peach
-    borderColor: 'rgba(230, 126, 34, 0.6)',
-    systemPrompt: "You are Nova, an empathetic, warm, and lively conversational companion. You speak the way a person actually talks out loud, never like a written assistant or textbook. Keep your replies to 1-3 short, naturally spoken sentences unless explicitly asked for more detail. Never use lists, bullet points, markdown, or section headers—all of those sound absurd out loud. Always use contractions like I'm, that's, let's, and don't. To keep our chat feeling alive and flowing, occasionally end your answer by asking a short, friendly follow-up question.",
-    description: 'Empathetic, warm, and highly expressive conversationalist.',
-    defaultVoice: 'af_heart',
+    id: 'retail',
+    name: 'Retail Kiosk',
+    role: 'Offline Ordering',
+    avatarIcon: '🛍️',
+    preset: 'aarav',
+    accentColor: '#10B981', // Emerald
+    borderColor: 'rgba(16, 185, 129, 0.6)',
+    systemPrompt: "You are an automated retail ordering kiosk for a fast-casual cafe. Keep your replies strictly under 1 sentence. Never use lists or markdown. Speak naturally.",
+    description: 'On-device brain. 100% offline data privacy at the counter.',
+    defaultVoice: 'am_michael',
+    defaultLlmMode: 'local',
   },
   {
-    id: 'orion',
-    name: 'Orion',
-    role: 'Male Voice Companion',
-    avatarIcon: '👨🏽',
+    id: 'support',
+    name: 'Support Concierge',
+    role: 'Customer Service',
+    avatarIcon: '🏢',
+    preset: 'ananya',
+    accentColor: '#38BDF8', // Sky Blue
+    borderColor: 'rgba(56, 189, 248, 0.6)',
+    systemPrompt: "You are a professional, highly empathetic customer support agent. Keep your replies concise and conversational. Do not use markdown.",
+    description: 'Connected brain. Streams from your cloud backend for enterprise knowledge.',
+    defaultVoice: 'af_heart',
+    defaultLlmMode: 'cloud',
+  },
+  {
+    id: 'tutor',
+    name: 'Language Tutor',
+    role: 'Education',
+    avatarIcon: '📚',
+    preset: 'ananya',
+    accentColor: '#E67E22', // Saffron
+    borderColor: 'rgba(230, 126, 34, 0.6)',
+    systemPrompt: "You are a patient, encouraging language tutor. You speak clearly and warmly. Always praise the user's progress.",
+    description: 'Patient persona, optimized for educational engagement.',
+    defaultVoice: 'af_bella',
+    defaultLlmMode: 'cloud',
+  },
+  {
+    id: 'dev',
+    name: 'Dev Sandbox',
+    role: 'Full Customization',
+    avatarIcon: '⚙️',
     preset: 'aarav',
-    accentColor: '#1A73E8', // Royal Peacock Indigo / Blue
-    borderColor: 'rgba(26, 115, 232, 0.6)',
-    systemPrompt: "You are Orion, a charismatic, sharp, and confident technical guide and voice companion. You communicate like a real human conversing out loud, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 concise, spoken sentences unless explicitly prompted for depth. Absolutely avoid lists, numbered steps, markdown, and headers—just speak naturally. Use common contractions like I'm, that's, can't, and don't. To maintain an authentic conversational dialogue rather than a Q&A terminal, occasionally weave in a brief, engaging follow-up question.",
-    description: 'Confident, articulate, and dynamic technical assistant.',
-    defaultVoice: 'am_michael',
+    accentColor: '#8B5CF6', // Purple
+    borderColor: 'rgba(139, 92, 246, 0.6)',
+    systemPrompt: "You are a sharp, confident technical guide. Explain things concisely as if speaking to a software engineer.",
+    description: 'Test all engineering settings: models, lighting, and engines.',
+    defaultVoice: 'am_fenrir',
+    defaultLlmMode: 'cloud',
   },
 ];
 
@@ -65,9 +94,10 @@ const LIGHTING_PRESETS: Array<{ id: 'studio' | 'cyberpunk_violet' | 'cool_azure'
 export const App: React.FC = () => {
   const avatarRef = useRef<AiVoiceAvatarHandle>(null);
   const [_avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
-  const [activePersonaId, setActivePersonaId] = useState<'nova' | 'orion'>('orion');
+  const [activePersonaId, setActivePersonaId] = useState<Persona['id']>('support');
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [llmMode, setLlmMode] = useState<'cloud' | 'local'>('cloud');
+  const [hasStarted, setHasStarted] = useState(false);
   const [textInput, setTextInput] = useState('');
 
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -101,6 +131,17 @@ export const App: React.FC = () => {
   const handlePersonaSelect = (persona: Persona) => {
     setActivePersonaId(persona.id);
     setTtsVoice(persona.defaultVoice);
+    setLlmMode(persona.defaultLlmMode);
+  };
+
+  const handleStartExperience = () => {
+    setHasStarted(true);
+    // Send a silent audio context unlock if needed, or just let the avatar load
+    setTimeout(() => {
+      if (avatarRef.current) {
+        avatarRef.current.sendText("Hello!");
+      }
+    }, 500);
   };
 
   return (
@@ -443,8 +484,8 @@ export const App: React.FC = () => {
         <color attach="background" args={['#101116']} />
         
         {/* Subtle studio back-lighting accents representing saffron / peacock teal */}
-        <pointLight position={[-3, 2, -2]} intensity={25} color={activePersonaId === 'nova' ? '#E67E22' : '#1A73E8'} distance={6} />
-        <pointLight position={[3, 1, -2]} intensity={20} color={activePersonaId === 'nova' ? '#F39C12' : '#2980B9'} distance={6} />
+        <pointLight position={[-3, 2, -2]} intensity={25} color={currentPersona.accentColor} distance={6} />
+        <pointLight position={[3, 1, -2]} intensity={20} color={currentPersona.accentColor} distance={6} />
         
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.5} maxDistance={4} />
         
@@ -523,6 +564,38 @@ export const App: React.FC = () => {
           </button>
         </form>
       </div>
+
+      {/* Zero-Click Landing State Overlay for Audio Unlock */}
+      {!hasStarted && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
+          background: 'rgba(12, 13, 16, 0.6)', backdropFilter: 'blur(12px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: 'rgba(20, 22, 28, 0.9)', border: '1px solid rgba(255,255,255,0.1)',
+            padding: '40px', borderRadius: '24px', textAlign: 'center', maxWidth: '400px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.5)'
+          }}>
+            <h2 style={{ color: '#FFF', margin: '0 0 16px 0', fontSize: '24px' }}>Welcome to the Sandbox</h2>
+            <p style={{ color: '#94A3B8', margin: '0 0 32px 0', lineHeight: 1.5, fontSize: '15px' }}>
+              Select a scenario to explore offline kiosk ordering, cloud-connected support, or language tutoring with real-time 3D AI.
+            </p>
+            <button
+              onClick={handleStartExperience}
+              style={{
+                background: currentPersona.accentColor,
+                color: '#FFF', border: 'none', padding: '16px 32px', borderRadius: '99px',
+                fontSize: '16px', fontWeight: 600, cursor: 'pointer',
+                boxShadow: `0 8px 24px ${currentPersona.borderColor}`, transition: 'all 0.2s ease'
+              }}
+            >
+              Start Experience
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
