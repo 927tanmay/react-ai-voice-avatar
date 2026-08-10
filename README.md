@@ -341,6 +341,21 @@ interface AiVoiceAvatarHandle {
 }
 ```
 
+### 💬 Text-Only Input (`sendText`)
+
+If your users cannot use a microphone (e.g., noisy environments, privacy concerns, or lack of permissions), you can easily wire up a standard text input field to bypass the speech recognition pipeline entirely! 
+
+Simply attach a ref and call `sendText()` to pass a string directly to your `onSubmit` handler (or local LLM):
+```tsx
+const avatarRef = useRef<AiVoiceAvatarHandle>(null);
+
+// In your UI, attach this to a standard <form> submission:
+const handleTextSubmit = (userInput: string) => {
+  avatarRef.current?.sendText(userInput);
+}
+```
+*When you use `sendText`, the avatar immediately enters the `thinking` state and processes the interaction exactly as if the user had spoken it aloud.*
+
 ---
 
 ## 🌐 Performance & Asset Caching
