@@ -252,4 +252,8 @@ self.onmessage = async (e: MessageEvent) => {
     ttsQueue.push({ text: '', isLast: true, isEndMarker: true });
     processTtsQueue();
   }
+
+  if (type === 'interrupt') {
+    ttsQueue.length = 0;
+  }
 };

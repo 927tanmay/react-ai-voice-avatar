@@ -30,6 +30,7 @@ export interface UseMLWorkerReturn {
   synthesizeText: (text: string, isLast?: boolean) => void;
   clearHistory: () => void;
   updateConfig: (newConfig: Partial<UseMLWorkerConfig>) => void;
+  interrupt: () => void;
 }
 
 export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
@@ -201,6 +202,11 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     });
   }, []);
 
+  const interrupt = useCallback(() => {
+    if (!workerRef.current) return;
+    workerRef.current.postMessage({ type: 'interrupt' });
+  }, []);
+
   const clearHistory = useCallback(() => {
     workerRef.current?.postMessage({ type: 'clearHistory' });
   }, []);
@@ -215,6 +221,7 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     processText,
     synthesizeText,
     clearHistory,
-    updateConfig
+    updateConfig,
+    interrupt
   };
 }

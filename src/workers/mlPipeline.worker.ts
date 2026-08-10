@@ -18,6 +18,7 @@ let currentTtsEngine: 'kokoro' | 'mms' = 'mms';
 
 const ttsQueue: Array<{ text: string; isLast: boolean }> = [];
 let isTtsProcessing = false;
+let isInterrupted = false;
 
 const sanitizeForSpeech = (text: string): string => {
   return text
@@ -246,11 +247,15 @@ self.onmessage = async (e: MessageEvent) => {
 
     let fullReplyText = '';
     let sentenceBuffer = '';
+    isInterrupted = false;
 
     const streamer = new TextStreamer(llmPipeline.tokenizer, {
       skip_prompt: true,
       skip_special_tokens: true,
       callback_function: (text: string) => {
+        if (isInterrupted) {
+          throw new Error('INTERRUPTED');
+        }
         fullReplyText += text;
         sentenceBuffer += text;
         
@@ -289,6 +294,10 @@ self.onmessage = async (e: MessageEvent) => {
 
       chatHistory.push({ role: 'assistant', content: fullReplyText || 'I did not catch that.' });
     } catch (error: any) {
+      if (error.message === 'INTERRUPTED') {
+        console.log('[ML Worker] LLM inference interrupted by user.');
+        return;
+      }
       self.postMessage({ type: 'error', payload: { stage: 'pipeline', message: error.message } });
     }
   }
@@ -334,6 +343,11 @@ self.onmessage = async (e: MessageEvent) => {
   if (type === 'ttsOnly') {
     const { text, isLast = true } = payload;
     pushPhraseToTts(text, isLast);
+  }
+
+  if (type === 'interrupt') {
+    isInterrupted = true;
+    ttsQueue.length = 0;
   }
 
   if (type === 'clearHistory') {

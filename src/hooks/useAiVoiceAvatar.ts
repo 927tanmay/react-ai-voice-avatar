@@ -74,6 +74,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     configRef.current = config;
   }, [config]);
 
+  const isInterruptedRef = useRef(false);
+
+
   const playNextInQueue = useCallback(() => {
     if (isPlayingRef.current || !audioContextRef.current) return;
     
@@ -197,7 +200,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
       setStatus('idle');
       configRef.current.onInferenceEnd?.();
-      if (configRef.current.listenMode !== 'push-to-talk') {
+      // Only auto-restart listening if we are not push-to-talk AND the user hasn't explicitly stopped us
+      if (configRef.current.listenMode !== 'push-to-talk' && !isInterruptedRef.current) {
         vadRef.current?.start();
       }
     }
@@ -215,7 +219,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [config.ttsEngine, hasFallenBack]);
 
   // ─── Kokoro TTS Worker (loaded lazily, only when engine === 'kokoro') ───
-  const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd } = useKokoroWorker({
+  const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd, interrupt: kokoroInterrupt } = useKokoroWorker({
     enabled: activeTtsEngine === 'kokoro',
     voice: config.ttsVoice,
     onSpeechOutput: activeTtsEngine === 'kokoro' ? handleSpeechOutput : undefined,
@@ -230,7 +234,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   });
 
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
-  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory } = useMLWorker({
+  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, interrupt: mlInterrupt } = useMLWorker({
     llmModel: config.llmModel,
     asrModel: config.asrModel,
     asrLanguage: config.asrLanguage,
@@ -500,7 +504,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     };
   }, [processAudio]);
 
+
   const startListening = useCallback(() => {
+    isInterruptedRef.current = false;
     if (!vadRef.current || !isReady) return;
     if (audioContextRef.current?.state === 'suspended') {
       audioContextRef.current.resume();
@@ -510,11 +516,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [isReady]);
 
   const stopListening = useCallback(() => {
+    isInterruptedRef.current = true;
     vadRef.current?.pause();
     setStatus('idle');
   }, []);
 
   const interrupt = useCallback(() => {
+    isInterruptedRef.current = true;
     if (playbackWatchdogRef.current) {
       clearTimeout(playbackWatchdogRef.current);
       playbackWatchdogRef.current = null;
@@ -529,7 +537,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
     configRef.current.onUserInterrupt?.();
     setStatus('idle');
-  }, []);
+    vadRef.current?.pause(); // ensure VAD is stopped
+    
+    // Immediately stop worker synthesis
+    try { mlInterrupt(); } catch(e) {}
+    try { kokoroInterrupt(); } catch(e) {}
+  }, [mlInterrupt, kokoroInterrupt]);
 
   return {
     status,

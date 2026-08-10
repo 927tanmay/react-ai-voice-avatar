@@ -53,7 +53,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
         let kokoroWorkerInst: Worker | null = null;
         let usedBlob = false;
         let pendingBlobUrl: string | null = null;
-        
+
         if (!useFallback) {
           try {
             const { kokoroWorkerCode } = await import('../workers/generated/kokoroTts.worker.code');
@@ -76,7 +76,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
             return;
           }
         }
-        
+
         kokoroWorker = kokoroWorkerInst;
         workerRef.current = kokoroWorker;
         let hasReceivedMessage = false;
@@ -182,7 +182,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     };
   }, [config.enabled]);
 
-  // Forward voice changes
+  // Forward voice changesp
   useEffect(() => {
     if (workerRef.current && isReady && config.voice) {
       workerRef.current.postMessage({
@@ -205,5 +205,10 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     workerRef.current.postMessage({ type: 'speechEnd' });
   }, []);
 
-  return { isReady, synthesize, speechEnd };
+  const interrupt = useCallback(() => {
+    if (!workerRef.current) return;
+    workerRef.current.postMessage({ type: 'interrupt' });
+  }, []);
+
+  return { isReady, synthesize, speechEnd, interrupt };
 }
