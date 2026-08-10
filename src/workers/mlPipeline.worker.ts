@@ -41,6 +41,12 @@ const processTtsQueue = async () => {
   if (isTtsProcessing) return;
   isTtsProcessing = true;
   while (ttsQueue.length > 0) {
+    if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
+      // MMS pipeline is still loading; pause queue processing.
+      // switchTts will call processTtsQueue() when ready.
+      isTtsProcessing = false;
+      return;
+    }
     const item = ttsQueue.shift()!;
     if (!item.text || item.text.trim().length === 0) continue;
     
@@ -205,6 +211,9 @@ self.onmessage = async (e: MessageEvent) => {
     if (currentTtsEngine !== 'kokoro' && (!ttsPipeline || (ttsLanguage && ttsLanguage !== oldLanguage))) {
       const ttsRepo = currentTtsLanguage === 'hi-IN' ? 'Xenova/mms-tts-hin' : 'Xenova/mms-tts-eng';
       ttsPipeline = await pipeline('text-to-speech', ttsRepo, { device: 'wasm' });
+      processTtsQueue();
+    } else if (currentTtsEngine === 'kokoro') {
+      processTtsQueue();
     }
   }
 
@@ -226,11 +235,6 @@ self.onmessage = async (e: MessageEvent) => {
     // We keep the system prompt (index 0) and the last 6 messages (3 turns)
     if (chatHistory.length > 7) {
       chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
-    }
-
-    if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
-      self.postMessage({ type: 'error', payload: { stage: 'tts', message: 'TTS not initialized' } });
-      return;
     }
 
     let fullReplyText = '';
@@ -322,10 +326,6 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === 'ttsOnly') {
     const { text, isLast = true } = payload;
-    if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
-      self.postMessage({ type: 'error', payload: { stage: 'tts', message: 'TTS not initialized' } });
-      return;
-    }
     pushPhraseToTts(text, isLast);
   }
 

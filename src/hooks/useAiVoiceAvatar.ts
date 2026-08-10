@@ -226,14 +226,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       console.warn(`[AiVoiceAvatar] Kokoro engine failed (${msg}). Automatically falling back to MMS TTS for audio...`);
       setHasFallenBack(true);
       setActiveTtsEngine('mms');
-      if (updateMLConfig) {
-        updateMLConfig({ ttsEngine: 'mms' });
-      }
     },
   });
 
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
-  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, updateConfig: updateMLConfig } = useMLWorker({
+  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory } = useMLWorker({
     llmModel: config.llmModel,
     asrModel: config.asrModel,
     asrLanguage: config.asrLanguage,
@@ -341,6 +338,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   });
 
+  // Combined readiness
+  const isReady = isMLReady && (activeTtsEngine !== 'kokoro' || isKokoroReady);
 
   // ─── Unified synthesizeText: routes to the correct TTS engine ───
   const synthesizeText = useCallback((text: string, isLast: boolean = true) => {
@@ -355,9 +354,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   // Imperative speech triggering for external alerts or scripted turns
   const speak = useCallback((text: string) => {
     if (!text || !text.trim()) return;
+    if (!isReady) {
+      console.warn('[AiVoiceAvatar] Cannot speak yet, AI models are still initializing. Ignored:', text);
+      return;
+    }
     setStatus('speaking');
     synthesizeText(text.trim(), true);
-  }, [synthesizeText]);
+  }, [synthesizeText, isReady]);
 
   // Imperative text submission skipping ASR, triggering normal pipeline/LLM
   const sendText = useCallback((text: string) => {
@@ -366,9 +369,6 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     configRef.current.onInferenceStart?.();
     processText(text.trim(), !!configRef.current.onSubmit);
   }, [processText]);
-
-  // Combined readiness
-  const isReady = isMLReady && (activeTtsEngine !== 'kokoro' || isKokoroReady);
 
   useEffect(() => {
     if (isReady && status === 'loading') {
