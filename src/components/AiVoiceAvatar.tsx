@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useState, useRef, useImperativeHandle, Suspense } from 'react';
 import { ThreeElements, useFrame } from '@react-three/fiber';
-import { useGLTF, Environment, Html } from '@react-three/drei';
+import { useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { resolveAvatarUrl } from '../lib/avatarAssets';
 import { StatusPill } from './StatusPill';

@@ -191,6 +191,8 @@ self.onmessage = async (e: MessageEvent) => {
     } catch (error: any) {
       self.postMessage({ type: 'error', payload: { stage: 'init', message: error.message } });
     }
+  }
+
   if (type === 'switchTts') {
     const { ttsVoice, ttsLanguage, ttsEngine } = payload;
     const oldLanguage = currentTtsLanguage;
