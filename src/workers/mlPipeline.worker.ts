@@ -222,6 +222,12 @@ self.onmessage = async (e: MessageEvent) => {
     // 2. LLM Inference & Streaming Phrase-by-Phrase TTS
     chatHistory.push({ role: 'user', content: transcript });
 
+    // Truncate chat history to prevent WebGPU OOM or Tensor Shape crashes
+    // We keep the system prompt (index 0) and the last 6 messages (3 turns)
+    if (chatHistory.length > 7) {
+      chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
+    }
+
     if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
       self.postMessage({ type: 'error', payload: { stage: 'tts', message: 'TTS not initialized' } });
       return;
