@@ -16,6 +16,9 @@ test.describe('AiVoiceAvatar Sandbox E2E', () => {
     // Navigate to the local preview server
     await page.goto('/');
 
+    // Select a persona from the Landing Page to mount the AiVoiceAvatar
+    await page.locator('text=Retail Kiosk').click();
+
     // Wait for the status indicator to show the initial loading state
     await expect(page.locator('text=Initializing AI models')).toBeVisible({ timeout: 10000 }).catch(() => {});
 
