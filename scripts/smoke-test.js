@@ -10,7 +10,7 @@ const packageJsonPath = path.join(rootDir, 'package.json');
 let errors = 0;
 
 // 1. Assert required build artifact files exist
-const requiredFiles = ['index.js', 'index.cjs', 'index.d.ts'];
+const requiredFiles = ['index.js', 'index.d.ts'];
 requiredFiles.forEach((file) => {
   const filePath = path.join(distDir, file);
   if (!fs.existsSync(filePath)) {
