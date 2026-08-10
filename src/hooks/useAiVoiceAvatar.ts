@@ -145,6 +145,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       }
 
       source.onended = () => {
+        try { source.disconnect(); } catch (e) {} // Proactively reclaim audio graph memory
         isPlayingRef.current = false;
         currentSpeechTextRef.current = '';
         currentSpeechPhonemesRef.current = '';
@@ -506,7 +507,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     isPlayingRef.current = false;
     isWaitingForMoreRef.current = false;
     if (currentAudioSourceRef.current) {
-      currentAudioSourceRef.current.stop();
+      try { currentAudioSourceRef.current.stop(); } catch (e) {}
+      try { currentAudioSourceRef.current.disconnect(); } catch (e) {}
       currentAudioSourceRef.current = null;
     }
     configRef.current.onUserInterrupt?.();

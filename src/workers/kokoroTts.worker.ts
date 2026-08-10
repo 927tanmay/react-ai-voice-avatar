@@ -104,9 +104,11 @@ const processTtsQueue = async () => {
           }
         }
       }
-      const audioData = ttsResult.audio instanceof Float32Array 
-        ? ttsResult.audio 
-        : new Float32Array(ttsResult.audio);
+      // Create a fresh copy to guarantee we don't transfer the WASM heap buffer, which would crash the worker.
+      // Transferring the buffer is critical for flat memory profiles on mobile (prevents OOM after long conversations).
+      const audioData = new Float32Array(ttsResult.audio as any);
+      
+      // @ts-ignore - TS complains about ArrayBufferLike vs Transferable[]
       self.postMessage({
         type: 'speechOutput',
         payload: {
@@ -116,7 +118,7 @@ const processTtsQueue = async () => {
           phonemes: ttsResult.phonemes || '',
           isLast: item.isLast,
         },
-      });
+      }, [audioData.buffer] as unknown as Transferable[]);
     } catch (e: any) {
       console.error('[Kokoro Worker] TTS chunk error:', e);
       if (item.isLast) {

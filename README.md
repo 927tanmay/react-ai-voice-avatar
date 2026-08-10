@@ -138,19 +138,29 @@ Deploy a complete, zero-configuration 3D voice assistant with built-in studio li
 👉 **[View complete interactive examples/quickstart code directly on GitHub](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/quickstart)** for immediate integration copy-paste!
 
 ```tsx
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { AiVoiceAvatar } from 'react-ai-voice-avatar';
+import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 
-export default function App() {
+export function App() {
+  const avatarRef = useRef<AiVoiceAvatarHandle>(null);
+  const [text, setText] = useState('');
+
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#090C15' }}>
-      <Canvas camera={{ position: [0, 0.05, 2.8], fov: 32 }}>
+    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+      <Canvas camera={{ position: [0, 0.15, 2.2], fov: 32 }}>
+        <color attach="background" args={['#101116']} />
+        
+        {/* Subtle studio lighting */}
+        <pointLight position={[-3, 2, -2]} intensity={25} color="#E67E22" distance={6} />
+        <pointLight position={[3, 1, -2]} intensity={20} color="#2980B9" distance={6} />
+        
         <OrbitControls target={[0, 0.05, 0]} />
         
         {/* Connected Brain: Zero download, instant initialization! */}
         <AiVoiceAvatar
+          ref={avatarRef}
           avatarPreset="ananya"
           lightingPreset="studio"
           ttsEngine="kokoro"
@@ -165,6 +175,28 @@ export default function App() {
           }}
         />
       </Canvas>
+
+      {/* Fallback Text Input for noisy environments */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (text.trim() && avatarRef.current) {
+            avatarRef.current.sendText(text);
+            setText('');
+          }
+        }}
+        style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '8px', zIndex: 100 }}
+      >
+        <input 
+          value={text} 
+          onChange={e => setText(e.target.value)} 
+          placeholder="Type a message..." 
+          style={{ padding: '8px 16px', borderRadius: '20px', border: 'none', background: 'rgba(255,255,255,0.9)', width: '300px' }}
+        />
+        <button type="submit" style={{ padding: '8px 16px', borderRadius: '20px', border: 'none', background: '#3b82f6', color: 'white', cursor: 'pointer' }}>
+          Send
+        </button>
+      </form>
     </div>
   );
 }
@@ -326,6 +358,8 @@ interface AiVoiceAvatarHandle {
   stopListening: () => void;
   /** Instantly interrupt and halt active voice speech synthesis and clear the audio queue */
   interrupt: () => void;
+  /** Manually submit text to the onSubmit handler, simulating a spoken utterance (useful for text-only fallback) */
+  sendText: (text: string) => void;
   /** Wipe multi-turn conversation memory history and caption overlay states */
   clearHistory: () => void;
   /** Retrieve live Web Audio API AnalyserNode powering real-time spectral lip sync */
@@ -355,6 +389,36 @@ We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIB
 4. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**: Streaming microphone energy to power custom UI visualizers and reactive HUDs.
 5. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**: Built-in 3D loading silhouettes while model meshes hydrate over networks.
 6. **♻️ Aggressive Audio Buffer Reclamation**: Dereferencing old audio FFT arrays to maintain flat JS memory consumption over multi-hour conversations.
+
+---
+
+## 🧭 Browser Compatibility Matrix
+
+This library heavily relies on modern Web APIs (WebGPU, WebGL, Web Audio, and Web Workers). It gracefully degrades when certain APIs are unavailable.
+
+| Browser | OS | 3D Rendering (WebGL) | Voice Synthesis (WebGPU/WASM) | Voice Recognition (Web Audio) | Status |
+|---|---|---|---|---|---|
+| **Chrome / Edge** | Windows, macOS, Android | ✅ Native | ✅ WebGPU (Ultra Fast) | ✅ Native | 🟢 Tier 1 (Recommended) |
+| **Safari** | macOS, iOS | ✅ Native | ⚠️ WASM Fallback | ✅ Native | 🟡 Tier 2 (Slower TTS) |
+| **Firefox** | Windows, macOS | ✅ Native | ⚠️ WASM Fallback | ✅ Native | 🟡 Tier 2 (Slower TTS) |
+
+> [!NOTE]
+> - **WebGPU** is currently enabled by default in Chrome/Edge. Safari and Firefox are actively developing WebGPU support. On browsers without WebGPU, the library automatically falls back to WASM execution for TTS, which increases latency (typically ~1-3 seconds vs ~150ms on WebGPU).
+> - **Strict CSP Environments**: Safari and Firefox may block `blob:` worker execution depending on your Content-Security-Policy headers. If this occurs, host the `.worker.js` files statically and pass their base path via the `workerBaseUrl` prop.
+
+---
+
+## 💻 Hardware Requirements
+
+Running Neural Networks in the browser requires capable hardware. 
+
+| Deployment Mode | Min RAM | GPU Requirement | Recommended Devices |
+|---|---|---|---|
+| **Connected Brain** (ASR + TTS only) | 4GB | None (WASM Fallback ok) | iPhone 11+, Mid-range Android (2021+), Any Laptop |
+| **Full Local AI** (ASR + 500M LLM + TTS) | 8GB | WebGPU Support Preferred | iPhone 13 Pro+, High-end Android (Snapdragon 8 Gen 1+), M1/M2 Macs, Modern PCs |
+
+> [!TIP]
+> **Mobile Memory Limits**: Mobile browsers rigidly enforce memory limits per tab (often terminating tabs exceeding ~1GB). If your mobile app crashes "after some time", ensure you are utilizing the `Connected Brain` mode (`onSubmit` API) which offloads the heavy LLM memory footprint to your server while keeping ultra-fast lip-sync and TTS local.
 
 ---
 

@@ -87,8 +87,13 @@ export const App: React.FC = () => {
     return `I heard you say: "${text}". In production, your cloud backend or OpenAI endpoint supplies this response via our onSubmit prop, skipping heavy local model downloads completely while keeping facial animation 100% client-side!`;
   };
   
+  const isLowEndDevice = typeof navigator !== 'undefined' && (
+    /Mobi|Android/i.test(navigator.userAgent) && 
+    (navigator.hardwareConcurrency < 4 || (navigator as any).deviceMemory < 6)
+  );
+
   // Dynamic TTS Engine Configuration & Seamless Switching
-  const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>('kokoro');
+  const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>(isLowEndDevice ? 'mms' : 'kokoro');
   const [ttsVoice, setTtsVoice] = useState<string>('af_heart');
 
   const currentPersona = PERSONAS.find(p => p.id === activePersonaId) || PERSONAS[0];

@@ -67,16 +67,19 @@ const processTtsQueue = async () => {
 
       if (ttsPipeline) {
         const ttsResult = await ttsPipeline(cleanText);
+        // Create a fresh copy to guarantee we don't transfer the WASM heap buffer, which would crash the worker.
+        // Transferring the buffer is critical for flat memory profiles on mobile.
+        const audioData = new Float32Array(ttsResult.audio as any);
         // @ts-ignore
         self.postMessage({ 
           type: 'speechOutput', 
           payload: { 
-            audio: ttsResult.audio, 
+            audio: audioData, 
             sampleRate: ttsResult.sampling_rate, 
             text: cleanText,
             isLast: item.isLast 
           } 
-        });
+        }, [audioData.buffer] as unknown as Transferable[]);
       }
     } catch (e: any) {
       console.error('[ML Worker] TTS streaming chunk error:', e);
@@ -102,8 +105,14 @@ self.onmessage = async (e: MessageEvent) => {
       ttsVoice = 'af_heart',
       fallbackMode = 'wasm',
       lowMemoryMode: _lowMemoryMode = false,
-      systemPrompt = "You are Tara, an empathetic, engaging, and lively voice companion. You speak the way a real human conversing out loud talks, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 short, spoken sentences unless explicitly asked for detail. Absolutely avoid lists, numbered steps, markdown, and headers—just say it the way a person would say it out loud. Use common natural contractions like I'm, that's, let's, and don't. To maintain an authentic conversational flow rather than a Q&A terminal, occasionally end your reply with a brief, warm follow-up question."
+      systemPrompt = "You are Tara, an empathetic, engaging, and lively voice companion. You speak the way a real human conversing out loud talks, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 short, spoken sentences unless explicitly asked for detail. Absolutely avoid lists, numbered steps, markdown, and headers—just say it the way a person would say it out loud. Use common natural contractions like I'm, that's, let's, and don't. To maintain an authentic conversational flow rather than a Q&A terminal, occasionally end your reply with a brief, warm follow-up question.",
+      onnxWasmPath = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3/dist/'
     } = payload;
+    
+    // Explicitly set WASM paths so fallback backend binaries load correctly in strict environments
+    if (env.backends && env.backends.onnx && env.backends.onnx.wasm) {
+      env.backends.onnx.wasm.wasmPaths = onnxWasmPath;
+    }
     
     currentTtsLanguage = ttsLanguage;
     currentTtsVoice = ttsVoice;
