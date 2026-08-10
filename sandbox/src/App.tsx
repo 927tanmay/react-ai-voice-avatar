@@ -497,10 +497,11 @@ ${llmMode === 'cloud'
           </div>
           )}
 
-          {/* Right Column Controls (Responsive) */}
+          {/* Right Column Controls (Hidden on mobile to keep avatar + StatusPill visible) */}
+          {!isMobile && (
           <div style={{
-            position: 'absolute', top: isMobile ? '70px' : '70px', right: isMobile ? '20px' : '24px', left: isMobile ? '20px' : 'auto', zIndex: 500, display: 'flex', flexDirection: 'column',
-            gap: '12px', width: isMobile ? 'auto' : '330px', maxHeight: 'calc(100vh - 140px)', overflowY: 'auto', paddingLeft: isMobile ? '0' : '8px',
+            position: 'absolute', top: '70px', right: '24px', zIndex: 500, display: 'flex', flexDirection: 'column',
+            gap: '12px', width: '330px', maxHeight: 'calc(100vh - 140px)', overflowY: 'auto', paddingLeft: '8px',
           }}>
             <div style={{ background: 'rgba(20, 22, 28, 0.75)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '20px', padding: '16px 20px' }}>
               <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>🔊 Voice & Prosody</h3>
@@ -567,6 +568,7 @@ ${llmMode === 'cloud'
               </div>
             </div>
           </div>
+          )}
         </>
       )}
 

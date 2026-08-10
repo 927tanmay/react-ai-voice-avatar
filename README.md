@@ -21,6 +21,8 @@ When implementing voice AI agents or 3D avatars in web applications, traditional
 
 **`react-ai-voice-avatar`** provides a complete conversational frontend architecture executing inside browser Web Workers and WebGPU memory. It handles Real-Time Speech Recognition (ASR), Natural Voice Synthesis (TTS), and 60 FPS 3D ARKit Lip-Syncing completely on-device.
 
+![Architecture Diagram](./assets/architecture-diagram.png)
+
 For the actual "thinking" (the LLM reasoning), the avatar supports **Two Brains**:
 
 ### 🧠 1. The Connected Brain (Default Recommendation)
