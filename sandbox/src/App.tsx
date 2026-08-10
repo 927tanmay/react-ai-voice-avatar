@@ -224,7 +224,7 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
 };
 
 // --- Demo Page Component ---
-const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void, onSelectPersona: (id: Persona['id']) => void }> = ({ personaId, onBack, onSelectPersona }) => {
+const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ personaId, onBack }) => {
   const avatarRef = useRef<AiVoiceAvatarHandle>(null);
   const currentPersona = PERSONAS.find(p => p.id === personaId)!;
   
@@ -631,7 +631,7 @@ export const App: React.FC = () => {
     return <LandingPage onSelect={setActivePersonaId} />;
   }
 
-  return <DemoPage personaId={activePersonaId} onSelectPersona={setActivePersonaId} onBack={() => setActivePersonaId(null)} />;
+  return <DemoPage personaId={activePersonaId} onBack={() => setActivePersonaId(null)} />;
 };
 
 export default App;
