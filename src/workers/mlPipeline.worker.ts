@@ -30,6 +30,13 @@ const sanitizeForSpeech = (text: string): string => {
     .replace(/^\d+[.)]\s+/gm, '')
     // Convert hyphenated numeric ranges (e.g., 620-800) into words for smooth TTS prosody ("620 to 800")
     .replace(/(\b\d+)\s*-\s*(\d+\b)/g, '$1 to $2')
+    // Convert common symbols to words for better TTS prosody
+    .replace(/%/g, currentTtsLanguage === 'hi-IN' ? ' प्रतिशत' : ' percent')
+    .replace(/&/g, currentTtsLanguage === 'hi-IN' ? ' और ' : ' and ')
+    .replace(/\+/g, currentTtsLanguage === 'hi-IN' ? ' प्लस ' : ' plus ')
+    .replace(/=/g, currentTtsLanguage === 'hi-IN' ? ' बराबर ' : ' equals ')
+    .replace(/@/g, currentTtsLanguage === 'hi-IN' ? ' पर ' : ' at ')
+    .replace(/\$([\d,.]+)/g, currentTtsLanguage === 'hi-IN' ? '$1 डॉलर' : '$1 dollars')
     // Replace stray markdown dividers or underlines
     .replace(/[-=]{3,}/g, ' ')
     // Clean up excessive spacing and trim

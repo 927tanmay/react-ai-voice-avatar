@@ -48,6 +48,13 @@ const sanitizeForSpeech = (text: string): string => {
     .replace(/^\d+[.)]\s+/gm, '')
     // Convert hyphenated numeric ranges (e.g., 620-800) into words for smooth TTS prosody ("620 to 800")
     .replace(/(\b\d+)\s*-\s*(\d+\b)/g, '$1 to $2')
+    // Convert common symbols to words for better TTS prosody
+    .replace(/%/g, ' percent')
+    .replace(/&/g, ' and ')
+    .replace(/\+/g, ' plus ')
+    .replace(/=/g, ' equals ')
+    .replace(/@/g, ' at ')
+    .replace(/\$([\d,.]+)/g, '$1 dollars')
     // Replace stray markdown dividers or underlines
     .replace(/[-=]{3,}/g, ' ')
     // Clean up excessive spacing and trim
