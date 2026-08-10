@@ -595,6 +595,7 @@ ${llmMode === 'cloud'
           scale={0.48}
           position={[-0.15, -0.34, 0]}
           hideStatusPill={_avatarStatus === 'loading'}
+          statusPillStyle={isMobile ? { left: '50%', transform: 'translateX(-50%)', bottom: '80px', width: 'max-content' } : undefined}
           loadingProgress={(pct, label) => {
             setLoadingPct(pct);
             setLoadingLabel(label);
