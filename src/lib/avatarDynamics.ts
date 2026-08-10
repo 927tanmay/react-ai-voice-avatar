@@ -318,9 +318,25 @@ export class AvatarDynamicsEngine {
     const respirationSpeed = isIdle ? 1.0 : 1.5;
     this.breathPhase += input.delta * respirationSpeed;
     
-    // 5.2 Chest Breathing (Spine2 pitch)
-    const chestRiseX = Math.sin(this.breathPhase) * 0.012;
+    // 5.2 Core Vitality (Spine sway & Chest breathing)
+    // Weight shifting: Slow, subtle side-to-side sway to mask stiffness
+    const swayZ = Math.sin(elapsedTime * 0.4) * 0.015;
+    const twistY = Math.cos(elapsedTime * 0.3) * 0.02;
+    
+    getRot('Spine').z += swayZ;
+    getRot('Spine').y += twistY;
+    
+    getRot('Spine1').z += swayZ * 0.8;
+    getRot('Spine1').y += twistY * 0.8;
+
+    // Chest breathing: Forward pitch expansion
+    const chestRiseX = Math.sin(this.breathPhase) * 0.015;
     getRot('Spine2').x += chestRiseX;
+    
+    // Shoulder breathing: Shoulders lift slightly during inhalation to make the chest expansion feel connected
+    const shoulderRise = Math.sin(this.breathPhase) * 0.02;
+    getRot('LeftShoulder').z += shoulderRise;
+    getRot('RightShoulder').z -= shoulderRise;
 
     // 5.3 Cervical Chain Distribution
     // Yaw (Y) and pitch (X) are distributed across Head (50%), Neck (30%), Spine2 (20%).
