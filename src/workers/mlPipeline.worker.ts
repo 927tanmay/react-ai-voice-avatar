@@ -107,7 +107,7 @@ self.onmessage = async (e: MessageEvent) => {
       fallbackMode = 'wasm',
       lowMemoryMode: _lowMemoryMode = false,
       systemPrompt = "You are Tara, an empathetic, engaging, and lively voice companion. You speak the way a real human conversing out loud talks, never defaulting to formal written essays or chatbot jargon. Always keep your replies to 1-3 short, spoken sentences unless explicitly asked for detail. Absolutely avoid lists, numbered steps, markdown, and headers—just say it the way a person would say it out loud. Use common natural contractions like I'm, that's, let's, and don't. To maintain an authentic conversational flow rather than a Q&A terminal, occasionally end your reply with a brief, warm follow-up question.",
-      onnxWasmPath = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3/dist/'
+      onnxWasmPath = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/'
     } = payload;
     
     // Explicitly set WASM paths so fallback backend binaries load correctly in strict environments
