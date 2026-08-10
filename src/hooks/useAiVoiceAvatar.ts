@@ -345,12 +345,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   // ─── Unified synthesizeText: routes to the correct TTS engine ───
   const synthesizeText = useCallback((text: string, isLast: boolean = true) => {
     configRef.current.onTranscriptUpdate?.(text, 'avatar');
-    if (config.ttsEngine === 'kokoro' && isKokoroReady) {
+    if (activeTtsEngine === 'kokoro' && isKokoroReady) {
       kokoroSynthesize(text, isLast);
     } else {
       mmsSynthesize(text, isLast);
     }
-  }, [config.ttsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize]);
+  }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize]);
 
   // Imperative speech triggering for external alerts or scripted turns
   const speak = useCallback((text: string) => {
