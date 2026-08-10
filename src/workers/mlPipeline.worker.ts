@@ -129,7 +129,11 @@ self.onmessage = async (e: MessageEvent) => {
       try {
         asrPipeline = await pipeline('automatic-speech-recognition', asrModel, {
           device: 'webgpu',
-          progress_callback: (p: any) => self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }})
+          progress_callback: (p: any) => {
+            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+              self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }});
+            }
+          }
         });
         currentDevice = 'webgpu';
       } catch (err) {
@@ -137,7 +141,11 @@ self.onmessage = async (e: MessageEvent) => {
         if (fallbackMode === 'wasm') {
           asrPipeline = await pipeline('automatic-speech-recognition', asrModel, {
             device: 'wasm',
-            progress_callback: (p: any) => self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }})
+            progress_callback: (p: any) => {
+              if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+                self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }});
+              }
+            }
           });
           currentDevice = 'wasm';
         } else if (fallbackMode === 'error') {
@@ -155,7 +163,11 @@ self.onmessage = async (e: MessageEvent) => {
         llmPipeline = await pipeline('text-generation', llmModel, {
           device: currentDevice,
           dtype: 'q4', // Quantization for speed
-          progress_callback: (p: any) => self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress }})
+          progress_callback: (p: any) => {
+            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+              self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress }});
+            }
+          }
         });
         await new Promise(resolve => setTimeout(resolve, 200));
       }
@@ -166,7 +178,11 @@ self.onmessage = async (e: MessageEvent) => {
         const ttsRepo = currentTtsLanguage === 'hi-IN' ? 'Xenova/mms-tts-hin' : 'Xenova/mms-tts-eng';
         ttsPipeline = await pipeline('text-to-speech', ttsRepo, {
           device: 'wasm',
-          progress_callback: (p: any) => self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: p.progress }})
+          progress_callback: (p: any) => {
+            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+              self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: p.progress }});
+            }
+          }
         });
         self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
       }
@@ -175,8 +191,6 @@ self.onmessage = async (e: MessageEvent) => {
     } catch (error: any) {
       self.postMessage({ type: 'error', payload: { stage: 'init', message: error.message } });
     }
-  }
-
   if (type === 'switchTts') {
     const { ttsVoice, ttsLanguage, ttsEngine } = payload;
     const oldLanguage = currentTtsLanguage;

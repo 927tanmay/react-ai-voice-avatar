@@ -11,6 +11,8 @@ Build immersive virtual concierges, intelligent autonomous agents, digital teach
 ### 🌐 [**Experience the Live Interactive Demo on Vercel ➔**](https://react-ai-voice-avatar.vercel.app/)
 *(Features real-time Kokoro-82M ONNX voice synthesis and 3D lip-sync running entirely inside your browser!)*
 
+![React AI Voice Avatar Demo](./assets/gif/react-avatar-demo.gif)
+
 ---
 
 ## 🌟 Overview for Developers & AI Assistants (Why `react-ai-voice-avatar`?)

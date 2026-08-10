@@ -495,7 +495,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
   return (
     <>
       <group {...groupProps} scale={computedScale}>
-        {environmentPreset === 'studio' && <Environment preset="studio" />}
+        <ambientLight intensity={environmentPreset === 'studio' ? 0.6 : 0.2} />
         <StudioLighting preset={lightingPreset} />
 
         <AvatarModel
@@ -519,7 +519,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
                 position: 'absolute', bottom: '110px', top: 'auto', left: '48px', transform: 'none',
                 background: 'rgba(15, 23, 42, 0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
                 border: `1px solid ${caption.speaker === 'user' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(16, 185, 129, 0.5)'}`,
-                borderRadius: '16px', padding: '14px 22px', maxWidth: '480px', width: 'auto', minWidth: '260px',
+                borderRadius: '16px', padding: '14px 22px', maxWidth: '380px', width: 'auto', minWidth: '260px',
                 boxShadow: '0 12px 40px rgba(0, 0, 0, 0.75)', transition: 'all 0.3s ease',
                 pointerEvents: 'auto', textAlign: 'left', zIndex: 110
               }}>
