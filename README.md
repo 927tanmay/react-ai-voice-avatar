@@ -311,7 +311,10 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 | `debug` | `boolean` | `false` | When true, renders an interactive floating GUI (Leva) to inspect and tune individual 3D blendshapes. |
 | `vadAssetPath` | `string` | `undefined` | Optional URL or local path override for self-hosting `@ricky0123/vad-web` ONNX asset binaries in airgapped deployments. |
 | `onnxWasmPath` | `string` | `undefined` | Optional URL override for self-hosting `onnxruntime-web` WASM distribution files. |
+| `workerBaseUrl`| `string` | `undefined` | CSP Escape Hatch: if `blob:` workers are blocked by your server, fetch pre-compiled Web Workers from this URL directory. |
 | `enableLocalAssetProbe` | `boolean` | `false` | When true, performs an HTTP HEAD check on local `/ananya.glb` routes before falling back to CDN. Disabled by default to prevent 404 console errors in SPAs. |
+| `statusPillStyle` | `React.CSSProperties` | `undefined` | Optional custom CSS styling & absolute positioning overrides for the interactive Status Pill overlay. |
+| `accentColor` | `string` | `undefined` | Custom CSS color string (e.g., `#38BDF8`) for the active status indicator rings and highlights. |
 
 ---
 
