@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
+import { AiVoiceAvatar, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import './style.css';
 
 const useMediaQuery = (query: string) => {
@@ -593,9 +593,8 @@ ${llmMode === 'cloud'
           debug={false}
           showCaptions={true}
           scale={isMobile ? 0.38 : 0.48}
-          position={isMobile ? [0, -0.25, 0] : [-0.15, -0.34, 0]}
-          hideStatusPill={_avatarStatus === 'loading'}
-          statusPillStyle={isMobile ? { left: '50%', transform: 'translateX(-50%)', bottom: '80px', width: 'max-content' } : undefined}
+          position={isMobile ? [0, -0.22, 0] : [-0.15, -0.34, 0]}
+          hideStatusPill={isMobile || _avatarStatus === 'loading'}
           loadingProgress={(pct, label) => {
             setLoadingPct(pct);
             setLoadingLabel(label);
@@ -603,6 +602,22 @@ ${llmMode === 'cloud'
           onStatusChange={setAvatarStatus}
         />
       </Canvas>
+
+      {/* Mobile-only external StatusPill (outside Canvas for reliable viewport positioning) */}
+      {isMobile && _avatarStatus !== 'loading' && (
+        <div style={{
+          position: 'absolute', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1001, width: 'max-content',
+        }}>
+          <StatusPill
+            status={_avatarStatus}
+            onPillClick={() => avatarRef.current?.startListening()}
+            onStopClick={() => avatarRef.current?.interrupt()}
+            accentColor={currentPersona.accentColor}
+            style={{ position: 'relative', bottom: 'auto', left: 'auto', transform: 'none' }}
+          />
+        </div>
+      )}
 
       {/* Text Input Overlay */}
       <div style={{
