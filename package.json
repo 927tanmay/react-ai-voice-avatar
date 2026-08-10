@@ -70,6 +70,7 @@
     "onnxruntime-web": "^1.27.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.0.0",
     "@types/react": "^19.0.0",
@@ -91,7 +92,8 @@
     "dev": "vite",
     "lint": "tsc --noEmit",
     "format": "prettier --write src",
-    "test:smoke": "node scripts/smoke-test.js"
+    "test:smoke": "node scripts/smoke-test.js",
+    "test:e2e": "playwright test"
   },
   "sideEffects": false
 }
