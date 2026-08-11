@@ -112,7 +112,7 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
   return (
     <div style={{ 
       width: '100vw', 
-      height: '100vh', 
+      height: '100dvh', 
       backgroundColor: '#0C0D10', 
       fontFamily: "'Inter', -apple-system, sans-serif",
       overflowY: 'auto',
@@ -127,7 +127,7 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '100vh'
+        minHeight: '100dvh'
       }}>
         
         {/* Header / About */}
@@ -294,7 +294,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   };
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#0C0D10', overflow: 'hidden', fontFamily: "'Inter', -apple-system, sans-serif" }}>
+    <div style={{ position: 'relative', width: '100vw', height: '100dvh', backgroundColor: '#0C0D10', overflow: 'hidden', fontFamily: "'Inter', -apple-system, sans-serif" }}>
       
       {/* Top Accent Bar */}
       <div style={{
@@ -608,7 +608,7 @@ ${llmMode === 'cloud'
       {/* Mobile-only external StatusPill (outside Canvas for reliable viewport positioning) */}
       {isMobile && _avatarStatus !== 'loading' && (
         <div style={{
-          position: 'absolute', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+          position: 'absolute', bottom: '110px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 1001, width: 'max-content',
         }}>
           <StatusPill
@@ -623,7 +623,7 @@ ${llmMode === 'cloud'
 
       {/* Text Input Overlay */}
       <div style={{
-        position: 'absolute', bottom: isMobile ? '20px' : '40px', left: '50%', transform: 'translateX(-50%)',
+        position: 'absolute', bottom: isMobile ? '35px' : '40px', left: '50%', transform: 'translateX(-50%)',
         zIndex: 1000, width: isMobile ? 'calc(100% - 40px)' : '100%', maxWidth: '400px',
       }}>
         <form 
