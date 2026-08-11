@@ -268,6 +268,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>(isLowEndDevice ? 'mms' : 'kokoro');
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [ttsVoice, setTtsVoice] = useState<string>(currentPersona.defaultVoice);
+  const [devAvatarPreset, setDevAvatarPreset] = useState<'aarav' | 'ananya'>(currentPersona.preset as 'aarav' | 'ananya');
 
   // When persona prop changes, update internal dev state so it stays synced
   useEffect(() => {
@@ -504,6 +505,14 @@ ${llmMode === 'cloud'
             gap: '12px', width: '330px', maxHeight: 'calc(100vh - 140px)', overflowY: 'auto', paddingLeft: '8px',
           }}>
             <div style={{ background: 'rgba(20, 22, 28, 0.75)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '20px', padding: '16px 20px' }}>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>🎭 3D Model</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <button onClick={() => setDevAvatarPreset('aarav')} style={{ background: devAvatarPreset === 'aarav' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>Aarav</button>
+                <button onClick={() => setDevAvatarPreset('ananya')} style={{ background: devAvatarPreset === 'ananya' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>Ananya</button>
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(20, 22, 28, 0.75)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '20px', padding: '16px 20px' }}>
               <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '1px' }}>🔊 Voice & Prosody</h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
                 <button onClick={() => setTtsEngine('kokoro')} style={{ background: ttsEngine === 'kokoro' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Kokoro (Human)</button>
@@ -583,9 +592,9 @@ ${llmMode === 'cloud'
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.5} maxDistance={4} />
         
         <AiVoiceAvatar
-          key={`avatar-${personaId}-${llmMode}`}
+          key={`avatar-${personaId}-${llmMode}-${devAvatarPreset}`}
           ref={avatarRef}
-          avatarPreset={currentPersona.preset}
+          avatarPreset={personaId === 'dev' ? devAvatarPreset : currentPersona.preset}
           lightingPreset={lightingPreset}
           llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
           onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
