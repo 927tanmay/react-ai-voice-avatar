@@ -76,6 +76,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
   const isInterruptedRef = useRef(false);
 
+  const resumeVadIfAllowed = useCallback(() => {
+    if (configRef.current.listenMode !== 'push-to-talk' && !isInterruptedRef.current) {
+      vadRef.current?.start();
+    }
+  }, []);
 
   const playNextInQueue = useCallback(() => {
     if (isPlayingRef.current || !audioContextRef.current) return;
@@ -92,9 +97,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         }
         setStatus('idle');
         configRef.current.onInferenceEnd?.();
-        if (configRef.current.listenMode !== 'push-to-talk') {
-          vadRef.current?.start();
-        }
+        resumeVadIfAllowed();
       } else if (!playbackWatchdogRef.current) {
         // Watchdog recovery: If nothing is playing and queue stays empty for ~10s while waiting for more chunks, recover pipeline
         playbackWatchdogRef.current = setTimeout(() => {
@@ -104,9 +107,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           isPlayingRef.current = false;
           setStatus('idle');
           configRef.current.onInferenceEnd?.();
-          if (configRef.current.listenMode !== 'push-to-talk') {
-            vadRef.current?.start();
-          }
+          resumeVadIfAllowed();
         }, 10000);
       }
       return;
@@ -331,14 +332,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             console.error('onSubmit streaming error:', err);
             setStatus('idle');
             configRef.current.onInferenceEnd?.();
-            vadRef.current?.start();
+            resumeVadIfAllowed();
           });
       }
     },
     onError: (_stage, _msg) => {
       setStatus('idle');
       configRef.current.onInferenceEnd?.();
-      vadRef.current?.start();
+      resumeVadIfAllowed();
     }
   });
 
