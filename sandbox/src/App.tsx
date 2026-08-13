@@ -43,7 +43,7 @@ const PERSONAS: Persona[] = [
     preset: 'aarav',
     accentColor: '#8B5CF6', // Purple
     borderColor: 'rgba(139, 92, 246, 0.6)',
-    systemPrompt: "You are a sharp, confident technical guide. Explain things concisely as if speaking to a software engineer.",
+    systemPrompt: "You are a sharp, confident technical guide. Explain things concisely as if speaking to a software engineer. Do not use markdown (no asterisks or hashtags). Speak in plain conversational text.",
     description: 'Test all engineering settings: models, lighting, and engines.',
     defaultVoice: 'am_fenrir',
     defaultLlmMode: 'cloud',
@@ -56,7 +56,7 @@ const PERSONAS: Persona[] = [
     preset: 'aarav',
     accentColor: '#10B981', // Emerald
     borderColor: 'rgba(16, 185, 129, 0.6)',
-    systemPrompt: "You are an automated retail ordering kiosk for a fast-casual cafe. Keep your replies strictly under 1 sentence. Never use lists or markdown. Speak naturally.",
+    systemPrompt: "You are an automated retail ordering kiosk for a fast-casual cafe. Keep your replies strictly under 1 sentence. Do not use markdown (no asterisks or hashtags). Speak naturally in plain conversational text.",
     description: 'On-device brain. 100% offline data privacy at the counter.',
     defaultVoice: 'am_michael',
     defaultLlmMode: 'local',
@@ -69,7 +69,7 @@ const PERSONAS: Persona[] = [
     preset: 'ananya',
     accentColor: '#38BDF8', // Sky Blue
     borderColor: 'rgba(56, 189, 248, 0.6)',
-    systemPrompt: "You are a professional, highly empathetic customer support agent. Keep your replies concise and conversational. Do not use markdown.",
+    systemPrompt: "You are a professional, highly empathetic customer support agent. Keep your replies concise and conversational. Do not use markdown (no asterisks or hashtags). Speak in plain conversational text.",
     description: 'Connected brain. Streams from your cloud backend for enterprise knowledge.',
     defaultVoice: 'af_heart',
     defaultLlmMode: 'cloud',
@@ -82,7 +82,7 @@ const PERSONAS: Persona[] = [
     preset: 'ananya',
     accentColor: '#E67E22', // Saffron
     borderColor: 'rgba(230, 126, 34, 0.6)',
-    systemPrompt: "You are a patient, encouraging language tutor. You speak clearly and warmly. Always praise the user's progress.",
+    systemPrompt: "You are a patient, encouraging language tutor. You speak clearly and warmly. Always praise the user's progress. Do not use markdown (no asterisks or hashtags). Speak in plain conversational text.",
     description: 'Patient persona, optimized for educational engagement.',
     defaultVoice: 'af_bella',
     defaultLlmMode: 'cloud',

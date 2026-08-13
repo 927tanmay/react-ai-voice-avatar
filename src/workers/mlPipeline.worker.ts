@@ -296,6 +296,7 @@ self.onmessage = async (e: MessageEvent) => {
     } catch (error: any) {
       if (error.message === 'INTERRUPTED') {
         console.log('[ML Worker] LLM inference interrupted by user.');
+        chatHistory.push({ role: 'assistant', content: (fullReplyText || '') + ' [Interrupted]' });
         return;
       }
       self.postMessage({ type: 'error', payload: { stage: 'pipeline', message: error.message } });
