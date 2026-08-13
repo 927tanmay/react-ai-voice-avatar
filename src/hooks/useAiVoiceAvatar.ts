@@ -181,6 +181,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [analyser]);
 
   const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, phonemes: string = '', isLast: boolean = true) => {
+    if (isInterruptedRef.current) return;
     if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
       isWaitingForMoreRef.current = !isLast;
     } else if (!isLast) {
@@ -363,6 +364,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       console.warn('[AiVoiceAvatar] Cannot speak yet, AI models are still initializing. Ignored:', text);
       return;
     }
+    isInterruptedRef.current = false;
     setStatus('speaking');
     synthesizeText(text.trim(), true);
   }, [synthesizeText, isReady]);
@@ -370,6 +372,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   // Imperative text submission skipping ASR, triggering normal pipeline/LLM
   const sendText = useCallback((text: string) => {
     if (!text || !text.trim()) return;
+    isInterruptedRef.current = false;
     setStatus('thinking');
     configRef.current.onInferenceStart?.();
     processText(text.trim(), !!configRef.current.onSubmit);
