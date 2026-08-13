@@ -82,7 +82,9 @@ Looking for impactful features to take up? We welcome pull requests for the foll
    - **Goal**: While we provide both Ananya (female) and Aarav (male) voice concierge meshes out of the box, we welcome community contributors to expand our gallery! Submit high-fidelity, royalty-free humanoid `.glb` models (~2MB to 4MB) equipped with standard 52 Apple ARKit blendshape morph targets. Uploading new armatures to our GitHub repository via our JsDelivr GitHub Edge CDN pipeline will introduce richer regional diversity without increasing our lightweight **~3.3 MB NPM package footprint** (across 25 files, shipping self-contained pre-bundled esbuild workers) by even a single byte!
 
 ### 🚀 Developer Experience & Enterprise UI Features
-2. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**
+2. **🗣️ Full Voice Barge-in (Voice Activity Detection & Echo Cancellation)**
+   - **Goal**: Right now, users click or tap to interrupt the avatar. We want a true "barge-in" feature where the user can simply start speaking over the avatar, and it will immediately stop talking and listen. This requires robust WebRTC echo cancellation (so the microphone doesn't pick up the avatar's own TTS output from the speakers) and continuous VAD polling.
+3. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**
    - **Goal**: Expose an intuitive prop `vadSensitivity?: 'high' | 'balanced' | 'noisy_room'`. In loud environments (hospital kiosks, expo floors), raising Voice Activity Detection energy thresholds will prevent ambient conversation from accidentally triggering AI prompts.
 3. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**
    - **Goal**: Expose a lightweight callback prop `onAudioLevelChange?: (energy: number) => void` that streams real-time microphone input volume directly to parent components, empowering developers to build dynamic ChatGPT-style voice visualizers and glowing HUD microphone rings.
