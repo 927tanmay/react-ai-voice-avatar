@@ -392,12 +392,12 @@ This library heavily relies on modern Web APIs (WebGPU, WebGL, Web Audio, and We
 | Browser | OS | 3D Rendering (WebGL) | Voice Synthesis (WebGPU/WASM) | Voice Recognition (Web Audio) | Status |
 |---|---|---|---|---|---|
 | **Chrome / Edge** | Windows, macOS, Android | ✅ Native | ✅ WebGPU (Ultra Fast) | ✅ Native | 🟢 Tier 1 (Recommended) |
-| **Safari / iOS** | macOS, iOS | ✅ Native | 🔄 Auto MMS Fallback (if OOM) | ✅ Native | 🟢 Tier 1 (Resilient) |
+| **Safari / iOS** | macOS, iOS | ✅ Native | 🔄 Lightweight Models by Default | ✅ Native | 🟡 Supported |
 | **Firefox** | Windows, macOS | ✅ Native | ⚠️ WASM Fallback | ✅ Native | 🟡 Tier 2 (Slower TTS) |
 
 > [!NOTE]
 > - **WebGPU** is currently enabled by default in Chrome/Edge. On browsers without WebGPU, the library automatically falls back to WASM execution. 
-> - **iOS/Safari Auto-Failover**: Safari imposes strict WebAssembly memory limits that often cause 80MB+ models (like Kokoro) to crash with `Out of memory`. The engine detects this and **transparently fails over** to a lightweight MMS TTS model (~30MB) so your audio never breaks!
+> - **iOS/Safari Preemptive Fallback**: Safari and iOS impose strict memory limits that cause 80MB+ models (like Kokoro) to crash the tab. The engine automatically preempts this by forcing the lightweight MMS TTS model (~30MB) on iOS devices, and tracks crash breadcrumbs to prevent OOM reload loops.
 > - **Strict CSP Environments**: Safari and Firefox may block `blob:` worker execution depending on your Content-Security-Policy headers. If this occurs, host the `.worker.js` files statically and pass their base path via the `workerBaseUrl` prop.
 
 ---

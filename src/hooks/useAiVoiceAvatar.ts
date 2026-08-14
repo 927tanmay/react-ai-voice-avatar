@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
 import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
+import { isIOS } from '../lib/device';
+
+const CRUMB = 'rava:kokoro-init-crashed';
 
 export interface UseAiVoiceAvatarConfig {
   llmModel?: string;
@@ -210,13 +213,26 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, []);
 
   // Internal state to track active TTS engine, allowing graceful fallback if Kokoro OOMs on Safari
-  const [activeTtsEngine, setActiveTtsEngine] = useState<'kokoro' | 'mms'>(config.ttsEngine || 'kokoro');
+  const [activeTtsEngine, setActiveTtsEngine] = useState<'kokoro' | 'mms'>(() => {
+    if (config.ttsEngine) return config.ttsEngine;
+
+    if (isIOS()) return 'mms';
+
+    if (typeof window !== 'undefined') {
+      const priorCrashes = Number(localStorage.getItem(CRUMB) || 0);
+      if (priorCrashes >= 2) {
+        console.warn(`[AiVoiceAvatar] Detected ${priorCrashes} previous Kokoro init crashes. Downgrading to MMS.`);
+        return 'mms';
+      }
+    }
+    return 'kokoro';
+  });
   const [hasFallenBack, setHasFallenBack] = useState(false);
 
   // Sync if parent explicitly changes it, but don't revert a fallback automatically unless it's a new instance
   useEffect(() => {
-    if (!hasFallenBack) {
-      setActiveTtsEngine(config.ttsEngine || 'kokoro');
+    if (!hasFallenBack && config.ttsEngine) {
+      setActiveTtsEngine(config.ttsEngine);
     }
   }, [config.ttsEngine, hasFallenBack]);
 
@@ -234,6 +250,20 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       setActiveTtsEngine('mms');
     },
   });
+
+  const crumbSetRef = useRef(false);
+  useEffect(() => {
+    if (activeTtsEngine !== 'kokoro' || typeof window === 'undefined') return;
+    
+    if (isKokoroReady) {
+      localStorage.removeItem(CRUMB);
+      crumbSetRef.current = false;
+    } else if (!hasFallenBack && !crumbSetRef.current) {
+      const priorCrashes = Number(localStorage.getItem(CRUMB) || 0);
+      localStorage.setItem(CRUMB, String(priorCrashes + 1));
+      crumbSetRef.current = true;
+    }
+  }, [activeTtsEngine, isKokoroReady, hasFallenBack]);
 
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
   const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, interrupt: mlInterrupt } = useMLWorker({
