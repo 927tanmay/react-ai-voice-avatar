@@ -614,6 +614,21 @@ ${llmMode === 'cloud'
         />
       </Canvas>
 
+      {/* Mobile-only Top Badge */}
+      {isMobile && _avatarStatus !== 'loading' && (
+        <div style={{
+          position: 'absolute', top: '24px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1001, display: 'flex', gap: '8px',
+          background: 'rgba(20, 22, 28, 0.75)', backdropFilter: 'blur(10px)',
+          padding: '8px 16px', borderRadius: '99px', border: '1px solid rgba(255,255,255,0.1)',
+          alignItems: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+        }}>
+          <span style={{ fontSize: '13px', color: '#E2E8F0', fontWeight: 600 }}>
+            {llmMode === 'cloud' ? '☁️ Cloud API' : '🔒 Local Edge AI'}
+          </span>
+        </div>
+      )}
+
       {/* Mobile-only external StatusPill (outside Canvas for reliable viewport positioning) */}
       {isMobile && _avatarStatus !== 'loading' && (
         <div style={{
