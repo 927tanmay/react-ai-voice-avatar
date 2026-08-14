@@ -461,6 +461,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         const vad = vadModule?.MicVAD ? vadModule : (vadModule?.default ?? vadModule);
         const myvad = await vad.MicVAD.new({
           getStream: () => Promise.resolve(stream),
+          audioContext: audioCtx,
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
           onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/",
           onSpeechStart: () => {

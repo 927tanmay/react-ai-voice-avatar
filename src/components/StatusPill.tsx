@@ -73,7 +73,7 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
     return () => cancelAnimationFrame(animationId);
   }, [status, analyser, accentColor]);
 
-  const handleMainClick = (e: React.MouseEvent) => {
+  const handleMainClick = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
     if (status === 'loading') return;
     if (status === 'idle') {
@@ -86,6 +86,7 @@ export function StatusPill({ status, accentColor = '#3b82f6', analyser, onPillCl
   return (
     <div
       onClick={handleMainClick}
+      onTouchStart={handleMainClick}
       title={status === 'loading' ? 'Initializing AI models in Web Workers...' : status === 'idle' ? 'Start voice session' : 'Click to stop / pause'}
       style={{
         position: 'absolute',
