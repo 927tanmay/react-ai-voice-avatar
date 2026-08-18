@@ -23,7 +23,7 @@ export interface AiVoiceAvatarHandle {
   startListening: () => void;
   stopListening: () => void;
   speak: (text: string) => void;
-  sendText: (text: string) => void;
+  sendText: (text: string, options?: { hidden?: boolean }) => void;
   getAnalyser: () => AnalyserNode | undefined;
   status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
   isLoading: boolean;
@@ -73,6 +73,7 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   enableLocalAssetProbe?: boolean;
 
   showCaptions?: boolean;
+  captionStyle?: React.CSSProperties;
   listenMode?: 'vad' | 'push-to-talk';
   accentColor?: string;
 
@@ -396,6 +397,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
 
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(modelSrc || null);
   const [caption, setCaption] = useState<{ text: string; speaker: 'user' | 'avatar' } | null>(null);
+  const hiddenTranscriptRef = useRef<string | null>(null);
   const [loadingInfo, setLoadingInfo] = useState<{ pct?: number; label?: string }>({});
   const [engineWarning, setEngineWarning] = useState<string | null>(null);
   const loadingProgressRef = useRef(loadingProgress);
@@ -419,7 +421,11 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onSubmit,
     onTranscriptUpdate: (text, speaker) => {
       if (speaker === 'user') {
-        setCaption({ text, speaker });
+        if (hiddenTranscriptRef.current === text) {
+          hiddenTranscriptRef.current = null; // Consume it, don't show caption
+        } else {
+          setCaption({ text, speaker });
+        }
       }
       onTranscriptUpdate?.(text, speaker);
     },
@@ -467,7 +473,12 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     startListening,
     stopListening,
     speak,
-    sendText,
+    sendText: (text: string, options?: { hidden?: boolean }) => {
+      if (options?.hidden) {
+        hiddenTranscriptRef.current = text.trim();
+      }
+      sendText(text);
+    },
     getAnalyser: () => analyser,
     status,
     isLoading,
@@ -521,7 +532,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
                 border: `1px solid ${caption.speaker === 'user' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(16, 185, 129, 0.5)'}`,
                 borderRadius: '16px', padding: '14px 22px', maxWidth: '380px', width: 'auto', minWidth: '260px',
                 boxShadow: '0 12px 40px rgba(0, 0, 0, 0.75)', transition: 'all 0.3s ease',
-                pointerEvents: 'auto', textAlign: 'left', zIndex: 110
+                pointerEvents: 'auto', textAlign: 'left', zIndex: 110,
+                ...props.captionStyle
               }}>
                 <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: caption.speaker === 'user' ? '#60A5FA' : '#34D399', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span>{caption.speaker === 'user' ? '🎙️' : '💬'}</span>

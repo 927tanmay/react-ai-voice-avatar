@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { AiVoiceAvatar, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
@@ -21,7 +21,7 @@ const useMediaQuery = (query: string) => {
 };
 
 interface Persona {
-  id: 'retail' | 'support' | 'tutor' | 'dev';
+  id: 'retail' | 'support' | 'tutor' | 'dev' | 'debate';
   name: string;
   role: string;
   avatarIcon: string;
@@ -86,6 +86,19 @@ const PERSONAS: Persona[] = [
     description: 'Patient persona, optimized for educational engagement.',
     defaultVoice: 'af_bella',
     defaultLlmMode: 'cloud',
+  },
+  {
+    id: 'debate',
+    name: 'Agent Debate',
+    role: 'Two Avatars Talking',
+    avatarIcon: '🎭',
+    preset: 'aarav',
+    accentColor: '#F43F5E',
+    borderColor: 'rgba(244, 63, 94, 0.6)',
+    systemPrompt: '',
+    description: 'Watch two AI avatars debate any topic live. Local or cloud-powered.',
+    defaultVoice: 'am_fenrir',
+    defaultLlmMode: 'local',
   },
 ];
 
@@ -294,6 +307,181 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
     return `I heard you say: "${text}". In production, your cloud backend or OpenAI endpoint supplies this response via our onSubmit prop, skipping heavy local model downloads completely while keeping facial animation 100% client-side!`;
   };
 
+  // ─── Debate Mode State ───
+  const avatarBRef = useRef<AiVoiceAvatarHandle>(null);
+  const [debateTopic, setDebateTopic] = useState('');
+  const [debateStarted, setDebateStarted] = useState(false);
+  const [debateTurn, setDebateTurn] = useState<'A' | 'B' | null>(null);
+  const debateActiveRef = useRef(false);
+  const lastSpokenRef = useRef('');
+  const debateTurnRef = useRef<'A' | 'B' | null>(null);
+  const [debateTurnCount, setDebateTurnCount] = useState(0);
+  const [_avatarBStatus, setAvatarBStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
+  const pendingDebateTopicRef = useRef<string | null>(null);
+
+  // Track previous status to detect true "speaking -> idle" transitions
+  const prevStatusARef = useRef<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
+  const prevStatusBRef = useRef<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
+  const MAX_TURNS = 6;
+
+  // BYOK state
+  const [apiKey, setApiKey] = useState('');
+  const [apiProvider, setApiProvider] = useState<'openai' | 'gemini' | 'groq'>('openai');
+  const [showByok, setShowByok] = useState(false);
+  const useCloudForDebate = apiKey.trim().length > 0;
+
+  const debateForPrompt = `You are debating a topic. Argue FOR the given position. Keep responses strictly under 2 sentences. Be conversational and opinionated. Do not use markdown formatting. Speak in plain text.`;
+  const debateAgainstPrompt = `You are debating a topic. Argue AGAINST the given position. Keep responses strictly under 2 sentences. Be conversational and opinionated. Do not use markdown formatting. Speak in plain text.`;
+
+  // Keep turn ref in sync
+  useEffect(() => { debateTurnRef.current = debateTurn; }, [debateTurn]);
+
+  // Cloud API handler for BYOK
+  const handleCloudDebateSubmit = useCallback(async (text: string, systemPrompt: string): Promise<string> => {
+    try {
+      if (apiProvider === 'gemini') {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ parts: [{ text }] }],
+          }),
+        });
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text || 'I need a moment to think about that.';
+      } else {
+        // OpenAI / Groq (compatible API)
+        const endpoint = apiProvider === 'groq'
+          ? 'https://api.groq.com/openai/v1/chat/completions'
+          : 'https://api.openai.com/v1/chat/completions';
+        const model = apiProvider === 'groq' ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: text },
+            ],
+            max_tokens: 120,
+          }),
+        });
+        const data = await res.json();
+        return data?.choices?.[0]?.message?.content || 'I need a moment to think about that.';
+      }
+    } catch (err) {
+      console.error('[Debate BYOK] Cloud API error:', err);
+      return 'Sorry, I had trouble connecting to the cloud API. Check your key and try again.';
+    }
+  }, [apiKey, apiProvider]);
+
+  // Debate transcript handler — captures last spoken text
+  const handleDebateTranscript = useCallback((_avatar: 'A' | 'B', text: string, speaker: 'user' | 'avatar') => {
+    if (speaker !== 'avatar' || !debateActiveRef.current) return;
+    lastSpokenRef.current = text;
+  }, []);
+
+  // Stop debate helper (used by button and max turn limit)
+  const stopDebate = useCallback(() => {
+    debateActiveRef.current = false;
+    setDebateStarted(false);
+    setDebateTurn(null);
+    setDebateTurnCount(0);
+    lastSpokenRef.current = '';
+    avatarRef.current?.interrupt();
+    avatarBRef.current?.interrupt();
+  }, []);
+
+  // Debate status handler — orchestrates turn-taking robustly
+  const handleDebateStatusChange = useCallback((avatar: 'A' | 'B', status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking') => {
+    // Record current status for UI
+    if (avatar === 'A') setAvatarStatus(status);
+    if (avatar === 'B') setAvatarBStatus(status);
+    
+    if (!debateActiveRef.current) return; // Ignore if debate stopped
+
+    // Determine if this is a genuine transition from speaking/thinking to idle
+    const prevStatus = avatar === 'A' ? prevStatusARef.current : prevStatusBRef.current;
+    const justFinishedSpeaking = (prevStatus === 'speaking' || prevStatus === 'thinking') && status === 'idle';
+    
+    // Update previous status ref
+    if (avatar === 'A') prevStatusARef.current = status;
+    if (avatar === 'B') prevStatusBRef.current = status;
+
+    // Only trigger turn logic if they just finished speaking and it was their turn
+    if (justFinishedSpeaking && debateTurnRef.current === avatar) {
+      const otherRef = avatar === 'A' ? avatarBRef : avatarRef;
+      const lastText = lastSpokenRef.current;
+
+      setDebateTurnCount((prevCount) => {
+        const nextCount = prevCount + 1;
+        
+        // Auto-stop if we hit the turn limit
+        if (nextCount > MAX_TURNS) {
+          setTimeout(() => stopDebate(), 1000);
+          return prevCount;
+        }
+
+        // Pass to the other avatar
+        if (lastText && otherRef.current) {
+          setTimeout(() => {
+            if (!debateActiveRef.current) return; // Double check we didn't stop during timeout
+            const nextTurn = avatar === 'A' ? 'B' : 'A';
+            setDebateTurn(nextTurn);
+            
+            // Enforce stance context to prevent them from agreeing with each other
+            const side = avatar === 'A' ? 'FOR' : 'AGAINST';
+            const contextText = `Your opponent (arguing ${side} the topic) just said: "${lastText}". Remember your stance. Give a short counter-argument.`;
+            
+            otherRef.current?.sendText(contextText, { hidden: true });
+          }, 1500);
+        }
+        return nextCount;
+      });
+    }
+  }, [stopDebate]);
+
+  // Start debate
+  const startDebate = useCallback((topic: string) => {
+    if (!topic.trim()) return;
+    setDebateStarted(true);
+    debateActiveRef.current = true;
+    setDebateTurn('A');
+    setDebateTurnCount(1);
+    lastSpokenRef.current = '';
+    
+    // Reset status trackers for new debate
+    prevStatusARef.current = 'loading'; // Start at loading so we don't accidentally trigger a turn
+    prevStatusBRef.current = 'loading';
+
+    // Queue the topic. The useEffect below will fire it once both avatars are 'idle'.
+    pendingDebateTopicRef.current = topic;
+  }, []);
+
+  // Robust Kickoff: Wait for both models to finish downloading before sending the first prompt
+  useEffect(() => {
+    if (
+      debateStarted &&
+      debateActiveRef.current &&
+      pendingDebateTopicRef.current &&
+      _avatarStatus === 'idle' &&
+      _avatarBStatus === 'idle'
+    ) {
+      const topic = pendingDebateTopicRef.current;
+      pendingDebateTopicRef.current = null;
+      
+      // Kick off Avatar A now that both engines are fully loaded
+      setTimeout(() => {
+        if (debateActiveRef.current && avatarRef.current) {
+          avatarRef.current.sendText(`The debate topic is: "${topic}". You are arguing FOR this topic. State your opening argument.`, { hidden: true });
+        }
+      }, 500);
+    }
+  }, [_avatarStatus, _avatarBStatus, debateStarted]);
+
+
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100dvh', backgroundColor: '#0C0D10', overflow: 'hidden', fontFamily: "'Inter', -apple-system, sans-serif" }}>
       
@@ -386,7 +574,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
       )}
 
       {/* Dev Sandbox Sidebars */}
-      {personaId !== 'dev' && !isMobile && (
+      {personaId !== 'dev' && personaId !== 'debate' && !isMobile && (
         <div style={{
           position: 'absolute', top: '70px', left: '24px', zIndex: 500, display: 'flex', flexDirection: 'column',
           gap: '20px', width: '340px', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingRight: '8px',
@@ -581,41 +769,282 @@ ${llmMode === 'cloud'
         </>
       )}
 
+      {/* ─── Debate Mode: Topic Input Overlay ─── */}
+      {personaId === 'debate' && !debateStarted && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 2000,
+          background: 'rgba(12, 13, 16, 0.92)', backdropFilter: 'blur(20px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            maxWidth: '520px', width: '90%', display: 'flex', flexDirection: 'column', gap: '24px',
+            animation: 'fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎭</div>
+              <h2 style={{ color: '#FFFFFF', fontSize: '28px', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>Agent Debate</h2>
+              <p style={{ color: '#94A3B8', fontSize: '14px', margin: 0, lineHeight: '1.5' }}>
+                Two AI avatars will debate any topic you choose. Aarav argues FOR, Ananya argues AGAINST.
+              </p>
+            </div>
+
+            {/* Topic Input */}
+            <form onSubmit={(e) => { e.preventDefault(); startDebate(debateTopic); }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input
+                type="text"
+                value={debateTopic}
+                onChange={(e) => setDebateTopic(e.target.value)}
+                placeholder="Enter a debate topic..."
+                autoFocus
+                style={{
+                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '14px', padding: '14px 18px', color: '#FFFFFF', fontSize: '16px',
+                  outline: 'none', fontFamily: 'inherit',
+                }}
+              />
+              {/* Quick-pick chips */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+                {['AI will replace most jobs', 'Tabs vs Spaces', 'Remote work is better than office', 'Social media does more harm than good'].map((topic) => (
+                  <button
+                    key={topic}
+                    type="button"
+                    onClick={() => setDebateTopic(topic)}
+                    style={{
+                      background: debateTopic === topic ? '#F43F5E' : 'rgba(255,255,255,0.06)',
+                      color: debateTopic === topic ? '#FFF' : '#94A3B8',
+                      border: `1px solid ${debateTopic === topic ? '#F43F5E' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: '99px', padding: '6px 14px', fontSize: '12px', fontWeight: 600,
+                      cursor: 'pointer', transition: 'all 0.2s ease', fontFamily: 'inherit',
+                    }}
+                  >
+                    {topic}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="submit"
+                disabled={!debateTopic.trim()}
+                style={{
+                  background: debateTopic.trim() ? '#F43F5E' : 'rgba(255,255,255,0.1)',
+                  color: debateTopic.trim() ? '#FFF' : '#64748B',
+                  border: 'none', borderRadius: '14px', padding: '14px', fontSize: '16px',
+                  fontWeight: 700, cursor: debateTopic.trim() ? 'pointer' : 'not-allowed',
+                  transition: 'all 0.2s ease', fontFamily: 'inherit',
+                }}
+              >
+                🎙️ Start Debate
+              </button>
+            </form>
+
+            {/* BYOK Section */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '16px' }}>
+              <button
+                onClick={() => setShowByok(!showByok)}
+                style={{
+                  background: 'none', border: 'none', color: '#64748B', fontSize: '12px',
+                  fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                  width: '100%', justifyContent: 'center', fontFamily: 'inherit',
+                }}
+              >
+                {showByok ? '▼' : '▶'} {useCloudForDebate ? `☁️ Powered by ${apiProvider === 'openai' ? 'OpenAI' : apiProvider === 'gemini' ? 'Gemini' : 'Groq'}` : '🔒 Powered by Local Qwen 0.5B'} — {showByok ? 'Hide' : 'Bring Your Own API Key'}
+              </button>
+
+              {showByok && (
+                <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(['openai', 'gemini', 'groq'] as const).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setApiProvider(p)}
+                        style={{
+                          flex: 1, background: apiProvider === p ? '#F43F5E' : 'rgba(255,255,255,0.06)',
+                          color: apiProvider === p ? '#FFF' : '#94A3B8',
+                          border: `1px solid ${apiProvider === p ? '#F43F5E' : 'rgba(255,255,255,0.1)'}`,
+                          borderRadius: '10px', padding: '8px', fontSize: '12px', fontWeight: 600,
+                          cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
+                        }}
+                      >
+                        {p === 'openai' ? 'OpenAI' : p === 'gemini' ? 'Gemini' : 'Groq'}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder={`Paste your ${apiProvider === 'openai' ? 'OpenAI' : apiProvider === 'gemini' ? 'Gemini' : 'Groq'} API key...`}
+                    style={{
+                      background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '10px', padding: '10px 14px', color: '#FFFFFF', fontSize: '13px',
+                      outline: 'none', fontFamily: 'inherit',
+                    }}
+                  />
+                  <p style={{ color: '#F59E0B', fontSize: '11px', margin: 0, textAlign: 'center' }}>
+                    ⚠️ Key is sent directly to the API from your browser. Only use your own key.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3D Studio Viewport */}
-      <Canvas camera={{ position: [0, 0.15, 2.2], fov: 32 }} style={{ width: '100%', height: '100%' }}>
+      <Canvas camera={{ position: personaId === 'debate' ? [0, 0.15, 2.8] : [0, 0.15, 2.2], fov: 32 }} style={{ width: '100%', height: '100%' }}>
         <color attach="background" args={['#101116']} />
         
-        {/* Studio Lighting matching persona accent */}
-        <pointLight position={[-3, 2, -2]} intensity={25} color={currentPersona.accentColor} distance={6} />
-        <pointLight position={[3, 1, -2]} intensity={20} color={currentPersona.accentColor} distance={6} />
+        {/* Subtle accent rim lights */}
+        <pointLight position={[-3, 2, -2]} intensity={2} color={currentPersona.accentColor} distance={10} />
+        <pointLight position={[3, 1, -2]} intensity={2} color={currentPersona.accentColor} distance={10} />
         
         <OrbitControls target={[0, 0.05, 0]} minDistance={0.5} maxDistance={4} />
         
-        <AiVoiceAvatar
-          key={`avatar-${personaId}-${llmMode}-${devAvatarPreset}`}
-          ref={avatarRef}
-          avatarPreset={personaId === 'dev' ? devAvatarPreset : currentPersona.preset}
-          lightingPreset={lightingPreset}
-          llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
-          onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
-          systemPrompt={currentPersona.systemPrompt}
-          ttsEngine={ttsEngine}
-          ttsVoice={ttsVoice}
-          debug={false}
-          showCaptions={true}
-          scale={isMobile ? 0.38 : 0.48}
-          position={isMobile ? [0, -0.22, 0] : [-0.15, -0.34, 0]}
-          hideStatusPill={isMobile || _avatarStatus === 'loading'}
-          loadingProgress={(pct, label) => {
-            setLoadingPct(pct);
-            setLoadingLabel(label);
-          }}
-          onStatusChange={setAvatarStatus}
-        />
+        {personaId === 'debate' ? (
+          <>
+            {/* Avatar A (Aarav) — Left */}
+            <AiVoiceAvatar
+              key={`debate-a-${useCloudForDebate}`}
+              ref={avatarRef}
+              avatarPreset="aarav"
+              lightingPreset={lightingPreset}
+              llmModel={useCloudForDebate ? undefined : 'onnx-community/Qwen2.5-0.5B-Instruct'}
+              onSubmit={useCloudForDebate ? (text) => handleCloudDebateSubmit(text, debateForPrompt) : undefined}
+              systemPrompt={debateForPrompt}
+              ttsEngine={ttsEngine}
+              ttsVoice="am_fenrir"
+              listenMode="push-to-talk"
+              debug={false}
+              showCaptions={true}
+              captionStyle={{ left: '48px', right: 'auto' }}
+              scale={0.38}
+              position={[-0.5, -0.34, 0]}
+              rotation={[0, Math.PI / 8, 0]}
+              hideStatusPill={true}
+              loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
+              onStatusChange={(s) => handleDebateStatusChange('A', s)}
+              onTranscriptUpdate={(text, speaker) => handleDebateTranscript('A', text, speaker)}
+            />
+            {/* Avatar B (Ananya) — Right */}
+            <AiVoiceAvatar
+              key={`debate-b-${useCloudForDebate}`}
+              ref={avatarBRef}
+              avatarPreset="ananya"
+              lightingPreset={lightingPreset}
+              llmModel={useCloudForDebate ? undefined : 'onnx-community/Qwen2.5-0.5B-Instruct'}
+              onSubmit={useCloudForDebate ? (text) => handleCloudDebateSubmit(text, debateAgainstPrompt) : undefined}
+              systemPrompt={debateAgainstPrompt}
+              ttsEngine={ttsEngine}
+              ttsVoice="af_bella"
+              listenMode="push-to-talk"
+              debug={false}
+              showCaptions={true}
+              captionStyle={{ right: '48px', left: 'auto' }}
+              scale={0.38}
+              position={[0.5, -0.34, 0]}
+              rotation={[0, -Math.PI / 8, 0]}
+              hideStatusPill={true}
+              loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
+              onStatusChange={(s) => handleDebateStatusChange('B', s)}
+              onTranscriptUpdate={(text, speaker) => handleDebateTranscript('B', text, speaker)}
+            />
+          </>
+        ) : (
+          <AiVoiceAvatar
+            key={`avatar-${personaId}-${llmMode}-${devAvatarPreset}`}
+            ref={avatarRef}
+            avatarPreset={personaId === 'dev' ? devAvatarPreset : currentPersona.preset}
+            lightingPreset={lightingPreset}
+            llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
+            onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
+            systemPrompt={currentPersona.systemPrompt}
+            ttsEngine={ttsEngine}
+            ttsVoice={ttsVoice}
+            debug={false}
+            showCaptions={true}
+            scale={isMobile ? 0.38 : 0.48}
+            position={isMobile ? [0, -0.22, 0] : [-0.15, -0.34, 0]}
+            hideStatusPill={isMobile || _avatarStatus === 'loading'}
+            loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
+            onStatusChange={setAvatarStatus}
+          />
+        )}
       </Canvas>
 
-      {/* Mobile-only Top Badge */}
-      {isMobile && _avatarStatus !== 'loading' && (
+      {/* ─── Debate Mode: Speaker Labels + Stop Button ─── */}
+      {personaId === 'debate' && debateStarted && (
+        <>
+          {/* Speaker Labels */}
+          <div style={{
+            position: 'absolute', bottom: '100px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 1001, display: 'flex', gap: '40px', alignItems: 'center',
+          }}>
+            <div style={{
+              background: 'rgba(20, 22, 28, 0.85)', backdropFilter: 'blur(10px)',
+              padding: '8px 16px', borderRadius: '12px',
+              border: `1px solid ${debateTurn === 'A' ? '#F43F5E' : 'rgba(255,255,255,0.1)'}`,
+              boxShadow: debateTurn === 'A' ? '0 0 20px rgba(244, 63, 94, 0.3)' : 'none',
+              transition: 'all 0.3s ease',
+            }}>
+              <span style={{ fontSize: '13px', color: debateTurn === 'A' ? '#F43F5E' : '#64748B', fontWeight: 600 }}>
+                {debateTurn === 'A' ? '🟢' : '⚪'} Aarav (FOR)
+              </span>
+            </div>
+            <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
+              Turn {debateTurnCount}
+            </div>
+            <div style={{
+              background: 'rgba(20, 22, 28, 0.85)', backdropFilter: 'blur(10px)',
+              padding: '8px 16px', borderRadius: '12px',
+              border: `1px solid ${debateTurn === 'B' ? '#38BDF8' : 'rgba(255,255,255,0.1)'}`,
+              boxShadow: debateTurn === 'B' ? '0 0 20px rgba(56, 189, 248, 0.3)' : 'none',
+              transition: 'all 0.3s ease',
+            }}>
+              <span style={{ fontSize: '13px', color: debateTurn === 'B' ? '#38BDF8' : '#64748B', fontWeight: 600 }}>
+                {debateTurn === 'B' ? '🟢' : '⚪'} Ananya (AGAINST)
+              </span>
+            </div>
+          </div>
+
+          {/* Topic Banner + Stop Button */}
+          <div style={{
+            position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 1001, display: 'flex', alignItems: 'center', gap: '16px',
+          }}>
+            <div style={{
+              background: 'rgba(20, 22, 28, 0.85)', backdropFilter: 'blur(10px)',
+              padding: '10px 20px', borderRadius: '99px', border: '1px solid rgba(255,255,255,0.1)',
+              fontSize: '13px', color: '#94A3B8', fontWeight: 500, maxWidth: '300px',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              📌 {debateTopic}
+            </div>
+            <button
+              onClick={stopDebate}
+              style={{
+                background: '#EF4444', color: '#FFF', border: 'none', borderRadius: '99px',
+                padding: '10px 20px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)', fontFamily: 'inherit',
+              }}
+            >
+              ■ Stop Debate
+            </button>
+          </div>
+
+          {/* Power Source Badge */}
+          <div style={{
+            position: 'absolute', top: '24px', right: '24px', zIndex: 1001,
+            background: 'rgba(20, 22, 28, 0.75)', backdropFilter: 'blur(10px)',
+            padding: '8px 16px', borderRadius: '99px', border: '1px solid rgba(255,255,255,0.1)',
+          }}>
+            <span style={{ fontSize: '12px', color: '#E2E8F0', fontWeight: 600 }}>
+              {useCloudForDebate ? `☁️ ${apiProvider === 'openai' ? 'OpenAI' : apiProvider === 'gemini' ? 'Gemini' : 'Groq'}` : '🔒 Local Qwen 0.5B'}
+            </span>
+          </div>
+        </>
+      )}
+
+      {/* Mobile-only Top Badge (non-debate) */}
+      {personaId !== 'debate' && isMobile && _avatarStatus !== 'loading' && (
         <div style={{
           position: 'absolute', top: '24px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 1001, display: 'flex', gap: '8px',
@@ -629,8 +1058,8 @@ ${llmMode === 'cloud'
         </div>
       )}
 
-      {/* Mobile-only external StatusPill (outside Canvas for reliable viewport positioning) */}
-      {isMobile && _avatarStatus !== 'loading' && (
+      {/* Mobile-only external StatusPill (non-debate) */}
+      {personaId !== 'debate' && isMobile && _avatarStatus !== 'loading' && (
         <div style={{
           position: 'absolute', bottom: '110px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 1001, width: 'max-content',
@@ -645,41 +1074,43 @@ ${llmMode === 'cloud'
         </div>
       )}
 
-      {/* Text Input Overlay */}
-      <div style={{
-        position: 'absolute', bottom: isMobile ? '35px' : '40px', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 1000, width: isMobile ? 'calc(100% - 40px)' : '100%', maxWidth: '400px',
-      }}>
-        <form 
-          onSubmit={handleTextSubmit}
-          style={{
-            display: 'flex', background: 'rgba(20, 22, 28, 0.85)', backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '9999px',
-            padding: '6px 6px 6px 20px', boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)'
-          }}
-        >
-          <input
-            type="text"
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            disabled={_avatarStatus === 'loading'}
-            placeholder={_avatarStatus === 'loading' ? 'Warming up AI engine...' : 'Type a message (skips mic)...'}
-            style={{ flex: 1, background: 'transparent', border: 'none', color: '#FFFFFF', fontSize: '14px', outline: 'none', opacity: _avatarStatus === 'loading' ? 0.5 : 1 }}
-          />
-          <button
-            type="submit"
-            disabled={!textInput.trim() || _avatarStatus === 'loading'}
+      {/* Text Input Overlay (non-debate) */}
+      {personaId !== 'debate' && (
+        <div style={{
+          position: 'absolute', bottom: isMobile ? '35px' : '40px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1000, width: isMobile ? 'calc(100% - 40px)' : '100%', maxWidth: '400px',
+        }}>
+          <form 
+            onSubmit={handleTextSubmit}
             style={{
-              background: textInput.trim() && _avatarStatus !== 'loading' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.1)',
-              color: textInput.trim() && _avatarStatus !== 'loading' ? '#FFFFFF' : '#64748B',
-              border: 'none', borderRadius: '9999px', padding: '8px 16px', fontSize: '13px',
-              fontWeight: 600, cursor: textInput.trim() && _avatarStatus !== 'loading' ? 'pointer' : 'not-allowed', transition: 'all 0.2s ease'
+              display: 'flex', background: 'rgba(20, 22, 28, 0.85)', backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '9999px',
+              padding: '6px 6px 6px 20px', boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)'
             }}
           >
-            Send
-          </button>
-        </form>
-      </div>
+            <input
+              type="text"
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              disabled={_avatarStatus === 'loading'}
+              placeholder={_avatarStatus === 'loading' ? 'Warming up AI engine...' : 'Type a message (skips mic)...'}
+              style={{ flex: 1, background: 'transparent', border: 'none', color: '#FFFFFF', fontSize: '14px', outline: 'none', opacity: _avatarStatus === 'loading' ? 0.5 : 1 }}
+            />
+            <button
+              type="submit"
+              disabled={!textInput.trim() || _avatarStatus === 'loading'}
+              style={{
+                background: textInput.trim() && _avatarStatus !== 'loading' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.1)',
+                color: textInput.trim() && _avatarStatus !== 'loading' ? '#FFFFFF' : '#64748B',
+                border: 'none', borderRadius: '9999px', padding: '8px 16px', fontSize: '13px',
+                fontWeight: 600, cursor: textInput.trim() && _avatarStatus !== 'loading' ? 'pointer' : 'not-allowed', transition: 'all 0.2s ease'
+              }}
+            >
+              Send
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 };
