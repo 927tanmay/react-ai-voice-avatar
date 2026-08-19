@@ -283,7 +283,6 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   
   const [volumeA, setVolumeA] = useState(0);
   const [volumeB, setVolumeB] = useState(0);
-  const [volumeSingle, setVolumeSingle] = useState(0);
 
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [ttsVoice, setTtsVoice] = useState<string>(currentPersona.defaultVoice);
