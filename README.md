@@ -57,8 +57,19 @@ npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 > [!NOTE]
 > **React 18 Users:** Installing the latest `@react-three/drei` defaults to version 10, which demands React 19. If your project runs on React 18, install compatible Three.js React bindings explicitly:
 > ```bash
-> npm install @react-three/drei@^9 @react-three/fiber@^8
-> ```
+npm install @react-three/drei@^9 @react-three/fiber@^8
+```
+
+### ⚡ DX & Performance (Lazy Code-Splitting)
+
+To prevent the massive ML assets (WebGPU workers, 3D engines) from bloating your initial page load, you can use the built-in lazy wrapper. It will automatically code-split the 3D dependencies and render a sleek holographic **Skeleton UI** while the assets download in the background!
+
+```tsx
+import { AiVoiceAvatarLazy } from 'react-ai-voice-avatar';
+
+// Use it exactly like the normal component!
+<AiVoiceAvatarLazy avatarPreset="ananya" />
+```
 
 ### ⚙️ Server Configuration (Optional Performance Boost)
 
@@ -310,6 +321,7 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 | `showCaptions` | `boolean` | `true` | Renders a sleek glassmorphic subtitle overlay displaying spoken interaction dialog. |
 | `hideStatusPill`| `boolean` | `false` | When true, suppresses the default bottom-left microphone interactive control pill. |
 | `listenMode` | `'continuous' \| 'push-to-talk'` | `'continuous'` | `continuous` keeps the mic hot after the avatar finishes speaking naturally, but explicitly clicking Stop forces it off until tapped again. `push-to-talk` strictly requires manually tapping to start listening for every single turn. |
+| `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! |
 | `onSubmit` | `(text: string) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | `undefined` | Callback delivering real-time microphone transcriptions and assistant spoken utterance strings. |
 | `onStatusChange`| `(status: string) => void` | `undefined` | Emits live state transitions (`loading`, `idle`, `listening`, `thinking`, `speaking`). |
@@ -380,8 +392,7 @@ We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIB
 1. **🇮🇳 Hindi/Indic Voices (In Progress)**: The foundation is already built! Our `phonemeTiming.ts` engine was specifically designed for retroflex/aspirated consonant distinction, `visemeTable` carries Devanagari mappings, and `transliterate.ts` exists in the core. The remaining work revolves entirely around fine-tuning TTS voice quality rather than engine architecture. This remains a core long-term differentiator!
 2. **🎭 Expanding Regional 3D Avatar Personas**: We provide both Ananya (girl) and Aarav (boy) out of the box! We invite contributors to submit new royalty-free character GLB models (~3MB) rigged with standard 52 Apple ARKit facial blendshapes. Thanks to our JsDelivr GitHub Edge CDN architecture, adding new avatars adds **zero bytes** to our **~3.3 MB NPM install footprint**!
 3. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
-4. **🌊 Real-time Acoustic Waveform Output (`onAudioLevelChange`)**: Streaming microphone energy to power custom UI visualizers and reactive HUDs.
-5. **✨ React Suspense & Skeleton Fallbacks (`<AiVoiceAvatar.Lazy />`)**: Built-in 3D loading silhouettes while model meshes hydrate over networks.
+4. **📱 React Native / Expo Support**: Exploring bindings to run ONNX inference and Three.js seamlessly on mobile architectures.
 
 ---
 
