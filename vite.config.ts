@@ -40,6 +40,7 @@ export default defineConfig({
       // Externalize all dependencies and peerDependencies (including subpaths like react/jsx-runtime)
       external: (id) => /^(react|react-dom|three|@react-three\/(fiber|drei)|@huggingface\/transformers|@ricky0123\/vad-web|kokoro-js|phonemizer|leva|onnxruntime-web|web-audio-api)(\/|$)/.test(id),
       output: {
+        preserveModules: true,
         globals: {
           react: 'React',
           'react-dom': 'ReactDOM',

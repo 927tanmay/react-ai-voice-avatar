@@ -71,6 +71,10 @@ import { AiVoiceAvatarLazy } from 'react-ai-voice-avatar';
 <AiVoiceAvatarLazy avatarPreset="ananya" />
 ```
 
+#### 📐 Architectural Best Practices
+- **Standard Import (`AiVoiceAvatar`)**: Recommended for full-screen applications where the avatar *is* the primary product (e.g., Kiosks, Digital Tutors). The browser aggressively downloads the 3D canvas and ML models immediately so the avatar is ready instantly.
+- **Lazy Import (`AiVoiceAvatarLazy`)**: Recommended for widgets, modals, or sub-routes (e.g., a "Support Desk" chat bubble in a SaaS dashboard). Defers downloading the 1.5MB 3D engine and WebWorkers until the user actually opens the widget.
+
 ### ⚙️ Server Configuration (Optional Performance Boost)
 
 The `react-ai-voice-avatar` engine is truly **zero-config**. You do not need to configure Vite `optimizeDeps`, Next.js Webpack overrides, or manually host Web Worker files—everything is dynamically bundled and executed automatically!

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { AiVoiceAvatar, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
+import { AiVoiceAvatar, AiVoiceAvatarLazy, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import { AudioVisualizer } from './components/AudioVisualizer';
 import './style.css';
 
@@ -958,11 +958,30 @@ ${llmMode === 'cloud'
             />
             <AudioVisualizer level={volumeB} color="#38BDF8" position={[0.5, -0.33, 0]} />
           </>
-        ) : (
+        ) : personaId === 'dev' ? (
           <AiVoiceAvatar
             key={`avatar-${personaId}-${llmMode}-${devAvatarPreset}`}
             ref={avatarRef}
-            avatarPreset={personaId === 'dev' ? devAvatarPreset : currentPersona.preset}
+            avatarPreset={devAvatarPreset}
+            lightingPreset={lightingPreset}
+            llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
+            onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
+            systemPrompt={currentPersona.systemPrompt}
+            ttsEngine={ttsEngine}
+            ttsVoice={ttsVoice}
+            debug={false}
+            showCaptions={true}
+            scale={isMobile ? 0.38 : 0.48}
+            position={isMobile ? [0, -0.22, 0] : [-0.15, -0.34, 0]}
+            hideStatusPill={isMobile || _avatarStatus === 'loading'}
+            loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
+            onStatusChange={setAvatarStatus}
+          />
+        ) : (
+          <AiVoiceAvatarLazy
+            key={`avatar-${personaId}-${llmMode}-${devAvatarPreset}`}
+            ref={avatarRef}
+            avatarPreset={currentPersona.preset}
             lightingPreset={lightingPreset}
             llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
             onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
