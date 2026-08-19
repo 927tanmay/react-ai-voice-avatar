@@ -28,6 +28,7 @@ export interface UseAiVoiceAvatarConfig {
   onInferenceEnd?: () => void;
   onUserInterrupt?: () => void;
   onSpeechStart?: (text: string) => void;
+  onAudioLevelChange?: (level: number, source: 'mic' | 'tts') => void;
 }
 
 export interface UseAiVoiceAvatarReturn {
@@ -57,6 +58,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const [status, setStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [analyser, setAnalyser] = useState<AnalyserNode | undefined>(undefined);
   const [micError, setMicError] = useState<string | null>(null);
+  
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
+
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   
   const vadRef = useRef<any | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -454,6 +461,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           setAnalyser(analyserNode);
         }
 
+        const mAnalyser = audioCtx.createAnalyser();
+        mAnalyser.fftSize = 256;
+        const source = audioCtx.createMediaStreamSource(stream);
+        source.connect(mAnalyser);
+        // Do NOT connect mAnalyser to destination to prevent feedback loop!
+        micAnalyserRef.current = mAnalyser;
+
         // @ricky0123/vad-web is CJS, so the shape of the namespace depends on whether
         // the consumer's bundler pre-bundled it: named exports may sit directly on the
         // namespace or be nested under `default`. Accept both.
@@ -578,6 +592,50 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
   }, [mlInterrupt, kokoroInterrupt]);
+
+  // Audio polling loop for onAudioLevelChange callback
+  useEffect(() => {
+    const loop = () => {
+      animationFrameRef.current = requestAnimationFrame(loop);
+      
+      const onLevelChange = configRef.current.onAudioLevelChange;
+      if (!onLevelChange) return;
+
+      const currentStatus = statusRef.current;
+      let activeAnalyser: AnalyserNode | null | undefined = null;
+      let sourceContext: 'mic' | 'tts' | 'idle' = 'idle';
+
+      if (currentStatus === 'speaking' && analyser) {
+        activeAnalyser = analyser;
+        sourceContext = 'tts';
+      } else if (currentStatus === 'listening' && micAnalyserRef.current) {
+        activeAnalyser = micAnalyserRef.current;
+        sourceContext = 'mic';
+      }
+
+      if (activeAnalyser) {
+        const dataArray = new Uint8Array(activeAnalyser.frequencyBinCount);
+        activeAnalyser.getByteFrequencyData(dataArray);
+        
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / dataArray.length;
+        const normalized = Math.min(1, average / 128); // Normalize 0-1
+        
+        onLevelChange(normalized, sourceContext as 'mic' | 'tts');
+      } else {
+        // Broadcast 0 when idle so HUD can collapse smoothly
+        onLevelChange(0, 'idle' as 'tts');
+      }
+    };
+
+    animationFrameRef.current = requestAnimationFrame(loop);
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [analyser]);
 
   return {
     status,

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { AiVoiceAvatar, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
+import { AudioVisualizer } from './components/AudioVisualizer';
 import './style.css';
 
 const useMediaQuery = (query: string) => {
@@ -279,6 +280,11 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   );
 
   const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms'>(isLowEndDevice ? 'mms' : 'kokoro');
+  
+  const [volumeA, setVolumeA] = useState(0);
+  const [volumeB, setVolumeB] = useState(0);
+  const [volumeSingle, setVolumeSingle] = useState(0);
+
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [ttsVoice, setTtsVoice] = useState<string>(currentPersona.defaultVoice);
   const [devAvatarPreset, setDevAvatarPreset] = useState<'aarav' | 'ananya'>(currentPersona.preset as 'aarav' | 'ananya');
@@ -903,7 +909,7 @@ ${llmMode === 'cloud'
           <>
             {/* Avatar A (Aarav) — Left */}
             <AiVoiceAvatar
-              key={`debate-a-${useCloudForDebate}`}
+              key="avatar-debate-aarav"
               ref={avatarRef}
               avatarPreset="aarav"
               lightingPreset={lightingPreset}
@@ -911,7 +917,7 @@ ${llmMode === 'cloud'
               onSubmit={useCloudForDebate ? (text) => handleCloudDebateSubmit(text, debateForPrompt) : undefined}
               systemPrompt={debateForPrompt}
               ttsEngine={ttsEngine}
-              ttsVoice="am_fenrir"
+              ttsVoice="af_alloy"
               listenMode="push-to-talk"
               debug={false}
               showCaptions={true}
@@ -923,10 +929,13 @@ ${llmMode === 'cloud'
               loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
               onStatusChange={(s) => handleDebateStatusChange('A', s)}
               onTranscriptUpdate={(text, speaker) => handleDebateTranscript('A', text, speaker)}
+              onAudioLevelChange={(level) => setVolumeA(level)}
             />
+            <AudioVisualizer level={volumeA} color="#F43F5E" position={[-0.5, -0.33, 0]} />
+            
             {/* Avatar B (Ananya) — Right */}
             <AiVoiceAvatar
-              key={`debate-b-${useCloudForDebate}`}
+              key="avatar-debate-ananya"
               ref={avatarBRef}
               avatarPreset="ananya"
               lightingPreset={lightingPreset}
@@ -946,7 +955,9 @@ ${llmMode === 'cloud'
               loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
               onStatusChange={(s) => handleDebateStatusChange('B', s)}
               onTranscriptUpdate={(text, speaker) => handleDebateTranscript('B', text, speaker)}
+              onAudioLevelChange={(level) => setVolumeB(level)}
             />
+            <AudioVisualizer level={volumeB} color="#38BDF8" position={[0.5, -0.33, 0]} />
           </>
         ) : (
           <AiVoiceAvatar

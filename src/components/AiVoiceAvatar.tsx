@@ -86,6 +86,12 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   hideStatusPill?: boolean;
   /** Callback fired whenever the avatar conversation state changes */
   onStatusChange?: (status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking') => void;
+
+  /**
+   * Called with audio volume level (0.0 to 1.0) and the active audio source.
+   * Useful for building audio-reactive 3D visualizers or HUDs outside the package.
+   */
+  onAudioLevelChange?: (level: number, source: 'mic' | 'tts') => void;
 }
 
 const ARKIT_BLENDSHAPES = [
@@ -451,7 +457,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     listenMode: props.listenMode,
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
-    onUserInterrupt: props.onUserInterrupt
+    onUserInterrupt: props.onUserInterrupt,
+    onAudioLevelChange: props.onAudioLevelChange
   });
 
   const handleStopOrPause = () => {
