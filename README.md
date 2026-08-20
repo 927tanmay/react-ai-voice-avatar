@@ -1,6 +1,7 @@
 # React AI Voice Avatar (`react-ai-voice-avatar`) 🚀🗣️🧬
 
 [![NPM Version](https://img.shields.io/npm/v/react-ai-voice-avatar?style=for-the-badge&color=8A2BE2&logo=npm)](https://www.npmjs.com/package/react-ai-voice-avatar)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Fully_Typed-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel)](https://react-ai-voice-avatar.vercel.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
