@@ -5,9 +5,9 @@
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel)](https://react-ai-voice-avatar.vercel.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-**The definitive zero-config 3D conversational AI voice avatar and real-time lip-sync engine for React and React Three Fiber.**
+**The definitive zero-config 3D conversational AI voice avatar and real-time lip-sync frontend for React.**
 
-Build immersive virtual concierges, intelligent autonomous agents, digital teachers, and interactive voice kiosks that talk, listen, and express facial vitality. **Designed for maximum architectural flexibility**: run 100% on-device inside the browser with zero server costs, OR seamlessly plug in external cloud LLMs (OpenAI ChatGPT, Claude, Gemini, DeepSeek, or your custom Python/Go backend) while retaining real-time 3D facial lip-syncing and local voice recognition!
+Add a talking, lip-synced 3D avatar to your existing AI chatbot in 30 lines. Keep your own LLM, your own backend, and your own API keys. We handle the 60 FPS 3D ARKit facial lip-syncing, natural voice synthesis (TTS), and speech recognition (ASR) entirely on-device in the browser—saving you massive server-side GPU costs and video-streaming latency.
 
 ### 🌐 [**Experience the Live Interactive Demo on Vercel ➔**](https://react-ai-voice-avatar.vercel.app/)
 *(Features real-time Kokoro-82M ONNX voice synthesis and 3D lip-sync running entirely inside your browser!)*
@@ -20,20 +20,20 @@ Build immersive virtual concierges, intelligent autonomous agents, digital teach
 
 When implementing voice AI agents or 3D avatars in web applications, traditional architectures rely on expensive server-side GPU clouds, fragile WebSocket video streaming, and latency-heavy cloud TTS/STT services that compromise user microphone privacy.
 
-**`react-ai-voice-avatar`** provides a complete conversational frontend architecture executing inside browser Web Workers and WebGPU memory. It handles Real-Time Speech Recognition (ASR), Natural Voice Synthesis (TTS), and 60 FPS 3D ARKit Lip-Syncing completely on-device.
+**`react-ai-voice-avatar`** provides a complete conversational frontend architecture executing inside browser Web Workers and WebGPU memory. It gives your existing text-based AI chatbot a face and a voice. It handles Real-Time Speech Recognition (ASR), Natural Voice Synthesis (TTS), and 60 FPS 3D ARKit Lip-Syncing completely on-device.
 
 ![Architecture Diagram](./assets/architecture-diagram.png)
 
 For the actual "thinking" (the LLM reasoning), the avatar supports **Two Brains**:
 
-### 🧠 1. The Connected Brain (Default Recommendation)
-By supplying an `onSubmit` prop, your avatar talks to your existing cloud LLM endpoints (OpenAI, Claude, Vercel AI SDK, or custom APIs). 
-- **Zero LLM Downloads**: Your backend handles the reasoning, dropping the gigabyte-scale LLM from the client.
-- **High-Performance**: It functions as an autonomous presentation engine. Your server streams text, while our browser Web Workers autonomously execute speech recognition, voice synthesis, and lip-syncing without server-side GPU video streaming costs!
+### 🧠 1. The Connected Brain (The Standard Integration)
+By supplying an `onSubmit` prop, your avatar talks to your existing cloud LLM endpoints (OpenAI, Claude, Vercel AI SDK, LangChain, or custom APIs). 
+- **Zero LLM Downloads**: Your backend handles the reasoning and agent logic.
+- **Drop-in UI**: It functions as an autonomous presentation engine. Your server streams text down, while our browser Web Workers autonomously execute speech recognition, voice synthesis, and lip-syncing without expensive server-side GPU video streaming (like WebRTC)!
 
 > [!NOTE]
 > **Base Payload Size (Cached First Visit):**
-> While the LLM lives in the cloud, the avatar still runs ASR and TTS locally for privacy and real-time lip-sync.
+> While your LLM lives in the cloud, the avatar still runs ASR and TTS locally for privacy and real-time lip-sync.
 > | Model | Size | Details |
 > | :--- | :--- | :--- |
 > | **Kokoro TTS** | ~90 MB | High-fidelity voice synthesis |
@@ -41,10 +41,10 @@ By supplying an `onSubmit` prop, your avatar talks to your existing cloud LLM en
 > 
 > *Tip: You can reduce the ASR payload to ~40MB by passing `asrModel="Xenova/whisper-tiny"` if aggressive initial load times are required!*
 
-### 🔒 2. The On-Device Brain (Offline & Private)
+### 🔒 2. The On-Device Brain (Also works fully offline for kiosks)
 If you omit the `onSubmit` prop, the avatar runs completely airgapped using client-side **Qwen 2.5 (0.5B)** WebGPU models.
 > [!WARNING]
-> **Honest Expectations for Local LLMs:** The On-Device brain downloads 300 MB–1 GB of neural weights on the first visit (cached in the browser thereafter). It is highly recommended for kiosks, offline demos, and high-privacy enterprise intranets—but **not** for first impressions on consumer websites!
+> **Honest Expectations for Local LLMs:** The On-Device brain downloads 300 MB–1 GB of neural weights on the first visit (cached in the browser thereafter). This mode is heavily recommended for physical hardware kiosks, offline demos, and high-privacy enterprise intranets—but **not** for general consumer websites!
 
 ---
 
