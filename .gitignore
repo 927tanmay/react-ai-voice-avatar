@@ -47,3 +47,7 @@ tsconfig.tsbuildinfo
 playwright-report/
 test-results/
 
+# Test profiles and packages
+.playwright-profile/
+.pack-test/
+

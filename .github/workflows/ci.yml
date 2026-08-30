@@ -25,3 +25,5 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run Playwright tests
         run: npm run test:e2e
+      - name: Run packaging verification test
+        run: node scripts/verify-pack.mjs

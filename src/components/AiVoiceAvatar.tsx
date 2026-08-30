@@ -53,6 +53,10 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   asrLanguage?: string;
 
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
+  /** Cloud Adapter: Intercept the raw microphone Float32Array to use an external STT service (e.g. Sarvam, Whisper API) instead of the local ONNX model */
+  onTranscribe?: (audio: Float32Array) => Promise<string>;
+  /** Cloud Adapter: Intercept the text before synthesis to use an external TTS service (e.g. ElevenLabs, OpenAI) instead of the local Kokoro/MMS model. Supports Float32Array PCM or ArrayBuffer (MP3/WAV) */
+  onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
 
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
@@ -388,6 +392,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     asrModel = 'onnx-community/whisper-base',
     onSubmit,
     onTranscriptUpdate,
+    onTranscribe,
+    onSynthesize,
     debug,
     statusPillStyle,
     ...groupProps

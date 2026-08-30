@@ -95,5 +95,9 @@
     "test:smoke": "node scripts/smoke-test.js",
     "test:e2e": "playwright test"
   },
+  "overrides": {
+    "onnxruntime-web": "$onnxruntime-web",
+    "@huggingface/transformers": "$@huggingface/transformers"
+  },
   "sideEffects": false
 }

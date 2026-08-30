@@ -1,6 +1,7 @@
 import * as esbuild from 'esbuild';
 import fs from 'fs/promises';
 import crypto from 'crypto';
+import path from 'path';
 
 const nodeBuiltins = [
   'fs', 'path', 'crypto', 'os', 'url', 'module', 'worker_threads', 'perf_hooks',
@@ -25,6 +26,34 @@ const stubNodeBuiltinsPlugin = {
   }
 };
 
+async function getOrtVersion(filePath) {
+  let dir = path.dirname(filePath);
+  while (dir !== '/' && dir !== '.' && dir.length > 3) {
+    const pkgPath = path.join(dir, 'node_modules', 'onnxruntime-web', 'package.json');
+    try {
+      const stat = await fs.stat(pkgPath);
+      if (stat.isFile()) {
+        const pkg = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
+        return pkg.version;
+      }
+    } catch (_) {}
+    
+    // Also check if dir itself is onnxruntime-web
+    if (dir.endsWith('onnxruntime-web')) {
+      const directPkgPath = path.join(dir, 'package.json');
+      try {
+        const stat = await fs.stat(directPkgPath);
+        if (stat.isFile()) {
+          const pkg = JSON.parse(await fs.readFile(directPkgPath, 'utf8'));
+          return pkg.version;
+        }
+      } catch (_) {}
+    }
+    dir = path.dirname(dir);
+  }
+  return '1.29.0'; // Default fallback
+}
+
 // Prevent base64 inlining of ONNX Runtime WASM assets by rewriting URL constructors to CDN links
 const ignoreWasmPlugin = {
   name: 'ignore-wasm',
@@ -33,8 +62,9 @@ const ignoreWasmPlugin = {
       if (args.path.includes('onnxruntime-web') || args.path.includes('transformers') || args.path.includes('kokoro') || args.path.includes('phonemizer')) {
         let code = await fs.readFile(args.path, 'utf8');
         if (code.includes('.wasm')) {
+          const ortVersion = await getOrtVersion(args.path);
           code = code.replace(/new\s+URL\(\s*['"]([^'"]+\.wasm)['"]\s*,\s*import\.meta\.url\s*\)/g, (_, wasmFile) => {
-            return `new (globalThis.URL || URL)(${JSON.stringify(wasmFile)}, "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/").href`;
+            return `new (globalThis.URL || URL)(${JSON.stringify(wasmFile)}, "https://cdn.jsdelivr.net/npm/onnxruntime-web@${ortVersion}/dist/").href`;
           });
           return { contents: code, loader: args.path.endsWith('.ts') ? 'ts' : 'js' };
         }
@@ -69,6 +99,16 @@ async function build() {
     minify: true,
     plugins: [stubNodeBuiltinsPlugin, ignoreWasmPlugin],
   });
+
+  // Post-process the compiled worker files to apply the promise chain rejection fix
+  for (const file of ['dist/assets/kokoroTts.worker.js', 'dist/assets/mlPipeline.worker.js']) {
+    let workerCode = await fs.readFile(file, 'utf8');
+    workerCode = workerCode.replace(/(\w+)\s*=\s*\1\s*\.\s*then\s*\(\s*(\w+)\s*\)/g, (match, chainVar, callbackVar) => {
+      console.log(`[Esbuild Worker Post-Process] Applied rejection recovery to promise chain: ${chainVar} in ${file}`);
+      return `${chainVar}=${chainVar}.then(${callbackVar}).catch(err=>{${chainVar}=Promise.resolve();throw err;})`;
+    });
+    await fs.writeFile(file, workerCode, 'utf8');
+  }
 
   // Build-time asset validation and SHA-256 generation
   const kokoroBuffer = await fs.readFile('dist/assets/kokoroTts.worker.js');

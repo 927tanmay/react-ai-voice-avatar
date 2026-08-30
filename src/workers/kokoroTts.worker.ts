@@ -1,3 +1,9 @@
+import { pipeline } from '@huggingface/transformers';
+// Prevent esbuild from tree-shaking the ONNX Runtime WASM backend registration side-effects
+if (typeof self !== 'undefined' && self.location && self.location.href && self.location.href.includes('prevent-tree-shaking')) {
+  console.log(pipeline);
+}
+
 // Silence benign ONNX Runtime optimization notices (e.g. shape node fallbacks to CPU EP) in DevTools console
 const origWarn = console.warn;
 const origError = console.error;
@@ -166,14 +172,22 @@ self.onmessage = async (e: MessageEvent) => {
           if (env) {
             env.logLevel = 'error';
             if (env.wasm) {
-              env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
+              env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
             }
           }
-        } catch (_) {
-          // Continue if direct ORT import is handled internally by consumer bundlers
-        }
+        } catch (_) {}
+        try {
+          // Set wasm paths on transformers env to ensure clean WASM fallback
+          const { env: tfEnv } = await import('@huggingface/transformers');
+          if (tfEnv && tfEnv.backends && tfEnv.backends.onnx && tfEnv.backends.onnx.wasm) {
+            tfEnv.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+          }
+        } catch (_) {}
         const mod = await import('kokoro-js');
         KokoroTTS = mod.KokoroTTS || (mod as any).default?.KokoroTTS || mod;
+        if (mod.env) {
+          mod.env.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+        }
       }
 
       const progressCallback = (data: any) => {

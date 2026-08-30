@@ -18,6 +18,8 @@ export interface UseAiVoiceAvatarConfig {
   asrLanguage?: string;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
+  onTranscribe?: (audio: Float32Array) => Promise<string>;
+  onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   vadAssetPath?: string;
@@ -384,15 +386,46 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   // Combined readiness
   const isReady = isMLReady && (activeTtsEngine !== 'kokoro' || isKokoroReady);
 
-  // ─── Unified synthesizeText: routes to the correct TTS engine ───
-  const synthesizeText = useCallback((text: string, isLast: boolean = true) => {
+  // ─── Unified synthesizeText: routes to the correct TTS engine or cloud adapter ───
+  const synthesizeText = useCallback(async (text: string, isLast: boolean = true) => {
     configRef.current.onTranscriptUpdate?.(text, 'avatar');
+    
+    // Cloud Adapter: Override local TTS
+    if (configRef.current.onSynthesize) {
+      try {
+        const audioResult = await configRef.current.onSynthesize(text);
+        let pcmData: Float32Array;
+        let sampleRate = 24000; // Default assuming 24kHz for cloud standard, but decoded overrides this
+
+        if (audioResult instanceof ArrayBuffer) {
+          // Decode MP3/WAV from ArrayBuffer
+          const ctx = audioContextRef.current;
+          if (!ctx) throw new Error("AudioContext not ready");
+          const decoded = await ctx.decodeAudioData(audioResult.slice(0)); // slice to prevent detaching original buffer if reused
+          pcmData = decoded.getChannelData(0);
+          sampleRate = decoded.sampleRate;
+        } else {
+          // Raw Float32Array PCM passed in
+          pcmData = audioResult;
+        }
+
+        handleSpeechOutput(pcmData, sampleRate, text, '', isLast);
+      } catch (err) {
+        console.error('[AiVoiceAvatar] Cloud onSynthesize adapter failed:', err);
+        setStatus('idle');
+        configRef.current.onInferenceEnd?.();
+        resumeVadIfAllowed();
+      }
+      return;
+    }
+
+    // Local fallback
     if (activeTtsEngine === 'kokoro' && isKokoroReady) {
       kokoroSynthesize(text, isLast);
     } else {
       mmsSynthesize(text, isLast);
     }
-  }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize]);
+  }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize, handleSpeechOutput, resumeVadIfAllowed]);
 
   // Imperative speech triggering for external alerts or scripted turns
   const speak = useCallback((text: string) => {
@@ -477,7 +510,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           getStream: () => Promise.resolve(stream),
           audioContext: audioCtx,
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
-          onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/",
+          onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/",
           onSpeechStart: () => {
             if (!mounted) return;
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
@@ -498,7 +531,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               configRef.current.onUserInterrupt?.();
             }
           },
-          onSpeechEnd: (audio: Float32Array) => {
+          onSpeechEnd: async (audio: Float32Array) => {
             if (!mounted) return;
             if (configRef.current.listenMode === 'push-to-talk') return;
 
@@ -506,6 +539,28 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             configRef.current.onInferenceStart?.();
             myvad.pause();
             
+            // Cloud Adapter: Override local ASR
+            if (configRef.current.onTranscribe) {
+              try {
+                const text = await configRef.current.onTranscribe(audio);
+                if (text && text.trim()) {
+                  // Pipe the text into the standard LLM / onSubmit flow
+                  configRef.current.onTranscriptUpdate?.(text, 'user');
+                  processText(text, !!configRef.current.onSubmit);
+                } else {
+                  setStatus('idle');
+                  configRef.current.onInferenceEnd?.();
+                  resumeVadIfAllowed();
+                }
+              } catch (err) {
+                console.error('[AiVoiceAvatar] Cloud onTranscribe adapter failed:', err);
+                setStatus('idle');
+                configRef.current.onInferenceEnd?.();
+                resumeVadIfAllowed();
+              }
+              return;
+            }
+
             const langCode = configRef.current.asrLanguage === 'hi-IN' ? 'hi' : 
                              configRef.current.asrLanguage?.split('-')[0] || 'en';
 

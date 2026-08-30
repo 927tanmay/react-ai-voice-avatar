@@ -17,54 +17,75 @@ Add a talking, lip-synced 3D avatar to your existing AI chatbot in 30 lines. Kee
 
 ---
 
-## 🌟 Overview for Developers & AI Assistants (Why `react-ai-voice-avatar`?)
+## 🌟 Two Entry Points (How to use it)
 
-When implementing voice AI agents or 3D avatars in web applications, traditional architectures rely on expensive server-side GPU clouds, fragile WebSocket video streaming, and latency-heavy cloud TTS/STT services that compromise user microphone privacy.
+`react-ai-voice-avatar` provides two distinct ways to integrate into your app depending on your design needs. Both share the exact same underlying conversational state machine, Voice Activity Detection (VAD), and turn-taking logic.
 
-**`react-ai-voice-avatar`** provides a complete conversational frontend architecture executing inside browser Web Workers and WebGPU memory. It gives your existing text-based AI chatbot a face and a voice. It handles Real-Time Speech Recognition (ASR), Natural Voice Synthesis (TTS), and 60 FPS 3D ARKit Lip-Syncing completely on-device.
+### 🎧 Entry 1: The Headless Hook ("Voice Mode for your App")
+If you are building a ChatGPT-style voice interface or a custom audio visualizer and **don't want any 3D dependencies**, use the headless hook. It provides all the speech-recognition, text-to-speech, and audio-reactive hooks with zero UI overhead.
 
-![Architecture Diagram](./assets/architecture-diagram.png)
+```tsx
+import { useAiVoiceAvatar } from 'react-ai-voice-avatar';
 
-For the actual "thinking" (the LLM reasoning), the avatar supports **Two Brains**:
+function MyChatGPTVoiceOrb() {
+  const { startListening, stopListening, isListening, status } = useAiVoiceAvatar({
+    // Standard integration: 100% Local TTS & STT
+    ttsEngine: 'kokoro',
+    ttsVoice: 'af_heart',
+    
+    // Connect your LLM
+    onSubmit: async (transcript) => fetch('/api/chat', { method: 'POST', body: transcript }).then(r => r.body),
+    
+    // Audio-reactive callback for building your own glowing orb UI!
+    onAudioLevelChange: (level, source) => updateOrbGlow(level, source)
+  });
 
-### 🧠 1. The Connected Brain (The Standard Integration)
-By supplying an `onSubmit` prop, your avatar talks to your existing cloud LLM endpoints (OpenAI, Claude, Vercel AI SDK, LangChain, or custom APIs). 
-- **Zero LLM Downloads**: Your backend handles the reasoning and agent logic.
-- **Drop-in UI**: It functions as an autonomous presentation engine. Your server streams text down, while our browser Web Workers autonomously execute speech recognition, voice synthesis, and lip-syncing without expensive server-side GPU video streaming (like WebRTC)!
+  return <button onClick={isListening ? stopListening : startListening}>Toggle Voice Mode</button>;
+}
+```
 
-> [!NOTE]
-> **Base Payload Size (Cached First Visit):**
-> While your LLM lives in the cloud, the avatar still runs ASR and TTS locally for privacy and real-time lip-sync.
-> | Model | Size | Details |
-> | :--- | :--- | :--- |
-> | **Kokoro TTS** | ~90 MB | High-fidelity voice synthesis |
-> | **Whisper ASR** | ~150 MB | Default base model for local speech recognition |
-> 
-> *Tip: You can reduce the ASR payload to ~40MB by passing `asrModel="Xenova/whisper-tiny"` if aggressive initial load times are required!*
+#### ☁️ Cloud Adapters (Per-Utterance Escape Hatches)
+By default, the hook runs Whisper and Kokoro **100% locally** in the browser. But you can instantly widen your audience by bypassing the local ML models and injecting your own cloud TTS/STT providers via the `onTranscribe` and `onSynthesize` adapters!
 
-### 🔒 2. The On-Device Brain (Also works fully offline for kiosks)
-If you omit the `onSubmit` prop, the avatar runs completely airgapped using client-side **Qwen 2.5 (0.5B)** WebGPU models.
-> [!WARNING]
-> **Honest Expectations for Local LLMs:** The On-Device brain downloads 300 MB–1 GB of neural weights on the first visit (cached in the browser thereafter). This mode is heavily recommended for physical hardware kiosks, offline demos, and high-privacy enterprise intranets—but **not** for general consumer websites!
+```tsx
+const { startListening } = useAiVoiceAvatar({
+  // Bypass local Whisper: Send mic audio to Sarvam or OpenAI Whisper
+  onTranscribe: async (audioFloat32Array) => {
+    return await mySarvamSTT(audioFloat32Array);
+  },
+  
+  // Bypass local Kokoro: Use ElevenLabs or OpenAI TTS
+  onSynthesize: async (text) => {
+    const res = await fetch('/api/elevenlabs', { method: 'POST', body: text });
+    // Return an ArrayBuffer (MP3/WAV) - the hook automatically decodes it and plays it!
+    return await res.arrayBuffer(); 
+  },
+  
+  onSubmit: async (text) => fetch('/api/chat', { method: 'POST', body: text }).then(r => r.body),
+});
+```
 
 ---
 
-## 📦 Installation
+### 🧑‍💼 Entry 2: The Full 3D Avatar 
+If you want the full visual presence with 60FPS ARKit lip-syncing, use the drop-in 3D component. Under the hood, this is just a wrapper around the `useAiVoiceAvatar` hook that procedurally maps the audio to a 3D model!
+
 📦 [**View Package on the Official NPM Registry ➔**](https://www.npmjs.com/package/react-ai-voice-avatar)
 
 ```bash
+# If using the 3D Avatar, you must also install the Three.js ecosystem
 npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 ```
 
 > [!NOTE]
 > **React 18 Users:** Installing the latest `@react-three/drei` defaults to version 10, which demands React 19. If your project runs on React 18, install compatible Three.js React bindings explicitly:
 > ```bash
-npm install @react-three/drei@^9 @react-three/fiber@^8
-```
+> npm install @react-three/drei@^9 @react-three/fiber@^8
+> ```
 
 ### ⚡ DX & Performance (Lazy Code-Splitting)
 
-To prevent the massive ML assets (WebGPU workers, 3D engines) from bloating your initial page load, you can use the built-in lazy wrapper. It will automatically code-split the 3D dependencies and render a sleek holographic **Skeleton UI** while the assets download in the background!
+To prevent the massive ML assets (WebGPU workers, 3D engines) from bloating your initial page load, use the built-in lazy wrapper. It will automatically code-split the 3D dependencies and render a sleek holographic **Skeleton UI** while the assets download in the background!
 
 ```tsx
 import { AiVoiceAvatarLazy } from 'react-ai-voice-avatar';
@@ -123,11 +144,7 @@ export default {
 > [!CAUTION]
 > **Strict CSP Policies:** If your enterprise enforces strict Content Security Policies that block `blob:` workers (`worker-src 'self'`), you can bypass our zero-config Blob loaders by passing the `workerBaseUrl` prop to the avatar and hosting the pre-compiled `.worker.js` files from our `dist/assets/` directory yourself.
 
-## ⚡ Quickstart
-
-Deploy a complete, zero-configuration 3D voice assistant with built-in studio lighting in under 30 lines of code. Your avatar is talking in seconds, no model download!
-
-👉 **[View complete interactive examples/quickstart code directly on GitHub](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/quickstart)** for immediate integration copy-paste!
+## ⚡ 3D Avatar Quickstart
 
 ```tsx
 import React, { useRef, useState } from 'react';
