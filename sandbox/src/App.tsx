@@ -22,7 +22,7 @@ const useMediaQuery = (query: string) => {
 };
 
 interface Persona {
-  id: 'retail' | 'support' | 'tutor' | 'dev' | 'debate';
+  id: 'retail' | 'support' | 'tutor' | 'dev' | 'debate' | 'cloud-bot';
   name: string;
   role: string;
   avatarIcon: string;
@@ -47,6 +47,19 @@ const PERSONAS: Persona[] = [
     systemPrompt: "You are a sharp, confident technical guide. Explain things concisely as if speaking to a software engineer. Do not use markdown (no asterisks or hashtags). Speak in plain conversational text.",
     description: 'Test all engineering settings: models, lighting, and engines.',
     defaultVoice: 'am_fenrir',
+    defaultLlmMode: 'cloud',
+  },
+  {
+    id: 'cloud-bot',
+    name: 'Cloud Voice Bot',
+    role: 'BYOK Cloud Engine',
+    avatarIcon: '☁️',
+    preset: 'aarav',
+    accentColor: '#F59E0B', // Amber
+    borderColor: 'rgba(245, 158, 11, 0.6)',
+    systemPrompt: "You are a cloud-powered voice bot running on GPT-4o-mini and ElevenLabs. Be concise and friendly.",
+    description: 'Provide OpenAI and ElevenLabs keys to bypass local engines entirely.',
+    defaultVoice: 'am_michael',
     defaultLlmMode: 'cloud',
   },
   {
@@ -335,11 +348,58 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   const [showByok, setShowByok] = useState(false);
   const useCloudForDebate = apiKey.trim().length > 0;
 
+  // Cloud Bot state
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [elevenLabsKey, setElevenLabsKey] = useState('');
+  const [cloudBotSetupComplete, setCloudBotSetupComplete] = useState(false);
+
   const debateForPrompt = `You are debating a topic. Argue FOR the given position. Keep responses strictly under 2 sentences. Be conversational and opinionated. Do not use markdown formatting. Speak in plain text.`;
   const debateAgainstPrompt = `You are debating a topic. Argue AGAINST the given position. Keep responses strictly under 2 sentences. Be conversational and opinionated. Do not use markdown formatting. Speak in plain text.`;
 
   // Keep turn ref in sync
   useEffect(() => { debateTurnRef.current = debateTurn; }, [debateTurn]);
+
+  const handleCloudBotSubmit = async (userTranscript: string): Promise<string> => {
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: currentPersona.systemPrompt },
+            { role: "user", content: userTranscript }
+          ]
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "Failed to fetch from OpenAI");
+      return data.choices[0].message.content;
+    } catch (err: any) {
+      console.error(err);
+      return "I apologize, but I encountered an error connecting to OpenAI.";
+    }
+  };
+
+  const handleCloudBotSynthesize = async (text: string): Promise<ArrayBuffer> => {
+    if (elevenLabsKey) {
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM?output_format=mp3_44100_128`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'xi-api-key': elevenLabsKey },
+        body: JSON.stringify({ text, model_id: 'eleven_turbo_v2_5' })
+      });
+      if (!response.ok) throw new Error("Failed to fetch from ElevenLabs");
+      return await response.arrayBuffer();
+    } else {
+      const response = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+        body: JSON.stringify({ model: "tts-1", input: text, voice: "alloy", response_format: "mp3" })
+      });
+      if (!response.ok) throw new Error("Failed to fetch from OpenAI TTS");
+      return await response.arrayBuffer();
+    }
+  };
 
   // Cloud API handler for BYOK
   const handleCloudDebateSubmit = useCallback(async (text: string, systemPrompt: string): Promise<string> => {
@@ -486,6 +546,35 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
     }
   }, [_avatarStatus, _avatarBStatus, debateStarted]);
 
+
+  if (personaId === 'cloud-bot' && !cloudBotSetupComplete) {
+    return (
+      <div style={{ position: 'relative', width: '100vw', height: '100dvh', backgroundColor: '#0C0D10', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', -apple-system, sans-serif", color: '#E2E8F0' }}>
+        <button onClick={onBack} style={{ position: 'absolute', top: '24px', left: '24px', zIndex: 1000, background: 'rgba(20, 22, 28, 0.75)', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#FFF', padding: '10px 16px', borderRadius: '12px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}><span>←</span> Scenarios</button>
+        
+        <div style={{ background: '#111827', padding: '40px', borderRadius: '16px', maxWidth: '500px', width: '100%', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <h1 style={{ fontSize: '24px', margin: '0 0 8px 0', color: '#FFF' }}>Cloud Voice Bot Setup</h1>
+          <p style={{ margin: '0 0 24px 0', color: '#9CA3AF', fontSize: '14px', lineHeight: 1.5 }}>
+            This scenario bypasses the local models completely. Provide your OpenAI Key for intelligence (and optional ElevenLabs key for premium TTS).
+          </p>
+          
+          <label style={{ display: 'block', marginBottom: '16px' }}>
+            <span style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>OpenAI API Key (Required)</span>
+            <input type="password" value={openaiKey} onChange={e => setOpenaiKey(e.target.value)} placeholder="sk-proj-..." style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #374151', background: '#1F2937', color: '#FFF', boxSizing: 'border-box' }} />
+          </label>
+
+          <label style={{ display: 'block', marginBottom: '24px' }}>
+            <span style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>ElevenLabs API Key (Optional)</span>
+            <input type="password" value={elevenLabsKey} onChange={e => setElevenLabsKey(e.target.value)} placeholder="Leave empty to use OpenAI TTS" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #374151', background: '#1F2937', color: '#FFF', boxSizing: 'border-box' }} />
+          </label>
+
+          <button onClick={() => setCloudBotSetupComplete(true)} disabled={!openaiKey} style={{ width: '100%', padding: '12px', borderRadius: '8px', background: openaiKey ? '#F59E0B' : '#374151', color: '#FFF', border: 'none', fontWeight: 'bold', cursor: openaiKey ? 'pointer' : 'not-allowed' }}>
+            Start Cloud Bot
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100dvh', backgroundColor: '#0C0D10', overflow: 'hidden', fontFamily: "'Inter', -apple-system, sans-serif" }}>
@@ -984,7 +1073,8 @@ ${llmMode === 'cloud'
             avatarPreset={currentPersona.preset}
             lightingPreset={lightingPreset}
             llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
-            onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
+            onSubmit={personaId === 'cloud-bot' ? handleCloudBotSubmit : (llmMode === 'cloud' ? handleCloudSubmit : undefined)}
+            onSynthesize={personaId === 'cloud-bot' ? handleCloudBotSynthesize : undefined}
             systemPrompt={currentPersona.systemPrompt}
             ttsEngine={ttsEngine}
             ttsVoice={ttsVoice}
