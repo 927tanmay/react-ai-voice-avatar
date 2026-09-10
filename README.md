@@ -314,7 +314,11 @@ To ensure the lip-sync and procedural facial dynamics engines work correctly, yo
 2. **Facial Blendshapes (Morph Targets)**: The model's head/face mesh must contain the **standard 52 Apple ARKit blendshapes** (e.g., `jawOpen`, `eyeBlinkLeft`, `mouthSmileRight`). Our engine automatically traverses your model to find these targets.
 3. **Bone Naming**: For the interactive mouse-tracking and head-tilting physics to function, the armature should use standard bone names (e.g., a neck/head bone named `Head`, `head`, `Neck`, or `neck`).
 
-*(Note: Official support and testing for **Ready Player Me** avatars is currently on our roadmap for an upcoming release!)*
+### Where the built-in avatars come from
+
+`ananya` and `aarav` are converted from the [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) library, which is MIT licensed like this project, so you can redistribute them without restriction. The library has 115 avatars and any of them can be converted with `scripts/convert-rocketbox.py`. See [assets/avatars/LICENSE.md](assets/avatars/LICENSE.md).
+
+Models exported from Ready Player Me also work, since they carry the same ARKit blendshapes and bone names. Note that Ready Player Me shut down in January 2026, so you can no longer create new avatars there, and existing exports are licensed CC BY-NC-SA rather than MIT.
 
 ---
 

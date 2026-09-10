@@ -1,54 +1,73 @@
 # Avatar asset licensing
 
-## Status: the bundled meshes are being replaced
+## What is here
 
-`ananya.glb`, `aarav.glb` and `default.glb` in this directory were exported from
-**Ready Player Me**. Each file carries `"copyright": "Ready Player Me"` in its
-glTF asset header, and they contain Ready Player Me's own outfit, hair and skin
-art (the `Wolf3D_*` meshes and materials).
+| File | Source | Licence |
+| :--- | :--- | :--- |
+| `ananya.glb` | Microsoft Rocketbox, `Female_Adult_07` | MIT |
+| `aarav.glb` | Microsoft Rocketbox, `Male_Adult_04` | MIT |
 
-They are **not** covered by this project's MIT licence, and this file previously
-described them incorrectly as procedurally generated geometry released under
-MIT/CC0. That was wrong. It described an earlier placeholder mesh produced by
-`scripts/generate_avatar.py`, and was never updated when the Ready Player Me
-exports replaced it.
+Both were converted from the original FBX by
+[`scripts/convert-rocketbox.py`](../../scripts/convert-rocketbox.py). The
+conversion renames the skeleton and blendshapes, drops the morph targets this
+engine never drives, and repacks the textures for the web. It changes no
+geometry.
 
-Avatars created through the Ready Player Me website were licensed
-CC BY-NC-SA 4.0, which is non-commercial and share-alike. Ready Player Me shut
-down on 31 January 2026 following its acquisition, so its developer programme
-and commercial licensing route no longer exist.
+The [Microsoft Rocketbox avatar library](https://github.com/microsoft/Microsoft-Rocketbox)
+is released under the MIT licence, the same licence as this project, so these
+files are redistributable without restriction. Attribution is appreciated but
+not required.
 
-**Do not treat these three files as reusable under this repository's MIT
-licence.** They are scheduled for removal and replacement with permissively
-licensed models. Track that work in the repository issues.
+There is no separate `default.glb`. The `default` and `kiosk` presets resolve to
+`ananya.glb`, because the file they used to point at was byte-identical to it.
 
-## What replaces them
+## Previous assets
 
-Replacement meshes will come from
-[Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox), which is
-released under the MIT licence and ships avatars carrying the full 52 ARKit
-blendshapes plus 15 Oculus visemes on a fully rigged body. Those are compatible
-with this project's licence and redistributable without restriction.
+Earlier releases bundled Ready Player Me exports, and the licence file at the
+time described them incorrectly as procedurally generated MIT/CC0 geometry.
+Ready Player Me avatars created through its website were licensed
+CC BY-NC-SA 4.0, which is non-commercial and share-alike and therefore
+incompatible with this project's MIT licence. Ready Player Me shut down on
+31 January 2026, so no commercial licensing route remained.
+
+Those files were removed and replaced with the Rocketbox conversions above. If
+you pinned an older version of this package and rely on the bundled meshes,
+review that licence position yourself.
 
 ## Bringing your own avatar
 
-You are not required to use the bundled models at all. Pass any GLB humanoid to
-the `modelSrc` prop:
+You are not required to use the bundled models. Pass any GLB humanoid:
 
 ```tsx
 <AiVoiceAvatar modelSrc="/models/my-avatar.glb" />
 ```
 
-For lip sync and facial animation to work, the model needs:
+For the full feature set, the model needs:
 
 1. **Format** — `.glb` (binary glTF).
 2. **Facial morph targets** — the standard 52 Apple ARKit blendshapes
    (`jawOpen`, `eyeBlinkLeft`, `mouthSmileRight`, and so on) on the head mesh.
-   The 15 Oculus viseme targets (`viseme_aa`, `viseme_PP`, …) are used in
-   preference when present, since they are purpose-built for speech.
+   The 15 Oculus viseme targets (`viseme_aa`, `viseme_PP`, …) are preferred when
+   present, since they are purpose-built for speech.
 3. **Skeleton** — standard humanoid bone names for head tracking and body
-   motion: `Head`, `Neck`, `Spine`, `Spine1`, `Spine2`, `LeftArm`, `LeftForeArm`,
-   `LeftHand`, and their right-side equivalents.
+   motion: `Head`, `Neck`, `Spine`, `Spine1`, `Spine2`, `LeftArm`,
+   `LeftForeArm`, `LeftHand`, and their right-side equivalents.
 
-A model missing any of these still renders. It simply loses the corresponding
-animation rather than failing.
+A model missing any of these still renders. It loses the corresponding animation
+rather than failing.
+
+### Converting another Rocketbox avatar
+
+The library has 115 avatars. Any of them can be converted with the same script:
+
+```bash
+blender --background --python scripts/convert-rocketbox.py -- \
+  --input  path/to/Male_Adult_12_facial.fbx \
+  --output my-avatar.glb \
+  --texture-size 512
+```
+
+Use the `_facial.fbx` variant, not the plain body FBX, and keep the avatar's
+sibling `Textures/` folder in place. The FBX files embed the absolute paths of
+the machine they were authored on, so the script relinks textures by filename
+and will report any it cannot find.

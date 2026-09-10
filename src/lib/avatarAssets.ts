@@ -3,11 +3,14 @@ export async function resolveAvatarUrl(
   onProgress?: (pct: number, label: string) => void,
   enableLocalAssetProbe: boolean = false
 ): Promise<string> {
+  // `default` and `kiosk` are aliases rather than separate meshes. They used to
+  // point at a default.glb that was byte-identical to ananya.glb, so shipping it
+  // cost a duplicate multi-megabyte download for nothing.
   const fileMap: Record<string, string> = {
     ananya: 'ananya.glb',
     aarav: 'aarav.glb',
-    default: 'default.glb',
-    kiosk: 'default.glb',
+    default: 'ananya.glb',
+    kiosk: 'ananya.glb',
   };
 
   const fileName = fileMap[preset] || fileMap.ananya;
