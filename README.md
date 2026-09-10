@@ -83,6 +83,13 @@ npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 > npm install @react-three/drei@^9 @react-three/fiber@^8
 > ```
 
+> [!IMPORTANT]
+> **React 19.3 and `ERESOLVE`:** `@react-three/fiber@9.7` declares its React peer as `>=19 <19.3`, so installing it alongside React 19.3 or newer fails with `ERESOLVE unable to resolve dependency tree`. This is a Three.js binding constraint, not a limit of this package — our own peer range accepts React 19.3. Until fiber widens its range, pin React:
+> ```bash
+> npm install react@~19.2.0 react-dom@~19.2.0
+> ```
+> The headless entry point (`react-ai-voice-avatar/headless`) has no Three.js dependency at all and works on any React 18 or 19 version.
+
 ### ⚡ DX & Performance (Lazy Code-Splitting)
 
 To prevent the massive ML assets (WebGPU workers, 3D engines) from bloating your initial page load, use the built-in lazy wrapper. It will automatically code-split the 3D dependencies and render a sleek holographic **Skeleton UI** while the assets download in the background!

@@ -59,6 +59,12 @@ async function run() {
   
   console.log('📥 3. Installing dependencies & the packed tarball...');
   execSync('npm install', { stdio: 'inherit', cwd: APP_DIR });
+  // `npm create vite` scaffolds the newest React, but @react-three/fiber@9.7
+  // declares `peer react ">=19 <19.3"`, so React 19.3 makes the install fail with
+  // ERESOLVE. Pin React to a version fiber accepts, so this test exercises our
+  // packaging rather than React's release cadence. Drop the pin once fiber widens
+  // its peer range.
+  execSync('npm install react@~19.2.0 react-dom@~19.2.0', { stdio: 'inherit', cwd: APP_DIR });
   // Install required peer dependencies
   execSync('npm install three@^0.167.0 @react-three/fiber@^9.0.0 @react-three/drei@^10.7.7', { stdio: 'inherit', cwd: APP_DIR });
   // Install the absolute path to the tarball
