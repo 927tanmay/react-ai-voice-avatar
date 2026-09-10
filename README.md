@@ -339,8 +339,8 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 | `llmModel` | `string` | `"onnx-community/Qwen2.5-0.5B-Instruct"` | Hugging Face identifier for local client-side WebGPU Transformer reasoning weights when offline mode is used without `onSubmit`. |
 | `asrModel` | `string` | `"onnx-community/whisper-base"` | Hugging Face identifier for the local WebGPU Whisper speech recognition model. Pass `"Xenova/whisper-tiny"` for faster downloads. |
 | `ttsEngine` | `'kokoro' \| 'mms'` | `'kokoro'` | High-fidelity neural voice synthesis engine executing inside dedicated Web Workers. |
-| `ttsVoice` | `string` | `'af_heart'` | Neural voice profile timbre (e.g., `af_heart`, `am_michael`, `af_bella`, `hi_female`). |
-| `ttsLanguage`| `'en-US' \| 'hi-IN' \| 'bn-IN' \| 'ta-IN' \| 'te-IN' \| 'mr-IN'` | `'en-US'` | Primary speech vocalization dialect routing. |
+| `ttsVoice` | `string` | `'af_heart'` | Kokoro voice profile. All 28 bundled voices are English: `af_*` and `am_*` are American, `bf_*` and `bm_*` are British (e.g. `af_heart`, `af_bella`, `am_michael`, `bf_emma`). An unknown value throws with the full list. |
+| `ttsLanguage`| `'en-US' \| 'hi-IN'` | `'en-US'` | Language for the built-in speech engines. Only these two have local voice models today. For any other language, pass `onSynthesize` and use a cloud voice provider. |
 | `showCaptions` | `boolean` | `true` | Renders a sleek glassmorphic subtitle overlay displaying spoken interaction dialog. |
 | `hideStatusPill`| `boolean` | `false` | When true, suppresses the default bottom-left microphone interactive control pill. |
 | `listenMode` | `'continuous' \| 'push-to-talk'` | `'continuous'` | `continuous` keeps the mic hot after the avatar finishes speaking naturally, but explicitly clicking Stop forces it off until tapped again. `push-to-talk` strictly requires manually tapping to start listening for every single turn. |
@@ -413,7 +413,7 @@ const handleTextSubmit = (userInput: string) => {
 We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local development guides and our curated list of **Open Issues** available for contributors:
 
 1. **🇮🇳 Hindi/Indic Voices (In Progress)**: The foundation is already built! Our `phonemeTiming.ts` engine was specifically designed for retroflex/aspirated consonant distinction, `visemeTable` carries Devanagari mappings, and `transliterate.ts` exists in the core. The remaining work revolves entirely around fine-tuning TTS voice quality rather than engine architecture. This remains a core long-term differentiator!
-2. **🎭 Expanding Regional 3D Avatar Personas**: We provide both Ananya (girl) and Aarav (boy) out of the box! We invite contributors to submit new royalty-free character GLB models (~3MB) rigged with standard 52 Apple ARKit facial blendshapes. Thanks to our JsDelivr GitHub Edge CDN architecture, adding new avatars adds **zero bytes** to our **~3.3 MB NPM install footprint**!
+2. **🎭 Expanding Regional 3D Avatar Personas**: We provide both Ananya (girl) and Aarav (boy) out of the box! We invite contributors to submit new royalty-free character GLB models (~3MB) rigged with standard 52 Apple ARKit facial blendshapes. Avatar meshes are served from a CDN rather than bundled, so adding one adds nothing to the npm install (2.2 MB tarball, 5.6 MB unpacked, asserted in CI by `scripts/verify-pack.mjs`).
 3. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
 4. **📱 React Native / Expo Support**: Exploring bindings to run ONNX inference and Three.js seamlessly on mobile architectures.
 

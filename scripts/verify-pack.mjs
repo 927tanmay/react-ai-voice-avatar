@@ -9,14 +9,42 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const TEST_DIR = path.join(ROOT_DIR, '.pack-test');
 
+// Size budget, in MB. The README quotes these numbers, so assert them here to
+// stop the documented footprint drifting away from the published tarball.
+// Raise deliberately when a real dependency lands; never to silence this check.
+const MAX_TARBALL_MB = 2.6;
+const MAX_UNPACKED_MB = 6.5;
+
+function checkPackageSize() {
+  const meta = JSON.parse(execSync('npm pack --dry-run --json', { cwd: ROOT_DIR }).toString())[0];
+  const tarballMb = meta.size / 1024 / 1024;
+  const unpackedMb = meta.unpackedSize / 1024 / 1024;
+
+  console.log(
+    `📏 Package size: ${tarballMb.toFixed(2)} MB tarball, ` +
+    `${unpackedMb.toFixed(2)} MB unpacked, ${meta.entryCount} files`
+  );
+
+  const over = [];
+  if (tarballMb > MAX_TARBALL_MB) over.push(`tarball ${tarballMb.toFixed(2)} MB > ${MAX_TARBALL_MB} MB`);
+  if (unpackedMb > MAX_UNPACKED_MB) over.push(`unpacked ${unpackedMb.toFixed(2)} MB > ${MAX_UNPACKED_MB} MB`);
+  if (over.length) {
+    console.error(`❌ FAILED: package exceeds its size budget (${over.join('; ')}).`);
+    console.error('   Either shrink the package or raise the budget in scripts/verify-pack.mjs and update the README.');
+    process.exit(1);
+  }
+  console.log('✅ Package size is within budget.');
+}
+
 async function run() {
   console.log('📦 1. Building and Packing...');
   execSync('npm run build', { stdio: 'inherit', cwd: ROOT_DIR });
+  checkPackageSize();
   const packOutput = execSync('npm pack', { cwd: ROOT_DIR }).toString().trim();
   // npm pack outputs the filename at the end, e.g., react-ai-voice-avatar-0.2.1.tgz
   const tarballName = packOutput.split('\n').pop().trim();
   const tarballPath = path.join(ROOT_DIR, tarballName);
-  
+
   console.log(`📦 Created tarball: ${tarballPath}`);
 
   console.log('🏗️ 2. Scaffolding Bare Vite App...');
@@ -196,7 +224,7 @@ export default function App() {
     }
   } finally {
     console.log('📸 Taking debug screenshot...');
-    await page.screenshot({ path: path.join(ROOT_DIR, 'debug-timeout.png') });
+    await page.screenshot({ path: path.join(TEST_DIR, 'debug-timeout.png') });
     await browserContext.close();
     // Do not delete profile directory locally so cache is preserved
     if (process.env.CI) {

@@ -12,10 +12,9 @@ import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
 import { AvatarDynamicsEngine } from '../lib/avatarDynamics';
 import type { VisemeWeights } from '../lib/visemeTable';
 
-export interface AiVoiceAvatarCapabilities {
-  webgpu: boolean;
-  estimatedVram: number | null;
-}
+// Re-exported from ../types so the headless entry never pulls in this module.
+export type { AiVoiceAvatarCapabilities } from '../types';
+import type { AiVoiceAvatarCapabilities } from '../types';
 
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
@@ -46,7 +45,11 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
 
   systemPrompt?: string;
   llmModel?: string;
-  ttsLanguage?: 'en-US' | 'hi-IN' | 'bn-IN' | 'ta-IN' | 'te-IN' | 'mr-IN';
+  /**
+   * Language for the built-in speech engines. Only these two have local voice models today.
+   * For any other language, supply `onSynthesize` and use a cloud voice provider.
+   */
+  ttsLanguage?: 'en-US' | 'hi-IN';
   ttsEngine?: 'kokoro' | 'mms';
   ttsVoice?: string;
   asrModel?: string;
@@ -78,7 +81,12 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
 
   showCaptions?: boolean;
   captionStyle?: React.CSSProperties;
-  listenMode?: 'vad' | 'push-to-talk';
+  /**
+   * `continuous` keeps the microphone hot between turns and lets the user barge in.
+   * `push-to-talk` requires an explicit start before every turn.
+   * @param listenMode - `'vad'` is the former name for `'continuous'` and still works.
+   */
+  listenMode?: 'continuous' | 'push-to-talk' | 'vad';
   accentColor?: string;
 
   // Debug flag to show Leva panel

@@ -53,6 +53,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./headless": {
+      "types": "./dist/headless.d.ts",
+      "import": "./dist/headless.js",
+      "default": "./dist/headless.js"
     }
   },
   "peerDependencies": {
@@ -61,6 +66,17 @@
     "react": "^18.0.0 || >=19 <20",
     "react-dom": "^18.0.0 || >=19 <20",
     "three": ">=0.156"
+  },
+  "peerDependenciesMeta": {
+    "@react-three/drei": {
+      "optional": true
+    },
+    "@react-three/fiber": {
+      "optional": true
+    },
+    "three": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

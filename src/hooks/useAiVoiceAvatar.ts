@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
-import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
+import type { AiVoiceAvatarCapabilities } from '../types';
 import { isIOS } from '../lib/device';
 
 const CRUMB = 'rava:kokoro-init-crashed';
@@ -25,7 +25,8 @@ export interface UseAiVoiceAvatarConfig {
   vadAssetPath?: string;
   onnxWasmPath?: string;
   workerBaseUrl?: string;
-  listenMode?: 'vad' | 'push-to-talk';
+  /** `'vad'` is the former name for `'continuous'` and still works. */
+  listenMode?: 'continuous' | 'push-to-talk' | 'vad';
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
   onUserInterrupt?: () => void;
@@ -298,9 +299,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         handleSpeechOutput(audio, sampleRate, text, '', isLast);
       }
     },
-    onStreamWord: (word) => {
-      console.log('[AiVoiceAvatar] Streaming token:', word);
-    },
+    // Tokens arrive many times per second. Logging each one floods the console,
+    // so this stays a no-op; consumers who want the stream use onTranscriptUpdate.
+    onStreamWord: undefined,
     onSpeechEnd: () => {
       if (activeTtsEngine === 'kokoro') {
         kokoroSpeechEnd();
@@ -309,11 +310,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       }
     },
     onTranscriptUpdate: (text, speaker) => {
-      if (speaker === 'user') {
-        console.log('[AiVoiceAvatar] User spoke:', text);
-      } else {
-        console.log('[AiVoiceAvatar] Avatar spoke:', text);
-      }
+      // Deliberately not logged: this is the content of the conversation, and it
+      // used to be printed to the console on every turn. Consumers who want it
+      // receive it through their own onTranscriptUpdate below.
       configRef.current.onTranscriptUpdate?.(text, speaker);
       if (speaker === 'user' && configRef.current.onSubmit) {
         // We have a transcript and an onSubmit override.

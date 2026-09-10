@@ -14,32 +14,32 @@ const isBenignOrtNotice = (...args: any[]) => {
 console.warn = (...args: any[]) => { if (!isBenignOrtNotice(...args)) origWarn.apply(console, args as any); };
 console.error = (...args: any[]) => { if (!isBenignOrtNotice(...args)) origError.apply(console, args as any); };
 
-// Runtime integrity check: Verify that bundlers have copied this worker verbatim rather than re-compiling it
-if (typeof fetch !== 'undefined' && self.location && self.location.href) {
-  fetch(self.location.href).then(async (res) => {
-    const buffer = await res.arrayBuffer();
-    if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
-      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      console.log(`[Kokoro Worker Runtime] Script byte length: ${buffer.byteLength} bytes | SHA-256: ${hashHex}`);
-    } else {
-      console.log(`[Kokoro Worker Runtime] Script byte length: ${buffer.byteLength} bytes`);
-    }
-    if (buffer.byteLength < 2000000 && !self.location.href.includes('localhost') && !self.location.href.includes('127.0.0.1')) {
-      console.warn(`[Kokoro Worker Runtime] WARNING: Worker script size is ${buffer.byteLength} bytes (<2MB). A consumer bundler may have re-bundled or code-split this script instead of copying it verbatim, which can disrupt Emscripten initialization order.`);
-    }
-  }).catch(() => {
-    // Ignore fetch errors in restrictive CSP or cross-origin worker setups
-  });
-}
-
 let KokoroTTS: any = null;
 let kokoroTts: any = null;
 let currentVoice: string = 'af_heart';
 
 const ttsQueue: Array<{ text: string; isLast: boolean; isEndMarker?: boolean }> = [];
 let isTtsProcessing = false;
+
+const DEFAULT_VOICE = 'af_heart';
+
+/**
+ * Check a voice name against the engine's own table.
+ *
+ * Without this, an unknown voice reaches generate(), throws deep inside the
+ * engine, gets swallowed by the chunk error handler, and the avatar simply
+ * goes silent with no explanation. Fall back to the default voice so audio
+ * keeps working, and name the valid options so the mistake is obvious.
+ */
+const resolveVoice = (voice: string): string => {
+  const table = kokoroTts?.voices;
+  if (!table || Object.prototype.hasOwnProperty.call(table, voice)) return voice;
+  console.error(
+    `[AiVoiceAvatar] ttsVoice "${voice}" is not a Kokoro voice, so "${DEFAULT_VOICE}" will be used instead. ` +
+    `Available voices: ${Object.keys(table).join(', ')}`
+  );
+  return DEFAULT_VOICE;
+};
 
 const sanitizeForSpeech = (text: string): string => {
   return text
@@ -241,6 +241,9 @@ self.onmessage = async (e: MessageEvent) => {
         return;
       }
 
+      // The voice table is only readable once the model is loaded, so validate here.
+      currentVoice = resolveVoice(currentVoice);
+
       self.postMessage({ type: 'loadingProgress', payload: { model: 'kokoro', pct: 100 } });
       self.postMessage({ type: 'ready' });
       // Guarantee no stranded tasks: process any TTS jobs queued during model initialization
@@ -258,8 +261,7 @@ self.onmessage = async (e: MessageEvent) => {
   }
 
   if (type === 'setVoice') {
-    currentVoice = payload.voice;
-    console.log('[Kokoro Worker] Voice changed to:', currentVoice);
+    currentVoice = resolveVoice(payload.voice);
   }
 
   if (type === 'speechEnd') {

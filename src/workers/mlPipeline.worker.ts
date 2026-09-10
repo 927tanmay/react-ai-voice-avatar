@@ -45,6 +45,28 @@ const sanitizeForSpeech = (text: string): string => {
     .trim();
 };
 
+const LOCAL_TTS_REPOS: Record<string, string> = {
+  'en-US': 'Xenova/mms-tts-eng',
+  'hi-IN': 'Xenova/mms-tts-hin',
+};
+
+/**
+ * Resolve the local voice model for a language.
+ * Warns loudly rather than silently substituting English, which previously made
+ * an unsupported language look supported.
+ */
+const resolveTtsRepo = (lang: string): string => {
+  const repo = LOCAL_TTS_REPOS[lang];
+  if (repo) return repo;
+  const supported = Object.keys(LOCAL_TTS_REPOS).join(', ');
+  console.warn(
+    `[AiVoiceAvatar] ttsLanguage "${lang}" has no local voice model, so speech will be English. ` +
+    `Locally supported: ${supported}. For any other language pass an onSynthesize adapter ` +
+    `and use a cloud voice provider.`
+  );
+  return LOCAL_TTS_REPOS['en-US'];
+};
+
 const processTtsQueue = async () => {
   if (isTtsProcessing) return;
   isTtsProcessing = true;
@@ -58,13 +80,9 @@ const processTtsQueue = async () => {
     const item = ttsQueue.shift()!;
     if (!item.text || item.text.trim().length === 0) continue;
     
-    let cleanText = sanitizeForSpeech(item.text);
+    const cleanText = sanitizeForSpeech(item.text);
     if (cleanText.length === 0) continue;
 
-    if (currentTtsLanguage === 'hi-IN' && !/[\u0900-\u097F]/.test(cleanText)) {
-      cleanText = "मुझे क्षमा करें, मुझे इसका उत्तर नहीं पता।";
-    }
-    
     try {
       if (currentTtsEngine === 'kokoro') {
         self.postMessage({
@@ -189,7 +207,7 @@ self.onmessage = async (e: MessageEvent) => {
       // 3. Load TTS Engine (Only load MMS if engine is not set to Kokoro)
       if (currentTtsEngine !== 'kokoro') {
         self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 0 } });
-        const ttsRepo = currentTtsLanguage === 'hi-IN' ? 'Xenova/mms-tts-hin' : 'Xenova/mms-tts-eng';
+        const ttsRepo = resolveTtsRepo(currentTtsLanguage);
         ttsPipeline = await pipeline('text-to-speech', ttsRepo, {
           device: 'wasm',
           progress_callback: (p: any) => {
@@ -217,7 +235,7 @@ self.onmessage = async (e: MessageEvent) => {
     
     // Load MMS pipeline only when running in MMS mode and either uninitialized or language changed
     if (currentTtsEngine !== 'kokoro' && (!ttsPipeline || (ttsLanguage && ttsLanguage !== oldLanguage))) {
-      const ttsRepo = currentTtsLanguage === 'hi-IN' ? 'Xenova/mms-tts-hin' : 'Xenova/mms-tts-eng';
+      const ttsRepo = resolveTtsRepo(currentTtsLanguage);
       ttsPipeline = await pipeline('text-to-speech', ttsRepo, { device: 'wasm' });
       processTtsQueue();
     } else if (currentTtsEngine === 'kokoro') {
@@ -316,14 +334,11 @@ self.onmessage = async (e: MessageEvent) => {
       // @ts-ignore
       const rawTranscript = asrResult.text || (Array.isArray(asrResult) ? asrResult[0].text : '');
       
-      let transcript = rawTranscript;
-      if (currentTtsLanguage === 'hi-IN') {
-        transcript = normalizeToDevanagari(rawTranscript);
-        console.log(`[ML Worker] ASR raw: "${rawTranscript}" → normalized: "${transcript}"`);
-      } else {
-        console.log(`[ML Worker] ASR transcript: "${transcript}"`);
-      }
-      
+      // Whisper often returns Hindi speech in Urdu script, so fold it back to Devanagari.
+      const transcript = currentTtsLanguage === 'hi-IN'
+        ? normalizeToDevanagari(rawTranscript)
+        : rawTranscript;
+
       self.postMessage({ type: 'transcript', payload: { text: transcript } });
 
       if (skipLlm) return;
