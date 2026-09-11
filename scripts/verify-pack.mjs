@@ -153,46 +153,48 @@ export default function App() {
     stdio: 'pipe'
   });
 
-  let serverUrl = 'http://localhost:5174';
-  // Wait for Vite to be ready.
+  const serverUrl = 'http://localhost:5174';
+
+  // Wait for Vite to actually serve, by asking it.
   //
-  // This used to be an un-timed promise that only ever resolved on seeing the
-  // "Local:" banner. When Vite failed to start, printed a different format, or
-  // exited, nothing rejected and the script waited forever: CI jobs ran until
-  // GitHub killed them at its six hour ceiling. Fail fast instead.
+  // This used to scrape stdout for a "Local:  http://localhost:5174/" banner
+  // through a promise that had no timeout and no rejection path. Vite 8 prints
+  // "VITE v8.3.0  ready in 230 ms" and no longer emits that line when stdout is
+  // not a TTY, so the regex stopped matching and the script waited forever: CI
+  // jobs ran to GitHub's six hour ceiling and were killed rather than failing.
+  //
+  // We pass --port ourselves, so the URL was never in question. Poll it instead,
+  // which cannot be broken by a future change to Vite's console output.
   const VITE_BOOT_TIMEOUT_MS = 120000;
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(
-        `Vite did not report a dev server URL within ${VITE_BOOT_TIMEOUT_MS / 1000}s. ` +
-        'Its output is above.'
-      ));
-    }, VITE_BOOT_TIMEOUT_MS);
+  const POLL_INTERVAL_MS = 500;
 
-    const settleOk = (url) => {
-      clearTimeout(timer);
-      serverUrl = url;
-      resolve();
-    };
+  viteProcess.stderr.on('data', data => console.error('[Vite Error]', data.toString().trimEnd()));
+  viteProcess.stdout.on('data', data => console.log('[Vite]', data.toString().trimEnd()));
 
-    viteProcess.stderr.on('data', data => {
-      console.error('[Vite Error]', data.toString());
-    });
-    viteProcess.stdout.on('data', (data) => {
-      const output = data.toString();
-      console.log('[Vite]', output.trimEnd());
-      const match = output.match(/Local:\s+(http:\/\/localhost:\d+\/?)/);
-      if (match) settleOk(match[1]);
-    });
-    viteProcess.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`Vite dev server exited with code ${code} before serving.`));
-    });
-    viteProcess.on('error', (err) => {
-      clearTimeout(timer);
-      reject(new Error(`Could not spawn the Vite dev server: ${err.message}`));
-    });
-  });
+  let viteExited = null;
+  viteProcess.on('exit', (code) => { viteExited = code; });
+  viteProcess.on('error', (err) => { viteExited = err.message; });
+
+  const deadline = Date.now() + VITE_BOOT_TIMEOUT_MS;
+  let serving = false;
+  while (Date.now() < deadline) {
+    if (viteExited !== null) {
+      throw new Error(`Vite dev server exited (${viteExited}) before serving. Its output is above.`);
+    }
+    try {
+      const probe = await fetch(serverUrl, { method: 'GET' });
+      if (probe.ok) { serving = true; break; }
+    } catch {
+      // Connection refused while it is still starting up.
+    }
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  if (!serving) {
+    throw new Error(
+      `Vite did not serve ${serverUrl} within ${VITE_BOOT_TIMEOUT_MS / 1000}s. Its output is above.`
+    );
+  }
+  console.log(`✅ Vite is serving ${serverUrl}`);
 
   console.log('🤖 6. Launching Headless Playwright...');
   const userDataDir = path.join(ROOT_DIR, '.playwright-profile');
