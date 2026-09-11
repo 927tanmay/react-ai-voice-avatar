@@ -6,6 +6,16 @@ import { isIOS } from '../lib/device';
 
 const CRUMB = 'rava:kokoro-init-crashed';
 
+/**
+ * How far ahead of "now" a chunk is scheduled when starting a fresh utterance,
+ * or recovering after generation fell behind playback. Long enough to survive a
+ * busy main thread, short enough not to be heard as latency.
+ */
+const SCHEDULE_LEAD_SECONDS = 0.06;
+
+/** How long to wait for promised audio that never arrives before recovering. */
+const RESPONSE_STALL_TIMEOUT_MS = 10000;
+
 export interface UseAiVoiceAvatarConfig {
   llmModel?: string;
   asrModel?: string;
@@ -71,9 +81,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const vadRef = useRef<any | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  // Every source currently scheduled on the audio thread, including ones that
+  // have not started yet. Barge-in has to stop all of them, not just the audible
+  // one, or interrupted speech keeps arriving after the user starts talking.
+  const scheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  /** AudioContext time at which the next chunk should begin. */
+  const nextStartTimeRef = useRef<number>(0);
+  /** Pending timers that hand each chunk's text to the lip sync engine on cue. */
+  const visemeTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const audioQueueRef = useRef<Array<{ audioData: Float32Array; sampleRate: number; text: string; phonemes: string; isLast: boolean }>>([]);
-  const isPlayingRef = useRef<boolean>(false);
   const isWaitingForMoreRef = useRef<boolean>(false);
   const currentSpeechTextRef = useRef<string>('');
   const currentSpeechPhonemesRef = useRef<string>('');
@@ -95,132 +111,184 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   }, []);
 
-  const playNextInQueue = useCallback(() => {
-    if (isPlayingRef.current || !audioContextRef.current) return;
-    
-    if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
+  const clearWatchdog = useCallback(() => {
+    if (playbackWatchdogRef.current) {
+      clearTimeout(playbackWatchdogRef.current);
+      playbackWatchdogRef.current = null;
     }
+  }, []);
 
-    if (audioQueueRef.current.length === 0) {
-      if (!isWaitingForMoreRef.current) {
-        if (playbackWatchdogRef.current) {
-          clearTimeout(playbackWatchdogRef.current);
-          playbackWatchdogRef.current = null;
-        }
-        setStatus('idle');
-        configRef.current.onInferenceEnd?.();
-        resumeVadIfAllowed();
-      } else if (!playbackWatchdogRef.current) {
-        // Watchdog recovery: If nothing is playing and queue stays empty for ~10s while waiting for more chunks, recover pipeline
+  /** Drop the lip sync engine back to a closed mouth and forget the schedule. */
+  const resetPlaybackState = useCallback(() => {
+    currentSpeechTextRef.current = '';
+    currentSpeechPhonemesRef.current = '';
+    currentAudioDurationRef.current = 0;
+    nextStartTimeRef.current = 0;
+  }, []);
+
+  /**
+   * Silence everything, immediately.
+   *
+   * Look-ahead scheduling means several sources can be queued on the audio
+   * thread at once, so stopping only the audible one would let the rest play
+   * over the user. Detach the ended handlers first, otherwise each stop() fires
+   * onended and races the teardown.
+   */
+  const stopAllScheduledAudio = useCallback(() => {
+    for (const source of scheduledSourcesRef.current) {
+      source.onended = null;
+      try { source.stop(); } catch (e) { /* never started, or already stopped */ }
+      try { source.disconnect(); } catch (e) { /* already detached */ }
+    }
+    scheduledSourcesRef.current = [];
+
+    for (const timer of visemeTimersRef.current) clearTimeout(timer);
+    visemeTimersRef.current = [];
+
+    audioQueueRef.current = [];
+    isWaitingForMoreRef.current = false;
+  }, []);
+
+  /**
+   * Settle back to idle once the whole schedule has drained.
+   *
+   * Called from every source's onended and after each scheduling pass. Event
+   * latency is harmless here: arriving a few milliseconds late to the idle
+   * transition costs nothing, unlike arriving late to start the next chunk.
+   */
+  const finishIfDrained = useCallback(() => {
+    if (scheduledSourcesRef.current.length > 0) return;
+    if (audioQueueRef.current.length > 0) return;
+
+    if (isWaitingForMoreRef.current) {
+      // More chunks are promised. Arm the watchdog so a stalled generator cannot
+      // strand the pipeline in 'speaking' forever.
+      if (!playbackWatchdogRef.current) {
         playbackWatchdogRef.current = setTimeout(() => {
-          console.warn('[Watchdog] Audio queue timed out waiting for further chunks (10s elapsed). Resetting to idle and restarting VAD.');
+          console.warn(
+            `[AiVoiceAvatar] No further audio arrived within ${RESPONSE_STALL_TIMEOUT_MS}ms. ` +
+            'Returning to idle and resuming listening.'
+          );
           playbackWatchdogRef.current = null;
           isWaitingForMoreRef.current = false;
-          isPlayingRef.current = false;
+          resetPlaybackState();
           setStatus('idle');
           configRef.current.onInferenceEnd?.();
           resumeVadIfAllowed();
-        }, 10000);
+        }, RESPONSE_STALL_TIMEOUT_MS);
       }
       return;
     }
 
-    // We have audio to process; clear any active watchdog timer
-    if (playbackWatchdogRef.current) {
-      clearTimeout(playbackWatchdogRef.current);
-      playbackWatchdogRef.current = null;
-    }
+    clearWatchdog();
+    resetPlaybackState();
+    setStatus('idle');
+    configRef.current.onInferenceEnd?.();
+    resumeVadIfAllowed();
+  }, [clearWatchdog, resetPlaybackState, resumeVadIfAllowed]);
 
-    const item = audioQueueRef.current.shift()!;
-
-    // Guard against "poison pill" zero-length or invalid sampleRate chunks (e.g. MMS->Kokoro text forwarding or stripped emojis)
-    if (!item.audioData || item.audioData.length === 0 || !item.sampleRate || item.sampleRate <= 0) {
-      if (item.isLast) {
-        isWaitingForMoreRef.current = false;
-      }
-      // Recurse directly to next chunk or trigger idle completion without locking playback state
-      playNextInQueue();
-      return;
-    }
-
-    isPlayingRef.current = true;
+  /**
+   * Schedule every queued chunk against the audio clock.
+   *
+   * The previous implementation played one chunk and waited for its `onended`
+   * event before creating the next and calling `start(0)`. That event is
+   * dispatched on the main thread, which here is also running React and a 60fps
+   * render loop, so the next chunk began some unpredictable number of
+   * milliseconds after the previous one ended. With the sentence splitter firing
+   * at five characters, one reply becomes many chunks and every boundary is an
+   * audible seam.
+   *
+   * Instead, keep a running timestamp of when the next chunk should begin and
+   * hand it to `start(when)`. The audio thread then stitches the buffers
+   * sample-contiguously, and main thread jitter stops mattering. Chunks are
+   * scheduled as soon as they arrive rather than when the previous one ends, so
+   * several may be queued on the audio thread at once.
+   */
+  const scheduleQueuedAudio = useCallback(() => {
     const ctx = audioContextRef.current;
+    if (!ctx) return;
 
-    try {
-      const buffer = ctx.createBuffer(1, item.audioData.length, item.sampleRate);
-      buffer.copyToChannel(item.audioData as unknown as Float32Array<ArrayBuffer>, 0);
-
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-
-      if (analyser) {
-        source.connect(analyser);
-        analyser.connect(ctx.destination);
-      } else {
-        source.connect(ctx.destination);
-      }
-
-      source.onended = () => {
-        try { source.disconnect(); } catch (e) {} // Proactively reclaim audio graph memory
-        isPlayingRef.current = false;
-        currentSpeechTextRef.current = '';
-        currentSpeechPhonemesRef.current = '';
-        currentAudioDurationRef.current = 0;
-        if (item.isLast) {
-          isWaitingForMoreRef.current = false;
-        }
-        playNextInQueue();
-      };
-
-      // Expose text + timing for the lip sync engine
-      currentSpeechTextRef.current = item.text;
-      currentSpeechPhonemesRef.current = item.phonemes;
-      currentAudioDurationRef.current = buffer.duration;
-      playbackStartTimeRef.current = ctx.currentTime;
-
-      setStatus('speaking');
-      configRef.current.onSpeechStart?.(item.text);
-      source.start(0);
-      currentAudioSourceRef.current = source;
-    } catch (playbackErr) {
-      console.error('[AiVoiceAvatar] Audio buffer creation/playback error, skipping chunk to recover pipeline:', playbackErr);
-      isPlayingRef.current = false;
-      if (item.isLast) {
-        isWaitingForMoreRef.current = false;
-      }
-      playNextInQueue();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
     }
-  }, [analyser]);
+
+    while (audioQueueRef.current.length > 0) {
+      const item = audioQueueRef.current.shift()!;
+
+      // Guard against zero-length or invalid chunks (e.g. text forwarded to the
+      // other engine, or a phrase that sanitised down to nothing).
+      if (!item.audioData || item.audioData.length === 0 || !item.sampleRate || item.sampleRate <= 0) {
+        if (item.isLast) isWaitingForMoreRef.current = false;
+        continue;
+      }
+
+      try {
+        const buffer = ctx.createBuffer(1, item.audioData.length, item.sampleRate);
+        buffer.copyToChannel(item.audioData as unknown as Float32Array<ArrayBuffer>, 0);
+
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+
+        if (analyser) {
+          source.connect(analyser);
+          analyser.connect(ctx.destination);
+        } else {
+          source.connect(ctx.destination);
+        }
+
+        // Continue the existing schedule, unless generation fell behind playback,
+        // in which case start just ahead of now rather than in the past. That gap
+        // is real silence we had no audio for, not an artefact of our scheduling.
+        const startAt = Math.max(ctx.currentTime + SCHEDULE_LEAD_SECONDS, nextStartTimeRef.current);
+        source.start(startAt);
+        nextStartTimeRef.current = startAt + buffer.duration;
+
+        scheduledSourcesRef.current.push(source);
+        clearWatchdog();
+
+        // The lip sync engine reads these refs directly, so they must flip when
+        // the chunk actually begins rather than when it is scheduled. A timer is
+        // accurate to within a few milliseconds, which is imperceptible on a face.
+        const startsInMs = Math.max(0, (startAt - ctx.currentTime) * 1000);
+        const swapTimer = setTimeout(() => {
+          visemeTimersRef.current = visemeTimersRef.current.filter(t => t !== swapTimer);
+          currentSpeechTextRef.current = item.text;
+          currentSpeechPhonemesRef.current = item.phonemes;
+          currentAudioDurationRef.current = buffer.duration;
+          playbackStartTimeRef.current = startAt;
+          configRef.current.onSpeechStart?.(item.text);
+        }, startsInMs);
+        visemeTimersRef.current.push(swapTimer);
+
+        source.onended = () => {
+          try { source.disconnect(); } catch (e) { /* already torn down */ }
+          scheduledSourcesRef.current = scheduledSourcesRef.current.filter(s => s !== source);
+          if (item.isLast) isWaitingForMoreRef.current = false;
+          finishIfDrained();
+        };
+
+        setStatus('speaking');
+      } catch (playbackErr) {
+        console.error('[AiVoiceAvatar] Could not schedule an audio chunk, skipping it:', playbackErr);
+        if (item.isLast) isWaitingForMoreRef.current = false;
+      }
+    }
+
+    finishIfDrained();
+  }, [analyser, clearWatchdog, finishIfDrained]);
 
   const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, phonemes: string = '', isLast: boolean = true) => {
     if (isInterruptedRef.current) return;
-    if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
-      isWaitingForMoreRef.current = !isLast;
-    } else if (!isLast) {
-      isWaitingForMoreRef.current = true;
-    } else {
-      isWaitingForMoreRef.current = false;
-    }
+    isWaitingForMoreRef.current = !isLast;
     audioQueueRef.current.push({ audioData, sampleRate, text, phonemes, isLast });
-    playNextInQueue();
-  }, [playNextInQueue]);
+    scheduleQueuedAudio();
+  }, [scheduleQueuedAudio]);
 
   const handleSpeechEnd = useCallback(() => {
-    if (playbackWatchdogRef.current) {
-      clearTimeout(playbackWatchdogRef.current);
-      playbackWatchdogRef.current = null;
-    }
+    clearWatchdog();
     isWaitingForMoreRef.current = false;
-    if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-      setStatus('idle');
-      configRef.current.onInferenceEnd?.();
-      // Only auto-restart listening if we are not push-to-talk AND the user hasn't explicitly stopped us
-      if (configRef.current.listenMode !== 'push-to-talk' && !isInterruptedRef.current) {
-        vadRef.current?.start();
-      }
-    }
-  }, []);
+    finishIfDrained();
+  }, [clearWatchdog, finishIfDrained]);
 
   // Internal state to track active TTS engine, allowing graceful fallback if Kokoro OOMs on Safari
   const [activeTtsEngine, setActiveTtsEngine] = useState<'kokoro' | 'mms'>(() => {
@@ -382,6 +450,21 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   });
 
+  /**
+   * Stop both synthesis workers.
+   *
+   * Held in a ref because the voice detection effect needs to call this on
+   * barge-in, and adding the worker callbacks to that effect's dependencies
+   * would tear down and re-request the microphone whenever they changed.
+   */
+  const stopWorkerGenerationRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    stopWorkerGenerationRef.current = () => {
+      try { mlInterrupt(); } catch (e) { /* worker already gone */ }
+      try { kokoroInterrupt(); } catch (e) { /* worker already gone */ }
+    };
+  }, [mlInterrupt, kokoroInterrupt]);
+
   // Combined readiness
   const isReady = isMLReady && (activeTtsEngine !== 'kokoro' || isKokoroReady);
 
@@ -515,18 +598,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
             
             setStatus('listening');
-            
-            // Interrupt logic:
-            if (playbackWatchdogRef.current) {
-              clearTimeout(playbackWatchdogRef.current);
-              playbackWatchdogRef.current = null;
-            }
-            audioQueueRef.current = [];
-            isPlayingRef.current = false;
-            isWaitingForMoreRef.current = false;
-            if (currentAudioSourceRef.current) {
-              currentAudioSourceRef.current.stop();
-              currentAudioSourceRef.current = null;
+
+            // Barge-in: the user started talking, so drop whatever the avatar
+            // was about to say. Stopping playback alone is not enough, because
+            // the workers keep generating and the next chunk would arrive and
+            // play straight over the user.
+            const wasSpeaking = scheduledSourcesRef.current.length > 0;
+            clearWatchdog();
+            stopAllScheduledAudio();
+            resetPlaybackState();
+            stopWorkerGenerationRef.current();
+            if (wasSpeaking) {
               configRef.current.onUserInterrupt?.();
             }
           },
@@ -595,9 +677,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       } catch (err) {
         console.warn('VAD destroy ignored on cleanup:', err);
       }
-      try {
-        currentAudioSourceRef.current?.stop();
-      } catch (e) {}
+      stopAllScheduledAudio();
       try {
         audioContextRef.current?.close();
       } catch (e) {}
@@ -626,26 +706,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
   const interrupt = useCallback(() => {
     isInterruptedRef.current = true;
-    if (playbackWatchdogRef.current) {
-      clearTimeout(playbackWatchdogRef.current);
-      playbackWatchdogRef.current = null;
-    }
-    audioQueueRef.current = [];
-    isPlayingRef.current = false;
-    isWaitingForMoreRef.current = false;
-    if (currentAudioSourceRef.current) {
-      try { currentAudioSourceRef.current.stop(); } catch (e) {}
-      try { currentAudioSourceRef.current.disconnect(); } catch (e) {}
-      currentAudioSourceRef.current = null;
-    }
+    clearWatchdog();
+    stopAllScheduledAudio();
+    resetPlaybackState();
     configRef.current.onUserInterrupt?.();
     setStatus('idle');
     vadRef.current?.pause(); // ensure VAD is stopped
-    
+
     // Immediately stop worker synthesis
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
-  }, [mlInterrupt, kokoroInterrupt]);
+  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState]);
 
   // Audio polling loop for onAudioLevelChange callback
   useEffect(() => {
