@@ -154,18 +154,43 @@ export default function App() {
   });
 
   let serverUrl = 'http://localhost:5174';
-  // Wait for Vite to be ready
-  await new Promise((resolve) => {
+  // Wait for Vite to be ready.
+  //
+  // This used to be an un-timed promise that only ever resolved on seeing the
+  // "Local:" banner. When Vite failed to start, printed a different format, or
+  // exited, nothing rejected and the script waited forever: CI jobs ran until
+  // GitHub killed them at its six hour ceiling. Fail fast instead.
+  const VITE_BOOT_TIMEOUT_MS = 120000;
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(
+        `Vite did not report a dev server URL within ${VITE_BOOT_TIMEOUT_MS / 1000}s. ` +
+        'Its output is above.'
+      ));
+    }, VITE_BOOT_TIMEOUT_MS);
+
+    const settleOk = (url) => {
+      clearTimeout(timer);
+      serverUrl = url;
+      resolve();
+    };
+
     viteProcess.stderr.on('data', data => {
       console.error('[Vite Error]', data.toString());
     });
     viteProcess.stdout.on('data', (data) => {
       const output = data.toString();
+      console.log('[Vite]', output.trimEnd());
       const match = output.match(/Local:\s+(http:\/\/localhost:\d+\/?)/);
-      if (match) {
-        serverUrl = match[1];
-        resolve();
-      }
+      if (match) settleOk(match[1]);
+    });
+    viteProcess.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`Vite dev server exited with code ${code} before serving.`));
+    });
+    viteProcess.on('error', (err) => {
+      clearTimeout(timer);
+      reject(new Error(`Could not spawn the Vite dev server: ${err.message}`));
     });
   });
 
