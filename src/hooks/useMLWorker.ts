@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { AiVoiceAvatarCapabilities } from '../components/AiVoiceAvatar';
+import type { AiVoiceAvatarCapabilities } from '../types';
 
 export interface UseMLWorkerConfig {
   llmModel?: string;

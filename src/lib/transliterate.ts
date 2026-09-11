@@ -225,7 +225,6 @@ export function normalizeToDevanagari(text: string): string {
   // Case 2: Contains Urdu script — transliterate
   if (containsUrduScript(text)) {
     const transliterated = urduToDevanagari(text);
-    console.log(`[Transliterate] Urdu → Devanagari: "${text}" → "${transliterated}"`);
     return transliterated;
   }
   
@@ -234,11 +233,9 @@ export function normalizeToDevanagari(text: string): string {
     const converted = romanizedToDevanagari(text);
     // Check if we actually converted anything
     if (converted !== text.toLowerCase()) {
-      console.log(`[Transliterate] Romanized → Devanagari: "${text}" → "${converted}"`);
       return converted;
     }
     // If no known words matched, return original (LLM can handle romanized Hindi)
-    console.log(`[Transliterate] Romanized text not in dictionary, passing through: "${text}"`);
     return text;
   }
   

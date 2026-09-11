@@ -9,14 +9,42 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const TEST_DIR = path.join(ROOT_DIR, '.pack-test');
 
+// Size budget, in MB. The README quotes these numbers, so assert them here to
+// stop the documented footprint drifting away from the published tarball.
+// Raise deliberately when a real dependency lands; never to silence this check.
+const MAX_TARBALL_MB = 2.6;
+const MAX_UNPACKED_MB = 6.5;
+
+function checkPackageSize() {
+  const meta = JSON.parse(execSync('npm pack --dry-run --json', { cwd: ROOT_DIR }).toString())[0];
+  const tarballMb = meta.size / 1024 / 1024;
+  const unpackedMb = meta.unpackedSize / 1024 / 1024;
+
+  console.log(
+    `📏 Package size: ${tarballMb.toFixed(2)} MB tarball, ` +
+    `${unpackedMb.toFixed(2)} MB unpacked, ${meta.entryCount} files`
+  );
+
+  const over = [];
+  if (tarballMb > MAX_TARBALL_MB) over.push(`tarball ${tarballMb.toFixed(2)} MB > ${MAX_TARBALL_MB} MB`);
+  if (unpackedMb > MAX_UNPACKED_MB) over.push(`unpacked ${unpackedMb.toFixed(2)} MB > ${MAX_UNPACKED_MB} MB`);
+  if (over.length) {
+    console.error(`❌ FAILED: package exceeds its size budget (${over.join('; ')}).`);
+    console.error('   Either shrink the package or raise the budget in scripts/verify-pack.mjs and update the README.');
+    process.exit(1);
+  }
+  console.log('✅ Package size is within budget.');
+}
+
 async function run() {
   console.log('📦 1. Building and Packing...');
   execSync('npm run build', { stdio: 'inherit', cwd: ROOT_DIR });
+  checkPackageSize();
   const packOutput = execSync('npm pack', { cwd: ROOT_DIR }).toString().trim();
   // npm pack outputs the filename at the end, e.g., react-ai-voice-avatar-0.2.1.tgz
   const tarballName = packOutput.split('\n').pop().trim();
   const tarballPath = path.join(ROOT_DIR, tarballName);
-  
+
   console.log(`📦 Created tarball: ${tarballPath}`);
 
   console.log('🏗️ 2. Scaffolding Bare Vite App...');
@@ -31,6 +59,12 @@ async function run() {
   
   console.log('📥 3. Installing dependencies & the packed tarball...');
   execSync('npm install', { stdio: 'inherit', cwd: APP_DIR });
+  // `npm create vite` scaffolds the newest React, but @react-three/fiber@9.7
+  // declares `peer react ">=19 <19.3"`, so React 19.3 makes the install fail with
+  // ERESOLVE. Pin React to a version fiber accepts, so this test exercises our
+  // packaging rather than React's release cadence. Drop the pin once fiber widens
+  // its peer range.
+  execSync('npm install react@~19.2.0 react-dom@~19.2.0', { stdio: 'inherit', cwd: APP_DIR });
   // Install required peer dependencies
   execSync('npm install three@^0.167.0 @react-three/fiber@^9.0.0 @react-three/drei@^10.7.7', { stdio: 'inherit', cwd: APP_DIR });
   // Install the absolute path to the tarball
@@ -119,21 +153,48 @@ export default function App() {
     stdio: 'pipe'
   });
 
-  let serverUrl = 'http://localhost:5174';
-  // Wait for Vite to be ready
-  await new Promise((resolve) => {
-    viteProcess.stderr.on('data', data => {
-      console.error('[Vite Error]', data.toString());
-    });
-    viteProcess.stdout.on('data', (data) => {
-      const output = data.toString();
-      const match = output.match(/Local:\s+(http:\/\/localhost:\d+\/?)/);
-      if (match) {
-        serverUrl = match[1];
-        resolve();
-      }
-    });
-  });
+  const serverUrl = 'http://localhost:5174';
+
+  // Wait for Vite to actually serve, by asking it.
+  //
+  // This used to scrape stdout for a "Local:  http://localhost:5174/" banner
+  // through a promise that had no timeout and no rejection path. Vite 8 prints
+  // "VITE v8.3.0  ready in 230 ms" and no longer emits that line when stdout is
+  // not a TTY, so the regex stopped matching and the script waited forever: CI
+  // jobs ran to GitHub's six hour ceiling and were killed rather than failing.
+  //
+  // We pass --port ourselves, so the URL was never in question. Poll it instead,
+  // which cannot be broken by a future change to Vite's console output.
+  const VITE_BOOT_TIMEOUT_MS = 120000;
+  const POLL_INTERVAL_MS = 500;
+
+  viteProcess.stderr.on('data', data => console.error('[Vite Error]', data.toString().trimEnd()));
+  viteProcess.stdout.on('data', data => console.log('[Vite]', data.toString().trimEnd()));
+
+  let viteExited = null;
+  viteProcess.on('exit', (code) => { viteExited = code; });
+  viteProcess.on('error', (err) => { viteExited = err.message; });
+
+  const deadline = Date.now() + VITE_BOOT_TIMEOUT_MS;
+  let serving = false;
+  while (Date.now() < deadline) {
+    if (viteExited !== null) {
+      throw new Error(`Vite dev server exited (${viteExited}) before serving. Its output is above.`);
+    }
+    try {
+      const probe = await fetch(serverUrl, { method: 'GET' });
+      if (probe.ok) { serving = true; break; }
+    } catch {
+      // Connection refused while it is still starting up.
+    }
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  if (!serving) {
+    throw new Error(
+      `Vite did not serve ${serverUrl} within ${VITE_BOOT_TIMEOUT_MS / 1000}s. Its output is above.`
+    );
+  }
+  console.log(`✅ Vite is serving ${serverUrl}`);
 
   console.log('🤖 6. Launching Headless Playwright...');
   const userDataDir = path.join(ROOT_DIR, '.playwright-profile');
@@ -196,7 +257,7 @@ export default function App() {
     }
   } finally {
     console.log('📸 Taking debug screenshot...');
-    await page.screenshot({ path: path.join(ROOT_DIR, 'debug-timeout.png') });
+    await page.screenshot({ path: path.join(TEST_DIR, 'debug-timeout.png') });
     await browserContext.close();
     // Do not delete profile directory locally so cache is preserved
     if (process.env.CI) {

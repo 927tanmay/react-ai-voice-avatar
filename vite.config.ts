@@ -31,10 +31,14 @@ export default defineConfig({
     assetsInlineLimit: 0,
     emptyOutDir: false,
     lib: {
-      entry: resolve(import.meta.dirname, 'src/index.ts'),
+      entry: {
+        index: resolve(import.meta.dirname, 'src/index.ts'),
+        // Second entry so consumers who only want the voice loop never resolve
+        // a module that imports three.js. See src/headless.ts.
+        headless: resolve(import.meta.dirname, 'src/headless.ts'),
+      },
       name: 'ReactAiVoiceAvatar',
       formats: ['es'],
-      fileName: (format) => `index.${format === 'es' ? 'js' : 'cjs'}`
     },
     rollupOptions: {
       // Externalize all dependencies and peerDependencies (including subpaths like react/jsx-runtime)
