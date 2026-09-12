@@ -15,6 +15,8 @@ let currentDevice: 'webgpu' | 'wasm' = 'webgpu';
 let currentTtsLanguage: string = 'en-US';
 /** The caller's prompt without any language instruction, so it can be re-applied. */
 let baseSystemPrompt: string = '';
+/** The speech recognition model currently loaded, to avoid reloading it needlessly. */
+let currentAsrModel: string = '';
 let currentTtsVoice: string = 'af_heart';
 let currentTtsEngine: 'kokoro' | 'mms' = 'mms';
 
@@ -96,6 +98,17 @@ const withLanguageInstruction = (prompt: string, language: string): string => {
   const instruction = LANGUAGE_INSTRUCTIONS[language];
   return instruction ? `${prompt}\n\n${instruction}` : prompt;
 };
+
+/** Load a speech recognition pipeline, reporting download progress as it goes. */
+const loadAsrPipeline = (model: string, device: 'webgpu' | 'wasm') =>
+  pipeline('automatic-speech-recognition', model, {
+    device,
+    progress_callback: (p: any) => {
+      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress } });
+      }
+    },
+  });
 
 const processTtsQueue = async () => {
   if (isTtsProcessing) return;
@@ -189,27 +202,14 @@ self.onmessage = async (e: MessageEvent) => {
     try {
       // 1. Check capabilities / ASR
       self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });
+      currentAsrModel = asrModel;
       try {
-        asrPipeline = await pipeline('automatic-speech-recognition', asrModel, {
-          device: 'webgpu',
-          progress_callback: (p: any) => {
-            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-              self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }});
-            }
-          }
-        });
+        asrPipeline = await loadAsrPipeline(asrModel, 'webgpu');
         currentDevice = 'webgpu';
       } catch (err) {
         console.warn('WebGPU ASR failed, falling back to WASM', err);
         if (fallbackMode === 'wasm') {
-          asrPipeline = await pipeline('automatic-speech-recognition', asrModel, {
-            device: 'wasm',
-            progress_callback: (p: any) => {
-              if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-                self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }});
-              }
-            }
-          });
+          asrPipeline = await loadAsrPipeline(asrModel, 'wasm');
           currentDevice = 'wasm';
         } else if (fallbackMode === 'error') {
           self.postMessage({ type: 'error', payload: { stage: 'asr', message: 'WebGPU failed' } });
@@ -254,6 +254,35 @@ self.onmessage = async (e: MessageEvent) => {
     } catch (error: any) {
       self.postMessage({ type: 'error', payload: { stage: 'init', message: error.message } });
     }
+  }
+
+  if (type === 'switchAsr') {
+    const { asrModel } = payload;
+    if (!asrModel || asrModel === currentAsrModel) return;
+
+    // Reload only the recognition model. Recreating the whole worker would
+    // discard the language model too, and re-downloading a gigabyte because
+    // someone changed language is not a trade worth making.
+    const previousModel = currentAsrModel;
+    console.log(`[ML Worker] Switching speech recognition model → ${asrModel}`);
+    try {
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });
+      asrPipeline = await loadAsrPipeline(asrModel, currentDevice === 'wasm' ? 'wasm' : 'webgpu');
+      currentAsrModel = asrModel;
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 100 } });
+    } catch (err: any) {
+      // Keep the model that is already loaded rather than leaving the pipeline
+      // with nothing to transcribe with. Worse recognition beats none.
+      console.error(
+        `[AiVoiceAvatar] Could not load speech recognition model "${asrModel}", ` +
+        `continuing with "${previousModel}".`, err
+      );
+      self.postMessage({
+        type: 'error',
+        payload: { stage: 'asr', message: `Could not load ${asrModel}: ${err?.message || err}` },
+      });
+    }
+    return;
   }
 
   if (type === 'switchTts') {

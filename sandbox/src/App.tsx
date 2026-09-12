@@ -828,6 +828,11 @@ ${llmMode === 'cloud'
                         const match = KOKORO_VOICES.find(v => v.language === l.id);
                         if (match) setTtsVoice(match.id);
                       }
+                      // Qwen-0.5B barely speaks Hindi, so the local brain would
+                      // answer in broken Hindi or quietly revert to English.
+                      // Send Hindi to the cloud route, which is what anyone
+                      // shipping Hindi would use anyway.
+                      if (l.id === 'hi-IN') switchLlmMode('cloud');
                     }}
                     style={{ background: ttsLanguage === l.id ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 4px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
                   >{l.label}</button>
@@ -866,6 +871,13 @@ ${llmMode === 'cloud'
                   Edge Qwen
                 </button>
               </div>
+              {ttsLanguage === 'hi-IN' && llmMode === 'local' && (
+                <div style={{ margin: '0 0 10px 0', fontSize: '11px', color: '#FCD34D', lineHeight: '1.4', background: 'rgba(180, 83, 9, 0.15)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(252, 211, 77, 0.25)' }}>
+                  Qwen2.5-0.5B has very little Hindi in it. Speech and
+                  transcription stay on-device, but replies will be broken or
+                  drift back to English. Use the cloud route for Hindi.
+                </div>
+              )}
               <div style={{ margin: 0, fontSize: '11px', color: '#94A3B8', lineHeight: '1.4', background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 {llmMode === 'cloud' ? (
                   <>

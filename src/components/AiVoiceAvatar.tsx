@@ -68,7 +68,17 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * with a warning, since an English voice reading Hindi is never intended.
    */
   ttsVoice?: string;
+  /**
+   * Speech recognition model. Defaults by language: Whisper base for English,
+   * Whisper small for Hindi, which needs the larger model to be usable and is
+   * about three times the download. Set this to pin one model for every
+   * language, or to use a fine-tuned one.
+   */
   asrModel?: string;
+  /**
+   * Language to transcribe. Defaults to `ttsLanguage`, since a conversation is
+   * almost always held in one language.
+   */
   asrLanguage?: string;
 
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
@@ -121,6 +131,22 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    */
   onAudioLevelChange?: (level: number, source: 'mic' | 'tts') => void;
 }
+
+/**
+ * Speech recognition model per language.
+ *
+ * Whisper base is the smallest multilingual Whisper, and its accuracy outside
+ * English drops sharply: on Hindi it returns fluent, confident, wrong text
+ * rather than failing visibly. Whisper small is roughly three times the
+ * download and transcribes Hindi well enough to hold a conversation.
+ *
+ * The larger model is selected only for the languages that need it, so nobody
+ * pays for a language they never use. Pass `asrModel` to override either way.
+ */
+const ASR_MODEL_BY_LANGUAGE: Record<string, string> = {
+  'hi-IN': 'onnx-community/whisper-small',
+};
+const DEFAULT_ASR_MODEL = 'onnx-community/whisper-base';
 
 const ARKIT_BLENDSHAPES = [
   "eyeBlinkLeft", "eyeLookDownLeft", "eyeLookInLeft", "eyeLookOutLeft", "eyeLookUpLeft", "eyeSquintLeft", "eyeWideLeft",
@@ -431,7 +457,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     ttsLanguage = 'en-US',
     ttsEngine = 'kokoro',
     ttsVoice = 'af_heart',
-    asrModel = 'onnx-community/whisper-base',
+    asrModel,
     onSubmit,
     onTranscriptUpdate,
     onTranscribe,
@@ -465,7 +491,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
   } = useAiVoiceAvatar({
     llmModel: props.llmModel,
-    asrModel: props.asrModel,
+    asrModel: asrModel ?? ASR_MODEL_BY_LANGUAGE[asrLanguage ?? ttsLanguage] ?? DEFAULT_ASR_MODEL,
     ttsLanguage,
     ttsEngine: props.ttsEngine,
     ttsVoice: props.ttsVoice,
