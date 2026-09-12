@@ -37,6 +37,11 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   modelSrc?: string;
   avatarPreset?: 'ananya' | 'aarav' | 'default' | 'kiosk';
   visemeMap?: Record<string, string>;
+  /**
+   * @deprecated No longer has any effect. It used to control a second ambient
+   * light that sat outside the preset system and double-lit every scene. Use
+   * `lightingPreset` instead, which owns all of the lighting.
+   */
   environmentPreset?: 'studio' | 'none';
   /** Pre-built cinematic studio lighting presets for zero-config visual atmospheres */
   lightingPreset?: 'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none';
@@ -333,7 +338,7 @@ function StudioLighting({ preset = 'studio' }: { preset?: string }) {
   if (preset === 'cyberpunk_violet') {
     return (
       <>
-        <ambientLight intensity={0.6} color="#A78BFA" />
+        <ambientLight intensity={1.2} color="#A78BFA" />
         <pointLight position={[-3, 2, 2]} intensity={25} color="#8B5CF6" distance={8} />
         <pointLight position={[3, 1, -2]} intensity={20} color="#06B6D4" distance={8} />
         <directionalLight position={[0, 4, 3]} intensity={1.2} color="#D8B4FE" />
@@ -344,7 +349,7 @@ function StudioLighting({ preset = 'studio' }: { preset?: string }) {
   if (preset === 'cool_azure') {
     return (
       <>
-        <ambientLight intensity={0.7} color="#93C5FD" />
+        <ambientLight intensity={1.3} color="#93C5FD" />
         <pointLight position={[-3, 2, 2]} intensity={22} color="#3B82F6" distance={8} />
         <pointLight position={[3, 1, -2]} intensity={16} color="#10B981" distance={8} />
         <directionalLight position={[0, 4, 3]} intensity={1.4} color="#E0F2FE" />
@@ -355,7 +360,7 @@ function StudioLighting({ preset = 'studio' }: { preset?: string }) {
   if (preset === 'warm_amber') {
     return (
       <>
-        <ambientLight intensity={0.8} color="#FDE68A" />
+        <ambientLight intensity={1.4} color="#FDE68A" />
         <pointLight position={[-3, 2, 2]} intensity={24} color="#F59E0B" distance={8} />
         <pointLight position={[3, 1, -2]} intensity={15} color="#EC4899" distance={8} />
         <directionalLight position={[0, 4, 3]} intensity={1.3} color="#FFFBEB" />
@@ -366,20 +371,37 @@ function StudioLighting({ preset = 'studio' }: { preset?: string }) {
   if (preset === 'clean_white') {
     return (
       <>
-        <ambientLight intensity={1.1} color="#FFFFFF" />
+        <ambientLight intensity={1.7} color="#FFFFFF" />
         <directionalLight position={[2, 4, 5]} intensity={1.8} color="#FFFFFF" />
         <directionalLight position={[-2, -2, -2]} intensity={0.5} color="#F1F5F9" />
       </>
     );
   }
 
-  // Default balanced 'studio' lighting
+  // Default balanced 'studio' lighting.
+  //
+  // Tuned for avatars whose textures are photographic. Heavily saturated key
+  // lights read as deliberate style on a flat-shaded stylised mesh, but on baked
+  // photographic skin they read as a colour cast, and dark clothing absorbs them
+  // instead of reflecting them, so the figure sinks into the background wherever
+  // the colour does not happen to land. Directional lights also matter more than
+  // point lights here: a point light with a distance falloff lights a head-and-
+  // shoulders framing evenly but leaves a full-body framing dark below the waist.
   return (
     <>
-      <ambientLight intensity={0.75} color="#E2E8F0" />
-      <pointLight position={[-3, 2, 2]} intensity={20} color="#60A5FA" distance={8} />
-      <pointLight position={[3, 1, -2]} intensity={16} color="#34D399" distance={8} />
-      <directionalLight position={[0, 4, 4]} intensity={1.5} color="#FFFFFF" />
+      <ambientLight intensity={1.3} color="#F1F5F9" />
+      {/* Key: slightly warm, high and to the front-right, as in a portrait setup. */}
+      <directionalLight position={[2.5, 3.5, 4]} intensity={2.8} color="#FFF4E8" />
+      {/* Fill: cool and soft from the opposite side, to open up the shadow half. */}
+      <directionalLight position={[-3, 1.5, 2.5]} intensity={1.2} color="#DCE8FF" />
+      {/*
+        Rim pair, one behind each shoulder. These carry more weight than they
+        would in a brighter scene: avatars are usually posed against a near-black
+        stage, and a figure in dark clothing has nothing else separating it from
+        that background, so without a rim it reads as a silhouette.
+      */}
+      <directionalLight position={[-2.5, 2, -3]} intensity={1.8} color="#A5C8FF" />
+      <directionalLight position={[2.5, 2, -3]} intensity={1.5} color="#BBD4FF" />
     </>
   );
 }
@@ -389,7 +411,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     modelSrc,
     avatarPreset = 'ananya',
     avatarSize,
-    environmentPreset = 'studio',
+    // Destructured only so a deprecated prop is not spread onto the <group>.
+    environmentPreset: _environmentPreset,
     lightingPreset = 'studio',
     loadingProgress,
     fallbackMode = 'wasm',
@@ -527,7 +550,13 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
   return (
     <>
       <group {...groupProps} scale={computedScale}>
-        <ambientLight intensity={environmentPreset === 'studio' ? 0.6 : 0.2} />
+        {/*
+          Each lighting preset owns its own ambient term. There used to be a
+          second one here as well, which meant every preset was quietly lit
+          brighter and flatter than its own numbers said, and `lightingPreset`
+          of "none" still could not give you an unlit scene to bring your own
+          lights to.
+        */}
         <StudioLighting preset={lightingPreset} />
 
         <AvatarModel

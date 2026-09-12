@@ -1,7 +1,30 @@
+/**
+ * True when the page is being served from a local development host.
+ *
+ * Avatars are normally streamed from a CDN pinned to this repository's main
+ * branch, which means a locally modified GLB can never be seen until it is
+ * committed, merged and the CDN cache expires. That makes working on an avatar
+ * effectively impossible. Probing for a local copy first while developing fixes
+ * that, and costs production nothing because this is false there.
+ */
+function isLocalDevHost(): boolean {
+  if (typeof window === 'undefined' || !window.location) return false;
+  const { hostname, protocol } = window.location;
+  if (protocol === 'file:') return true;
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]' ||
+    hostname === '0.0.0.0' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local')
+  );
+}
+
 export async function resolveAvatarUrl(
   preset: 'ananya' | 'aarav' | 'default' | 'kiosk' = 'ananya',
   onProgress?: (pct: number, label: string) => void,
-  enableLocalAssetProbe: boolean = false
+  enableLocalAssetProbe?: boolean
 ): Promise<string> {
   // `default` and `kiosk` are aliases rather than separate meshes. They used to
   // point at a default.glb that was byte-identical to ananya.glb, so shipping it
@@ -20,7 +43,11 @@ export async function resolveAvatarUrl(
 
   let resolvedUrl = cdnUrl;
 
-  if (enableLocalAssetProbe) {
+  // Explicit opt-in wins; otherwise probe locally while developing, where a
+  // 404 in the console is a fair price for being able to see your own changes.
+  const shouldProbeLocal = enableLocalAssetProbe ?? isLocalDevHost();
+
+  if (shouldProbeLocal) {
     try {
       // Perform a lightweight HTTP HEAD probe to check if the asset is hosted locally in public/
       const headResponse = await fetch(localPath, { method: 'HEAD' });

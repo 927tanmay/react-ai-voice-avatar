@@ -298,21 +298,20 @@ export class AvatarDynamicsEngine {
       return boneRotations[name]; 
     };
 
-    // 5.1 Rest Pose: Relax the RPM A-pose (arms closer to body and slightly pitched forward)
-    getRot('LeftArm').z -= 0.2;
-    getRot('RightArm').z += 0.2;
-    
-    // Pitch arms slightly forward so they don't clip into hips
-    getRot('LeftArm').x += 0.1;
-    getRot('RightArm').x += 0.1;
-    
-    // Add natural elbow bend (forearms) - X is the hinge axis. Positive X bends elbows forward.
-    getRot('LeftForeArm').x += 0.25;
-    getRot('RightForeArm').x += 0.25;
-
-    // Relax the wrists (hands) - Positive X drops them slightly
-    getRot('LeftHand').x += 0.1;
-    getRot('RightHand').x += 0.1;
+    // 5.1 Rest pose is the model's own job, not ours.
+    //
+    // This used to apply a fixed correction to the arms, forearms and wrists to
+    // relax the Ready Player Me A-pose. It assumed that rig's bone axes, and on
+    // any other skeleton the same numbers send the two sides in opposite
+    // directions: one arm swings forward and out while the other tucks behind
+    // the back. Mirrored rigs give a bone's local X opposite world meanings on
+    // the left and right, so a symmetric value is not a symmetric pose.
+    //
+    // Every model this engine loads already arrives with a rest pose. Posing it
+    // again from here silently overrode that, including for anyone bringing
+    // their own avatar. Bundled avatars now ship in a relaxed standing pose
+    // baked in by scripts/convert-rocketbox.py, and what follows adds motion on
+    // top rather than re-posing the skeleton.
 
     // Accumulate breath phase
     const respirationSpeed = isIdle ? 1.0 : 1.5;
