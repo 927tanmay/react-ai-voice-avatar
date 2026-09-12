@@ -255,6 +255,14 @@ export default function App() {
       console.error('❌ FAILED: Timeout waiting for audio duration.');
       testFailed = true;
     }
+  } catch (err) {
+    // Without this, a crash in the block above would land in `finally`, which
+    // exits 0 on the strength of testFailed still being false, and the process
+    // is gone before the exception ever reaches the handler on run(). A broken
+    // packaging test would report itself as a passing one.
+    console.error('❌ FAILED: The packaging test crashed.');
+    console.error(err);
+    testFailed = true;
   } finally {
     console.log('📸 Taking debug screenshot...');
     await page.screenshot({ path: path.join(TEST_DIR, 'debug-timeout.png') });
