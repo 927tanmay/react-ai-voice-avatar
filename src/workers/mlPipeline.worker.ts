@@ -13,6 +13,8 @@ let chatHistory: Array<{ role: string, content: string }> = [];
 
 let currentDevice: 'webgpu' | 'wasm' = 'webgpu';
 let currentTtsLanguage: string = 'en-US';
+/** The caller's prompt without any language instruction, so it can be re-applied. */
+let baseSystemPrompt: string = '';
 let currentTtsVoice: string = 'af_heart';
 let currentTtsEngine: 'kokoro' | 'mms' = 'mms';
 
@@ -65,6 +67,34 @@ const resolveTtsRepo = (lang: string): string => {
     `and use a cloud voice provider.`
   );
   return LOCAL_TTS_REPOS['en-US'];
+};
+
+/**
+ * Names a language in its own script, plus English so a small model recognises it.
+ */
+const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
+  'hi-IN':
+    'Reply only in Hindi, written in the Devanagari script. ' +
+    'Do not reply in English and do not write Hindi in Latin letters. ' +
+    'हमेशा हिन्दी में देवनागरी लिपि में उत्तर दें।',
+};
+
+/**
+ * Tell the model which language to answer in.
+ *
+ * Selecting a voice changes how a reply is spoken, not what language it is
+ * written in, and a model given an English system prompt answers in English no
+ * matter which voice is waiting to read it out. That produced the worst possible
+ * result: an English sentence pronounced by a Hindi voice.
+ *
+ * The instruction goes last, because a small instruction-tuned model weights the
+ * end of its system prompt most heavily, and it names the script explicitly,
+ * since models asked for Hindi will otherwise often answer in transliterated
+ * Latin, which the phonemiser has no way to read as Hindi.
+ */
+const withLanguageInstruction = (prompt: string, language: string): string => {
+  const instruction = LANGUAGE_INSTRUCTIONS[language];
+  return instruction ? `${prompt}\n\n${instruction}` : prompt;
 };
 
 const processTtsQueue = async () => {
@@ -151,8 +181,9 @@ self.onmessage = async (e: MessageEvent) => {
     currentTtsVoice = ttsVoice;
     currentTtsEngine = ttsEngine;
 
+    baseSystemPrompt = systemPrompt;
     chatHistory = [
-      { role: 'system', content: systemPrompt }
+      { role: 'system', content: withLanguageInstruction(systemPrompt, ttsLanguage) }
     ];
 
     try {
@@ -232,6 +263,17 @@ self.onmessage = async (e: MessageEvent) => {
     if (ttsLanguage) currentTtsLanguage = ttsLanguage;
     if (ttsEngine) currentTtsEngine = ttsEngine;
     console.log(`[ML Worker] Switched TTS configuration → Engine: ${currentTtsEngine}, Voice: ${currentTtsVoice}, Language: ${currentTtsLanguage}`);
+
+    // Re-language the system prompt when the language changes mid-session.
+    // Without this, switching to Hindi changed the voice but left the model
+    // still under English instructions, so it kept answering in English and the
+    // Hindi voice simply read that English aloud.
+    if (ttsLanguage && ttsLanguage !== oldLanguage && chatHistory.length > 0 && chatHistory[0].role === 'system') {
+      chatHistory[0] = {
+        role: 'system',
+        content: withLanguageInstruction(baseSystemPrompt, currentTtsLanguage),
+      };
+    }
     
     // Load MMS pipeline only when running in MMS mode and either uninitialized or language changed
     if (currentTtsEngine !== 'kokoro' && (!ttsPipeline || (ttsLanguage && ttsLanguage !== oldLanguage))) {

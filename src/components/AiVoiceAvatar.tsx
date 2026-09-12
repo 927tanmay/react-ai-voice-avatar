@@ -427,7 +427,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     lightingPreset = 'studio',
     loadingProgress,
     fallbackMode = 'wasm',
-    asrLanguage = 'en-US',
+    asrLanguage,
     ttsLanguage = 'en-US',
     ttsEngine = 'kokoro',
     ttsVoice = 'af_heart',
@@ -471,7 +471,11 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     ttsVoice: props.ttsVoice,
     systemPrompt: props.systemPrompt,
     fallbackMode,
-    asrLanguage,
+    // People answer in the language they were addressed in, so listening
+    // follows speaking unless told otherwise. Defaulting this to English on its
+    // own meant choosing Hindi gave Hindi speech but English transcripts, and
+    // nothing revealed the mismatch until you actually said something.
+    asrLanguage: asrLanguage ?? ttsLanguage,
     onSubmit,
     onTranscriptUpdate: (text, speaker) => {
       if (speaker === 'user') {
