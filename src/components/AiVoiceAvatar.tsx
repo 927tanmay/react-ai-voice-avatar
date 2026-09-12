@@ -19,7 +19,8 @@ import type { AiVoiceAvatarCapabilities } from '../types';
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
   interrupt: () => void;
-  startListening: () => void;
+  /** Begin listening. Resolves once the microphone is live, or has failed. */
+  startListening: () => Promise<void>;
   stopListening: () => void;
   speak: (text: string) => void;
   sendText: (text: string, options?: { hidden?: boolean }) => void;

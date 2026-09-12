@@ -54,7 +54,15 @@ export interface UseAiVoiceAvatarReturn {
   micError: string | null;
   analyser: AnalyserNode | undefined;
   isReady: boolean;
-  startListening: () => void;
+  /**
+   * Begin listening. Call this from a user gesture.
+   *
+   * Asynchronous because the first call is what opens the microphone, which is
+   * where the browser's permission prompt appears. Awaiting it is optional; the
+   * status transitions to 'listening' once the device is live, and `micError`
+   * is set if it never does.
+   */
+  startListening: () => Promise<void>;
   stopListening: () => void;
   interrupt: () => void;
   clearHistory: () => void;
@@ -76,11 +84,19 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   useEffect(() => { statusRef.current = status; }, [status]);
 
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const outputAnalyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  
+
   const vadRef = useRef<any | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  /** Set once the hook unmounts, so in-flight async setup can bail out. */
+  const isUnmountedRef = useRef(false);
+  /**
+   * The in-flight or completed microphone setup, cached so that concurrent
+   * callers share one permission prompt rather than racing to open the device.
+   */
+  const micSetupRef = useRef<Promise<boolean> | null>(null);
   // Every source currently scheduled on the audio thread, including ones that
   // have not started yet. Barge-in has to stop all of them, not just the audible
   // one, or interrupted speech keeps arriving after the user starts talking.
@@ -124,6 +140,43 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     currentSpeechPhonemesRef.current = '';
     currentAudioDurationRef.current = 0;
     nextStartTimeRef.current = 0;
+  }, []);
+
+  /**
+   * Get the AudioContext, creating it on first use.
+   *
+   * Deliberately synchronous, and deliberately called from inside the handlers
+   * for whatever the user just did. Browsers start a context in the `suspended`
+   * state unless it is constructed while a user gesture is being handled, so
+   * building it during the click that starts a conversation is what lets the
+   * first reply play without an extra tap. It also means a page that embeds an
+   * avatar nobody talks to never opens an audio device at all.
+   */
+  const ensureAudioContext = useCallback((): AudioContext | null => {
+    const existing = audioContextRef.current;
+    if (existing) {
+      if (existing.state === 'suspended') existing.resume();
+      return existing;
+    }
+
+    if (typeof window === 'undefined') return null;
+    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtxClass) {
+      console.warn('[AiVoiceAvatar] AudioContext is not supported in this browser, so speech cannot be played.');
+      return null;
+    }
+
+    const ctx: AudioContext = new AudioCtxClass();
+    audioContextRef.current = ctx;
+
+    const outputAnalyser = ctx.createAnalyser();
+    outputAnalyser.fftSize = 256;
+    // Kept in a ref as well as state because the scheduler reads it in the same
+    // tick it is created, and a state update has not landed by then.
+    outputAnalyserRef.current = outputAnalyser;
+    setAnalyser(outputAnalyser);
+
+    return ctx;
   }, []);
 
   /**
@@ -205,12 +258,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * several may be queued on the audio thread at once.
    */
   const scheduleQueuedAudio = useCallback(() => {
-    const ctx = audioContextRef.current;
+    // Creates the context if this is the first thing to make a sound. Audio can
+    // arrive from a scripted `speak()` that no click preceded, and silently
+    // dropping it would be worse than a context that starts suspended.
+    const ctx = ensureAudioContext();
     if (!ctx) return;
-
-    if (ctx.state === 'suspended') {
-      ctx.resume();
-    }
 
     while (audioQueueRef.current.length > 0) {
       const item = audioQueueRef.current.shift()!;
@@ -229,9 +281,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         const source = ctx.createBufferSource();
         source.buffer = buffer;
 
-        if (analyser) {
-          source.connect(analyser);
-          analyser.connect(ctx.destination);
+        const outputAnalyser = outputAnalyserRef.current;
+        if (outputAnalyser) {
+          source.connect(outputAnalyser);
+          outputAnalyser.connect(ctx.destination);
         } else {
           source.connect(ctx.destination);
         }
@@ -275,7 +328,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
 
     finishIfDrained();
-  }, [analyser, clearWatchdog, finishIfDrained]);
+  }, [ensureAudioContext, clearWatchdog, finishIfDrained]);
 
   const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, phonemes: string = '', isLast: boolean = true) => {
     if (isInterruptedRef.current) return;
@@ -481,7 +534,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
         if (audioResult instanceof ArrayBuffer) {
           // Decode MP3/WAV from ArrayBuffer
-          const ctx = audioContextRef.current;
+          const ctx = ensureAudioContext();
           if (!ctx) throw new Error("AudioContext not ready");
           const decoded = await ctx.decodeAudioData(audioResult.slice(0)); // slice to prevent detaching original buffer if reused
           pcmData = decoded.getChannelData(0);
@@ -507,7 +560,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     } else {
       mmsSynthesize(text, isLast);
     }
-  }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize, handleSpeechOutput, resumeVadIfAllowed]);
+  }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize, handleSpeechOutput, resumeVadIfAllowed, ensureAudioContext]);
 
   // Imperative speech triggering for external alerts or scripted turns
   const speak = useCallback((text: string) => {
@@ -517,18 +570,22 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       return;
     }
     isInterruptedRef.current = false;
+    ensureAudioContext();
     setStatus('speaking');
     synthesizeText(text.trim(), true);
-  }, [synthesizeText, isReady]);
+  }, [synthesizeText, isReady, ensureAudioContext]);
 
   // Imperative text submission skipping ASR, triggering normal pipeline/LLM
   const sendText = useCallback((text: string) => {
     if (!text || !text.trim()) return;
     isInterruptedRef.current = false;
+    // Typed input is a user gesture too, and the reply to it needs to be
+    // audible without a second interaction to unlock the speakers.
+    ensureAudioContext();
     setStatus('thinking');
     configRef.current.onInferenceStart?.();
     processText(text.trim(), !!configRef.current.onSubmit);
-  }, [processText]);
+  }, [processText, ensureAudioContext]);
 
   useEffect(() => {
     if (isReady && status === 'loading') {
@@ -538,18 +595,78 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   }, [isReady, status]);
 
-  // Init VAD and AudioContext
+  /**
+   * The voice detector's speech-end handler, held in a ref.
+   *
+   * The worker callbacks it needs change identity as the workers initialise.
+   * Closing over them directly would give the microphone setup a changing
+   * identity too, and re-running that would tear down the audio device and ask
+   * the user for permission a second time in the middle of a conversation.
+   */
+  const handleVadSpeechEndRef = useRef<(audio: Float32Array) => void>(() => {});
   useEffect(() => {
-    let mounted = true;
+    handleVadSpeechEndRef.current = async (audio: Float32Array) => {
+      setStatus('thinking');
+      configRef.current.onInferenceStart?.();
+      vadRef.current?.pause();
 
-    async function initVad() {
-      if (typeof window === 'undefined' || typeof navigator === 'undefined') return; // P4: Next.js SSR Guard
+      // Cloud adapter: override local ASR.
+      if (configRef.current.onTranscribe) {
+        try {
+          const text = await configRef.current.onTranscribe(audio);
+          if (text && text.trim()) {
+            // Pipe the text into the standard LLM / onSubmit flow
+            configRef.current.onTranscriptUpdate?.(text, 'user');
+            processText(text, !!configRef.current.onSubmit);
+          } else {
+            setStatus('idle');
+            configRef.current.onInferenceEnd?.();
+            resumeVadIfAllowed();
+          }
+        } catch (err) {
+          console.error('[AiVoiceAvatar] Cloud onTranscribe adapter failed:', err);
+          setStatus('idle');
+          configRef.current.onInferenceEnd?.();
+          resumeVadIfAllowed();
+        }
+        return;
+      }
+
+      const langCode = configRef.current.asrLanguage === 'hi-IN' ? 'hi' :
+                       configRef.current.asrLanguage?.split('-')[0] || 'en';
+
+      processAudio(audio, langCode, !!configRef.current.onSubmit);
+    };
+  }, [processAudio, processText, resumeVadIfAllowed]);
+
+  /**
+   * Open the microphone and start voice activity detection, once.
+   *
+   * This used to run in a mount effect, so a visitor was asked for microphone
+   * permission before they had clicked anything or read a word about what the
+   * page does. Browsers raise that prompt the moment it is requested, and a
+   * prompt nobody asked for is the quickest way to lose someone on a page they
+   * are still deciding about. It now happens on the first deliberate attempt to
+   * speak.
+   *
+   * Resolves true once the microphone is live. A successful setup is cached so
+   * concurrent callers share one prompt; a failed one is discarded so that
+   * someone who fixes their permissions in browser settings can recover by
+   * clicking again rather than by reloading the page. Retrying costs nothing,
+   * because a browser that has recorded a denial declines without re-prompting.
+   */
+  const ensureMicrophone = useCallback((): Promise<boolean> => {
+    if (micSetupRef.current) return micSetupRef.current;
+
+    const setup = (async (): Promise<boolean> => {
+      if (typeof window === 'undefined' || typeof navigator === 'undefined') return false; // Next.js SSR guard
       if (!navigator?.mediaDevices?.getUserMedia) {
         const errMsg = 'Microphone API not available (secure HTTPS context or localhost required).';
         console.warn(`[AiVoiceAvatar] ${errMsg}`);
-        if (mounted) setMicError(errMsg);
-        return;
+        if (!isUnmountedRef.current) setMicError(errMsg);
+        return false;
       }
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -559,28 +676,31 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             noiseSuppression: true,
           },
         });
-        if (mounted) setMicError(null);
+
+        // The hook went away while the permission dialog was open.
+        if (isUnmountedRef.current) {
+          stream.getTracks().forEach(t => t.stop());
+          return false;
+        }
+
+        setMicError(null);
         mediaStreamRef.current = stream;
 
-        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioCtxClass) {
-          console.warn('[AiVoiceAvatar] AudioContext not supported in this browser environment.');
-          return;
-        }
-        const audioCtx = new AudioCtxClass();
-        audioContextRef.current = audioCtx;
-
-        const analyserNode = audioCtx.createAnalyser();
-        analyserNode.fftSize = 256;
-        if (mounted) {
-          setAnalyser(analyserNode);
+        const audioCtx = ensureAudioContext();
+        if (!audioCtx) {
+          // Nothing can be done with a live microphone and no audio graph, and
+          // leaving it open would keep the browser's recording indicator lit.
+          stream.getTracks().forEach(t => t.stop());
+          mediaStreamRef.current = null;
+          return false;
         }
 
         const mAnalyser = audioCtx.createAnalyser();
         mAnalyser.fftSize = 256;
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(mAnalyser);
-        // Do NOT connect mAnalyser to destination to prevent feedback loop!
+        // Deliberately not connected to the destination, which would feed the
+        // microphone back out through the speakers.
         micAnalyserRef.current = mAnalyser;
 
         // @ricky0123/vad-web is CJS, so the shape of the namespace depends on whether
@@ -594,9 +714,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
           onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/",
           onSpeechStart: () => {
-            if (!mounted) return;
+            if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
-            
+
             setStatus('listening');
 
             // Barge-in: the user started talking, so drop whatever the avatar
@@ -612,59 +732,45 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               configRef.current.onUserInterrupt?.();
             }
           },
-          onSpeechEnd: async (audio: Float32Array) => {
-            if (!mounted) return;
+          onSpeechEnd: (audio: Float32Array) => {
+            if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return;
-
-            setStatus('thinking');
-            configRef.current.onInferenceStart?.();
-            myvad.pause();
-            
-            // Cloud Adapter: Override local ASR
-            if (configRef.current.onTranscribe) {
-              try {
-                const text = await configRef.current.onTranscribe(audio);
-                if (text && text.trim()) {
-                  // Pipe the text into the standard LLM / onSubmit flow
-                  configRef.current.onTranscriptUpdate?.(text, 'user');
-                  processText(text, !!configRef.current.onSubmit);
-                } else {
-                  setStatus('idle');
-                  configRef.current.onInferenceEnd?.();
-                  resumeVadIfAllowed();
-                }
-              } catch (err) {
-                console.error('[AiVoiceAvatar] Cloud onTranscribe adapter failed:', err);
-                setStatus('idle');
-                configRef.current.onInferenceEnd?.();
-                resumeVadIfAllowed();
-              }
-              return;
-            }
-
-            const langCode = configRef.current.asrLanguage === 'hi-IN' ? 'hi' : 
-                             configRef.current.asrLanguage?.split('-')[0] || 'en';
-
-            processAudio(audio, langCode, !!configRef.current.onSubmit);
+            handleVadSpeechEndRef.current(audio);
           },
           startOnLoad: false
         });
 
-        if (mounted) {
-          vadRef.current = myvad;
+        if (isUnmountedRef.current) {
+          try { myvad.destroy(); } catch (e) { /* nothing to tear down */ }
+          return false;
         }
+
+        vadRef.current = myvad;
+        return true;
       } catch (err) {
-        console.error('Failed to init VAD', err);
-        if (mounted) {
+        console.error('[AiVoiceAvatar] Could not start the microphone:', err);
+        if (!isUnmountedRef.current) {
           setMicError('Microphone access denied or unavailable. Please enable permissions in browser settings.');
         }
+        return false;
       }
-    }
+    })();
 
-    initVad();
+    micSetupRef.current = setup;
+    // Forget a failed attempt so the next deliberate click can try again.
+    setup.then(ok => {
+      if (!ok && micSetupRef.current === setup) micSetupRef.current = null;
+    });
+    return setup;
+  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState]);
 
+  // Release audio devices when the hook goes away. Deliberately dependency-free:
+  // this must run on unmount and at no other time, because anything that makes
+  // it re-run closes a live microphone mid-conversation.
+  useEffect(() => {
+    isUnmountedRef.current = false;
     return () => {
-      mounted = false;
+      isUnmountedRef.current = true;
       if (playbackWatchdogRef.current) {
         clearTimeout(playbackWatchdogRef.current);
         playbackWatchdogRef.current = null;
@@ -685,18 +791,25 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         mediaStreamRef.current?.getTracks().forEach(t => t.stop());
       } catch (e) {}
     };
-  }, [processAudio]);
+  }, [stopAllScheduledAudio]);
 
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     isInterruptedRef.current = false;
-    if (!vadRef.current || !isReady) return;
-    if (audioContextRef.current?.state === 'suspended') {
-      audioContextRef.current.resume();
-    }
+    if (!isReady) return;
+
+    // Synchronous, and first, so the context is constructed while the browser
+    // still considers itself inside the user gesture that led here.
+    ensureAudioContext();
+
+    // Opening the microphone is what actually asks for permission, so the first
+    // call here is where the prompt appears. Everything after it waits.
+    const micReady = await ensureMicrophone();
+    if (!micReady || !vadRef.current || isUnmountedRef.current) return;
+
     vadRef.current.start();
     setStatus('listening');
-  }, [isReady]);
+  }, [isReady, ensureAudioContext, ensureMicrophone]);
 
   const stopListening = useCallback(() => {
     isInterruptedRef.current = true;
