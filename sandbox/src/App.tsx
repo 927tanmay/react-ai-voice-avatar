@@ -330,13 +330,26 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
     setTextInput('');
   };
 
+  /**
+   * The Dev Sandbox's cloud route.
+   *
+   * Calls the real provider when a key has been supplied. Without one it echoes
+   * a canned line, which exists to show the round trip rather than to answer
+   * anything. That canned line used to be English regardless of the selected
+   * language, so choosing Hindi produced an English sentence read by a Hindi
+   * voice, with any stray symbols half-translated. It now answers in the
+   * language being spoken, and says plainly that it is a placeholder.
+   */
   const handleCloudSubmit = async (text: string): Promise<string> => {
-    await new Promise(r => setTimeout(r, 600));
-    const lower = text.toLowerCase();
-    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-      return `Hello there! I heard you say "${text}". Notice how my speech recognition and 3D lip-sync run entirely in your browser with zero local LLM downloads!`;
+    if (apiKey) {
+      return handleCloudDebateSubmit(text, currentPersona.systemPrompt);
     }
-    return `I heard you say: "${text}". In production, your cloud backend or OpenAI endpoint supplies this response via our onSubmit prop, skipping heavy local model downloads completely while keeping facial animation 100% client-side!`;
+
+    await new Promise(r => setTimeout(r, 600));
+    if (ttsLanguage === 'hi-IN') {
+      return `आपने कहा: "${text}"। यह एक नमूना उत्तर है। असली जवाब के लिए ऊपर अपनी API कुंजी डालें।`;
+    }
+    return `I heard you say: "${text}". This is a placeholder reply, not a model. Add an API key above to get real answers. In production your own backend supplies this through the onSubmit prop, while speech and facial animation stay on the device.`;
   };
 
   // ─── Debate Mode State ───
@@ -876,6 +889,40 @@ ${llmMode === 'cloud'
                   Qwen2.5-0.5B has very little Hindi in it. Speech and
                   transcription stay on-device, but replies will be broken or
                   drift back to English. Use the cloud route for Hindi.
+                </div>
+              )}
+              {llmMode === 'cloud' && (
+                <div style={{ margin: '0 0 10px 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {(['openai', 'gemini', 'groq'] as const).map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setApiProvider(p)}
+                        style={{
+                          flex: 1, background: apiProvider === p ? '#0284C7' : 'rgba(255,255,255,0.05)',
+                          color: apiProvider === p ? '#FFF' : '#94A3B8', border: 'none',
+                          borderRadius: '8px', padding: '6px', fontSize: '11px', fontWeight: 600,
+                          cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
+                        }}
+                      >{p}</button>
+                    ))}
+                  </div>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={e => setApiKey(e.target.value)}
+                    placeholder={`Paste ${apiProvider} API key for real replies`}
+                    style={{
+                      background: 'rgba(255,255,255,0.06)', border: `1px solid ${apiKey ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.15)'}`,
+                      borderRadius: '8px', padding: '8px 10px', color: '#FFFFFF', fontSize: '12px',
+                      outline: 'none', fontFamily: 'inherit',
+                    }}
+                  />
+                  {!apiKey && (
+                    <span style={{ fontSize: '10px', color: '#FCD34D' }}>
+                      Without a key the avatar reads a fixed placeholder line, not a real answer.
+                    </span>
+                  )}
                 </div>
               )}
               <div style={{ margin: 0, fontSize: '11px', color: '#94A3B8', lineHeight: '1.4', background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>

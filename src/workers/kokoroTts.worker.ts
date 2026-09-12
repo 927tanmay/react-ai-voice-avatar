@@ -141,20 +141,45 @@ const normalizePeaks = (audio: Float32Array): Float32Array => {
 };
 
 /**
- * Symbols read aloud as words, per language.
+ * Symbols read aloud as words, per script.
  *
- * Reading "50% off" as "fifty percent off" in an otherwise Hindi sentence is
- * the kind of seam that makes a demo feel machine-translated, so each language
- * spells its own symbols.
+ * Reading "50% off" as "fifty percent off" inside an otherwise Hindi sentence
+ * is the kind of seam that makes a demo feel machine-translated.
  */
-const SYMBOL_WORDS: Record<string, Record<string, string>> = {
-  'en-US': { percent: ' percent', and: ' and ', plus: ' plus ', equals: ' equals ', at: ' at ', currency: ' dollars' },
-  'en-GB': { percent: ' percent', and: ' and ', plus: ' plus ', equals: ' equals ', at: ' at ', currency: ' pounds' },
-  'hi-IN': { percent: ' प्रतिशत', and: ' और ', plus: ' प्लस ', equals: ' बराबर ', at: ' पर ', currency: ' रुपये' },
+interface SymbolWords {
+  percent: string; and: string; plus: string; equals: string; at: string;
+  dollars: string; rupees: string;
+}
+const ENGLISH_WORDS: SymbolWords = {
+  percent: ' percent', and: ' and ', plus: ' plus ', equals: ' equals ', at: ' at ',
+  dollars: ' dollars', rupees: ' rupees',
+};
+const HINDI_WORDS: SymbolWords = {
+  percent: ' प्रतिशत', and: ' और ', plus: ' प्लस ', equals: ' बराबर ', at: ' पर ',
+  dollars: ' डॉलर', rupees: ' रुपये',
+};
+
+const DEVANAGARI = /[ऀ-ॿ]/;
+const LATIN = /[A-Za-z]/;
+
+/**
+ * Pick the spoken form of a symbol from the script it is embedded in.
+ *
+ * Choosing by the session's language instead produced the worst of both: with
+ * Hindi selected, an English sentence came out as "100 प्रतिशत client-side",
+ * which is neither language and is unreadable to either phonemiser. What
+ * matters is the script immediately around the symbol, since Hindi text mixes
+ * English freely and both halves have to be read correctly.
+ */
+const wordsAround = (text: string, index: number): SymbolWords => {
+  const window = text.slice(Math.max(0, index - 24), index + 24);
+  if (DEVANAGARI.test(window)) return HINDI_WORDS;
+  if (LATIN.test(window)) return ENGLISH_WORDS;
+  // A bare number with no surrounding words: fall back to the session language.
+  return currentLanguage === 'hi-IN' ? HINDI_WORDS : ENGLISH_WORDS;
 };
 
 const sanitizeForSpeech = (text: string): string => {
-  const words = SYMBOL_WORDS[currentLanguage] ?? SYMBOL_WORDS['en-US'];
   return text
     // Strip pictographs and emojis to prevent vocal hallucination babble
     .replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}/gu, '')
@@ -168,12 +193,16 @@ const sanitizeForSpeech = (text: string): string => {
     // Convert hyphenated numeric ranges (e.g., 620-800) into words for smooth TTS prosody ("620 to 800")
     .replace(/(\b\d+)\s*-\s*(\d+\b)/g, '$1 to $2')
     // Convert common symbols to words for better TTS prosody
-    .replace(/%/g, words.percent)
-    .replace(/&/g, words.and)
-    .replace(/\+/g, words.plus)
-    .replace(/=/g, words.equals)
-    .replace(/@/g, words.at)
-    .replace(/[$₹]([\d,.]+)/g, `$1${words.currency}`)
+    .replace(/%/g, (_m, i: number, s: string) => wordsAround(s, i).percent)
+    .replace(/&/g, (_m, i: number, s: string) => wordsAround(s, i).and)
+    .replace(/\+/g, (_m, i: number, s: string) => wordsAround(s, i).plus)
+    .replace(/=/g, (_m, i: number, s: string) => wordsAround(s, i).equals)
+    .replace(/@/g, (_m, i: number, s: string) => wordsAround(s, i).at)
+    // The currency name comes from the symbol, never from the session language:
+    // a dollar is a dollar in a Hindi sentence and a rupee is a rupee in an
+    // English one.
+    .replace(/\$([\d,.]+)/g, (_m, n: string, i: number, s: string) => `${n}${wordsAround(s, i).dollars}`)
+    .replace(/₹([\d,.]+)/g, (_m, n: string, i: number, s: string) => `${n}${wordsAround(s, i).rupees}`)
     // Replace stray markdown dividers or underlines
     .replace(/[-=]{3,}/g, ' ')
     // Clean up excessive spacing and trim
