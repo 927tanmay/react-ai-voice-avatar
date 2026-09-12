@@ -116,13 +116,26 @@ const PERSONAS: Persona[] = [
   },
 ];
 
-const KOKORO_VOICES = [
-  { id: 'af_heart', label: 'Nova (af_heart - Warm Female A-Grade)' },
-  { id: 'af_bella', label: 'Bella (af_bella - Expressive Female)' },
-  { id: 'am_michael', label: 'Orion (am_michael - Engaging Male)' },
-  { id: 'am_fenrir', label: 'Fenrir (am_fenrir - Authoritative Male)' },
-  { id: 'bf_emma', label: 'Emma (bf_emma - British Female)' },
-  { id: 'bm_george', label: 'George (bm_george - British Male)' },
+type TtsLanguage = 'en-US' | 'en-GB' | 'hi-IN';
+
+const KOKORO_VOICES: Array<{ id: string; label: string; language: TtsLanguage }> = [
+  { id: 'af_heart', label: 'Nova (af_heart - Warm Female A-Grade)', language: 'en-US' },
+  { id: 'af_bella', label: 'Bella (af_bella - Expressive Female)', language: 'en-US' },
+  { id: 'am_michael', label: 'Orion (am_michael - Engaging Male)', language: 'en-US' },
+  { id: 'am_fenrir', label: 'Fenrir (am_fenrir - Authoritative Male)', language: 'en-US' },
+  { id: 'bf_emma', label: 'Emma (bf_emma - British Female)', language: 'en-GB' },
+  { id: 'bm_george', label: 'George (bm_george - British Male)', language: 'en-GB' },
+  // Hindi voices ship inside the same Kokoro checkpoint as the English ones.
+  { id: 'hf_alpha', label: 'Alpha (hf_alpha - Hindi Female)', language: 'hi-IN' },
+  { id: 'hf_beta', label: 'Beta (hf_beta - Hindi Female)', language: 'hi-IN' },
+  { id: 'hm_omega', label: 'Omega (hm_omega - Hindi Male)', language: 'hi-IN' },
+  { id: 'hm_psi', label: 'Psi (hm_psi - Hindi Male)', language: 'hi-IN' },
+];
+
+const TTS_LANGUAGES: Array<{ id: TtsLanguage; label: string }> = [
+  { id: 'en-US', label: 'English (US)' },
+  { id: 'en-GB', label: 'English (UK)' },
+  { id: 'hi-IN', label: 'हिन्दी' },
 ];
 
 const LIGHTING_PRESETS: Array<{ id: 'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'; label: string; icon: string }> = [
@@ -299,6 +312,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
 
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [ttsVoice, setTtsVoice] = useState<string>(currentPersona.defaultVoice);
+  const [ttsLanguage, setTtsLanguage] = useState<TtsLanguage>('en-US');
   const [devAvatarPreset, setDevAvatarPreset] = useState<'aarav' | 'ananya'>(currentPersona.preset as 'aarav' | 'ananya');
 
   // When persona prop changes, update internal dev state so it stays synced
@@ -715,6 +729,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   lightingPreset="${lightingPreset}"
   ttsEngine="${ttsEngine}"
   ttsVoice="${ttsVoice}"
+  ttsLanguage="${ttsLanguage}"
 ${llmMode === 'cloud' 
   ? '  onSubmit={async (text) => {\n    // Note: Supply your system prompt directly to your backend API here\n    return "Mock Response";\n  }}' 
   : `  systemPrompt="${currentPersona.systemPrompt}"\n  llmModel="onnx-community/Qwen2.5-0.5B-Instruct"`}
@@ -800,9 +815,27 @@ ${llmMode === 'cloud'
                 <button onClick={() => setTtsEngine('kokoro')} style={{ background: ttsEngine === 'kokoro' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Kokoro (Human)</button>
                 <button onClick={() => setTtsEngine('mms')} style={{ background: ttsEngine === 'mms' ? '#475569' : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>MMS (Basic)</button>
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                {TTS_LANGUAGES.map(l => (
+                  <button
+                    key={l.id}
+                    onClick={() => {
+                      setTtsLanguage(l.id);
+                      // Move to a voice that speaks the chosen language, since
+                      // an English voice reading Hindi is never what was meant.
+                      const current = KOKORO_VOICES.find(v => v.id === ttsVoice);
+                      if (!current || current.language !== l.id) {
+                        const match = KOKORO_VOICES.find(v => v.language === l.id);
+                        if (match) setTtsVoice(match.id);
+                      }
+                    }}
+                    style={{ background: ttsLanguage === l.id ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 4px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                  >{l.label}</button>
+                ))}
+              </div>
               {ttsEngine === 'kokoro' && (
                 <select value={ttsVoice} onChange={(e) => setTtsVoice(e.target.value)} style={{ width: '100%', background: 'rgba(15, 17, 23, 0.9)', border: '1px solid rgba(255, 255, 255, 0.2)', color: '#FFFFFF', padding: '8px 12px', borderRadius: '10px', fontSize: '12px', cursor: 'pointer' }}>
-                  {KOKORO_VOICES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                  {KOKORO_VOICES.filter(v => v.language === ttsLanguage).map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
                 </select>
               )}
             </div>
@@ -1058,6 +1091,7 @@ ${llmMode === 'cloud'
             systemPrompt={currentPersona.systemPrompt}
             ttsEngine={ttsEngine}
             ttsVoice={ttsVoice}
+            ttsLanguage={ttsLanguage}
             debug={false}
             showCaptions={true}
             scale={isMobile ? 0.38 : 0.48}
@@ -1078,6 +1112,7 @@ ${llmMode === 'cloud'
             systemPrompt={currentPersona.systemPrompt}
             ttsEngine={ttsEngine}
             ttsVoice={ttsVoice}
+            ttsLanguage={ttsLanguage}
             debug={false}
             showCaptions={true}
             scale={isMobile ? 0.38 : 0.48}

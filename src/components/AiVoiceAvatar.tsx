@@ -52,11 +52,21 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   systemPrompt?: string;
   llmModel?: string;
   /**
-   * Language for the built-in speech engines. Only these two have local voice models today.
-   * For any other language, supply `onSynthesize` and use a cloud voice provider.
+   * Language for the built-in speech engines.
+   *
+   * With `ttsEngine: 'kokoro'` these all use Kokoro's own voices, including
+   * Hindi. With `'mms'` only English and Hindi have local models. For anything
+   * else, supply `onSynthesize` and use a cloud voice provider.
    */
-  ttsLanguage?: 'en-US' | 'hi-IN';
+  ttsLanguage?: 'en-US' | 'en-GB' | 'hi-IN';
   ttsEngine?: 'kokoro' | 'mms';
+  /**
+   * Kokoro voice id. Defaults to a voice matching `ttsLanguage`, so this is
+   * only needed to pick a specific one: `af_heart` and `am_michael` for
+   * American English, `bf_emma` for British, `hf_alpha` and `hm_omega` for
+   * Hindi. A voice whose language disagrees with `ttsLanguage` is corrected,
+   * with a warning, since an English voice reading Hindi is never intended.
+   */
   ttsVoice?: string;
   asrModel?: string;
   asrLanguage?: string;
