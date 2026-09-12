@@ -21,11 +21,14 @@ them anywhere else.
 
 Optional flags:
     --textures DIR        Texture folder (default: ../Textures beside the FBX)
+    --keep-reference-pose Skip the relaxed standing pose and keep the wide
+                          reference stance the avatars ship in
     --texture-size 1024   Longest texture edge after downscaling (default 1024)
     --height 1.7          Target height in metres (default 1.7)
 """
 
 import argparse
+import math
 import os
 import sys
 
@@ -101,6 +104,8 @@ def parse_args():
     p.add_argument("--output", required=True, help="Destination .glb")
     p.add_argument("--textures", default=None,
                    help="Texture folder. Defaults to ../Textures beside the FBX.")
+    p.add_argument("--keep-reference-pose", action="store_true",
+                   help="Keep the wide reference stance instead of relaxing the arms.")
     p.add_argument("--texture-size", type=int, default=1024)
     p.add_argument("--height", type=float, default=1.7)
     return p.parse_args(argv)
@@ -187,6 +192,108 @@ def rename_bones(armature):
             if target and target != group.name:
                 group.name = target
     return renamed
+
+
+# ─── Rest pose ──────────────────────────────────────────────────────────────
+#
+# Rocketbox avatars ship in a wide reference pose: upper arms held roughly 40
+# degrees out from the body with the fingers splayed flat. That is right for a
+# scanning rig and wrong for a character standing in a room, which is what this
+# library renders. Ready Player Me models ship much closer to the body, which is
+# why swapping the assets made the arms look like they were dangling.
+#
+# Bake a relaxed standing pose into the rest pose at conversion time, so the
+# model is correct on its own and the engine's small runtime relaxation offsets
+# land on top of something sensible.
+
+# Degrees about the world Y axis (the body's forward/back axis) to bring each
+# upper arm down toward the torso. Mirrored between sides.
+ARM_DROP_DEGREES = 32.0
+# Degrees of elbow bend, so the forearms read as relaxed rather than locked.
+ELBOW_BEND_DEGREES = 10.0
+# Degrees of curl per finger joint. Flat splayed fingers are the single biggest
+# reason a resting humanoid reads as a mannequin.
+FINGER_CURL_DEGREES = (14.0, 18.0, 16.0)
+THUMB_CURL_DEGREES = (10.0, 8.0, 8.0)
+
+
+def _rotate_bone_world(armature, bone_name, degrees, axis):
+    """
+    Rotate a pose bone about a world axis, pivoting on its own head.
+
+    Done with matrix maths rather than bpy.ops.transform.rotate, because the
+    operator needs bone selection state and Blender 5 removed Bone.select.
+    """
+    pose_bone = armature.pose.bones.get(bone_name)
+    if pose_bone is None:
+        return 0
+
+    # pose_bone.matrix is in armature space, and the FBX importer leaves the
+    # armature object rotated to convert Y-up to Z-up. Composing with the
+    # armature's world matrix keeps the axis meaning what the caller intended.
+    to_world = armature.matrix_world
+    world_matrix = to_world @ pose_bone.matrix
+
+    pivot = world_matrix.translation.copy()
+    rotation = mathutils.Matrix.Rotation(math.radians(degrees), 4, axis)
+    about_pivot = (
+        mathutils.Matrix.Translation(pivot)
+        @ rotation
+        @ mathutils.Matrix.Translation(-pivot)
+    )
+
+    pose_bone.matrix = to_world.inverted() @ about_pivot @ world_matrix
+    bpy.context.view_layer.update()
+    return 1
+
+
+def _rotate_bone_local(armature, bone_name, degrees, axis="X"):
+    """Rotate a pose bone about its own axis, for hinges like elbows and knuckles."""
+    pose_bone = armature.pose.bones.get(bone_name)
+    if pose_bone is None:
+        return 0
+    pose_bone.rotation_mode = "XYZ"
+    component = axis.lower()
+    current = getattr(pose_bone.rotation_euler, component)
+    setattr(pose_bone.rotation_euler, component, current + math.radians(degrees))
+    bpy.context.view_layer.update()
+    return 1
+
+
+def apply_rest_pose(armature):
+    """Pose the arms and hands, then bake that pose as the new rest pose."""
+    bpy.ops.object.select_all(action="DESELECT")
+    armature.select_set(True)
+    bpy.context.view_layer.objects.active = armature
+    bpy.ops.object.mode_set(mode="POSE")
+
+    moved = 0
+
+    # Upper arms first: children follow, so the forearm and hand come along.
+    # The sides mirror, hence the sign flip.
+    moved += _rotate_bone_world(armature, "LeftArm", ARM_DROP_DEGREES, "Y")
+    moved += _rotate_bone_world(armature, "RightArm", -ARM_DROP_DEGREES, "Y")
+
+    # Elbows and knuckles are hinges, so rotate about the bone's own axis.
+    moved += _rotate_bone_local(armature, "LeftForeArm", ELBOW_BEND_DEGREES)
+    moved += _rotate_bone_local(armature, "RightForeArm", ELBOW_BEND_DEGREES)
+
+    for side in ("Left", "Right"):
+        for finger in ("Index", "Middle", "Ring", "Pinky"):
+            for joint, degrees in enumerate(FINGER_CURL_DEGREES, start=1):
+                moved += _rotate_bone_local(armature, f"{side}Hand{finger}{joint}", degrees)
+        for joint, degrees in enumerate(THUMB_CURL_DEGREES, start=1):
+            moved += _rotate_bone_local(armature, f"{side}HandThumb{joint}", degrees)
+
+    # Deliberately NOT bpy.ops.pose.armature_apply(). That rebinds the skeleton
+    # without rebaking the mesh, and rebaking would mean applying the armature
+    # modifier, which destroys all 67 shape keys. Instead the pose is carried out
+    # through the exporter (export_rest_position_armature=False), which writes it
+    # into the node transforms. Skinning then resolves it correctly on load, and
+    # the runtime engine adds its own offsets on top of whatever rest pose the
+    # model arrives with.
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return moved
 
 
 def normalize_scale(armature, target_height):
@@ -304,6 +411,12 @@ def main():
         )
         sys.exit(1)
 
+    if args.keep_reference_pose:
+        log("keeping the original reference pose")
+    else:
+        posed = apply_rest_pose(armature)
+        log(f"baked a relaxed standing rest pose ({posed} bones adjusted)")
+
     normalize_scale(armature, args.height)
 
     texture_dir = args.textures or os.path.join(
@@ -330,6 +443,9 @@ def main():
         export_morph_normal=False,
         export_morph_tangent=False,
         export_skins=True,
+        # Carry the relaxed standing pose set by apply_rest_pose() into the file,
+        # rather than exporting the wide reference stance underneath it.
+        export_rest_position_armature=False,
         export_yup=True,
         export_apply=False,
         export_animations=False,
