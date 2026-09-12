@@ -56,3 +56,6 @@ test-results/
 debug-timeout.png
 .pack-test/
 .playwright-profile/
+
+# Dev-only symlinks to assets/avatars so the sandbox can load local changes
+sandbox/public/*.glb
