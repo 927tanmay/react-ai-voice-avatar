@@ -22,7 +22,7 @@ const useMediaQuery = (query: string) => {
 };
 
 interface Persona {
-  id: 'retail' | 'support' | 'tutor' | 'dev' | 'debate' | 'cloud-bot';
+  id: 'retail' | 'support' | 'tutor' | 'dev' | 'debate' | 'cloud-bot' | 'hindi';
   name: string;
   role: string;
   avatarIcon: string;
@@ -33,6 +33,8 @@ interface Persona {
   description: string;
   defaultVoice: string;
   defaultLlmMode: 'cloud' | 'local';
+  /** Conversation language. Defaults to American English when unset. */
+  language?: 'en-US' | 'en-GB' | 'hi-IN';
 }
 
 const PERSONAS: Persona[] = [
@@ -48,6 +50,20 @@ const PERSONAS: Persona[] = [
     description: 'Test all engineering settings: models, lighting, and engines.',
     defaultVoice: 'am_fenrir',
     defaultLlmMode: 'cloud',
+  },
+  {
+    id: 'hindi',
+    name: 'हिन्दी Kiosk',
+    role: 'Hindi, On-Device',
+    avatarIcon: '🪔',
+    preset: 'ananya',
+    accentColor: '#E67E22', // Saffron
+    borderColor: 'rgba(230, 126, 34, 0.6)',
+    systemPrompt: "आप एक विनम्र भारतीय कैफ़े की स्वचालित ऑर्डर लेने वाली सहायक हैं। हर उत्तर एक छोटे वाक्य में दें। सूची या मार्कडाउन का प्रयोग न करें, आम बोलचाल की हिन्दी में बात करें।",
+    description: 'Hindi speech, transcription and voice running in the browser.',
+    defaultVoice: 'hf_alpha',
+    defaultLlmMode: 'local',
+    language: 'hi-IN',
   },
   {
     id: 'cloud-bot',
@@ -131,6 +147,19 @@ const KOKORO_VOICES: Array<{ id: string; label: string; language: TtsLanguage }>
   { id: 'hm_omega', label: 'Omega (hm_omega - Hindi Male)', language: 'hi-IN' },
   { id: 'hm_psi', label: 'Psi (hm_psi - Hindi Male)', language: 'hi-IN' },
 ];
+
+/**
+ * What each language actually loads on-device.
+ *
+ * Stated rather than implied, because the models differ by language and the
+ * download is large enough that people deserve the number before the progress
+ * bar starts rather than after.
+ */
+const LOCAL_MODELS: Record<TtsLanguage, { asr: string; llm: string; voice: string; download: string }> = {
+  'en-US': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~0.6 GB' },
+  'en-GB': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~0.6 GB' },
+  'hi-IN': { asr: 'Whisper small', llm: 'Gemma 3 1B', voice: 'Kokoro-82M', download: '~1.3 GB' },
+};
 
 const TTS_LANGUAGES: Array<{ id: TtsLanguage; label: string }> = [
   { id: 'en-US', label: 'English (US)' },
@@ -312,7 +341,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
 
   const [lightingPreset, setLightingPreset] = useState<'studio' | 'cyberpunk_violet' | 'cool_azure' | 'warm_amber' | 'clean_white' | 'none'>('studio');
   const [ttsVoice, setTtsVoice] = useState<string>(currentPersona.defaultVoice);
-  const [ttsLanguage, setTtsLanguage] = useState<TtsLanguage>('en-US');
+  const [ttsLanguage, setTtsLanguage] = useState<TtsLanguage>(currentPersona.language ?? 'en-US');
   const [devAvatarPreset, setDevAvatarPreset] = useState<'aarav' | 'ananya'>(currentPersona.preset as 'aarav' | 'ananya');
 
   // When persona prop changes, update internal dev state so it stays synced
@@ -726,12 +755,86 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
               <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Intelligence Routing</div>
               <div style={{ fontSize: '12px', color: '#E2E8F0', lineHeight: '1.5', background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 {llmMode === 'cloud' ? (
-                  <>☁️ <strong>Cloud API</strong>. Responses are currently mocked for this demo to show latency. In production, this connects to your backend.</>
+                  apiKey
+                    ? <>☁️ <strong>Cloud API</strong>. Replies come from {apiProvider}. Speech recognition and the voice still run on this device.</>
+                    : <>☁️ <strong>Cloud API</strong>, with no key set, so replies are a fixed placeholder line. Add a key below for real answers.</>
                 ) : (
-                  <>🔒 <strong>Local Edge LLM</strong>. Running Qwen2.5-0.5B locally via WebGPU inside your browser.</>
+                  <>🔒 <strong>Local Edge LLM</strong>. Running {LOCAL_MODELS[ttsLanguage].llm} via WebGPU inside your browser.</>
                 )}
               </div>
             </div>
+
+            {/*
+              Name the models for any scenario that pins a language other than
+              English. The Hindi ones differ from the defaults and are twice the
+              download, which is worth knowing before committing to it.
+            */}
+            {currentPersona.language && currentPersona.language !== 'en-US' && (
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>
+                  On-Device Models
+                </div>
+                <div style={{ fontSize: '12px', color: '#E2E8F0', lineHeight: '1.7', background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div>🎙️ Hearing — <strong>{LOCAL_MODELS[ttsLanguage].asr}</strong></div>
+                  <div>🗣️ Voice — <strong>{LOCAL_MODELS[ttsLanguage].voice}</strong> ({ttsVoice})</div>
+                  <div style={{ opacity: llmMode === 'cloud' ? 0.45 : 1, textDecoration: llmMode === 'cloud' ? 'line-through' : 'none' }}>
+                    🧠 Thinking — <strong>{LOCAL_MODELS[ttsLanguage].llm}</strong>
+                  </div>
+                  <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '11px', color: '#94A3B8' }}>
+                    First run downloads {llmMode === 'cloud' ? 'the hearing and voice models' : LOCAL_MODELS[ttsLanguage].download}, then caches.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                  <button
+                    onClick={() => switchLlmMode('local')}
+                    style={{
+                      flex: 1, padding: '8px', fontSize: '12px', fontWeight: 600, borderRadius: '8px',
+                      background: llmMode === 'local' ? currentPersona.accentColor : 'rgba(255,255,255,0.05)',
+                      color: llmMode === 'local' ? '#FFF' : '#94A3B8', border: 'none', cursor: 'pointer',
+                    }}
+                  >Fully on-device</button>
+                  <button
+                    onClick={() => switchLlmMode('cloud')}
+                    style={{
+                      flex: 1, padding: '8px', fontSize: '12px', fontWeight: 600, borderRadius: '8px',
+                      background: llmMode === 'cloud' ? '#0284C7' : 'rgba(255,255,255,0.05)',
+                      color: llmMode === 'cloud' ? '#FFF' : '#94A3B8', border: 'none', cursor: 'pointer',
+                    }}
+                  >Cloud replies</button>
+                </div>
+
+                {llmMode === 'cloud' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {(['openai', 'gemini', 'groq'] as const).map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setApiProvider(p)}
+                          style={{
+                            flex: 1, background: apiProvider === p ? '#0284C7' : 'rgba(255,255,255,0.05)',
+                            color: apiProvider === p ? '#FFF' : '#94A3B8', border: 'none', borderRadius: '8px',
+                            padding: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize',
+                          }}
+                        >{p}</button>
+                      ))}
+                    </div>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={e => setApiKey(e.target.value)}
+                      placeholder={`Paste ${apiProvider} API key`}
+                      style={{
+                        background: 'rgba(255,255,255,0.06)',
+                        border: `1px solid ${apiKey ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.15)'}`,
+                        borderRadius: '8px', padding: '8px 10px', color: '#FFFFFF', fontSize: '12px',
+                        outline: 'none', fontFamily: 'inherit',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Integration</div>
