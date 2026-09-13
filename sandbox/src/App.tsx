@@ -785,6 +785,13 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
                   </div>
                 </div>
 
+                <div style={{ marginTop: '8px', fontSize: '11px', color: '#FCD34D', lineHeight: '1.5', background: 'rgba(180, 83, 9, 0.15)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(252, 211, 77, 0.25)' }}>
+                  Models this small are far weaker in Hindi than in English. Good
+                  enough to show the pipeline working end to end, not good enough
+                  to ship. For production Hindi, route hearing and thinking to an
+                  API through the <code style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '1px 4px', borderRadius: '4px' }}>onTranscribe</code> and <code style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '1px 4px', borderRadius: '4px' }}>onSubmit</code> props.
+                </div>
+
                 <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                   <button
                     onClick={() => switchLlmMode('local')}
