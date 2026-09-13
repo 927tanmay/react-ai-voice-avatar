@@ -96,9 +96,68 @@ const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
  * since models asked for Hindi will otherwise often answer in transliterated
  * Latin, which the phonemiser has no way to read as Hindi.
  */
-const withLanguageInstruction = (prompt: string, language: string): string => {
+/**
+ * Instructions for languages where the speaker's own gender inflects the verb.
+ *
+ * Hindi conjugates the first person for gender: a woman says "करती हूँ" where a
+ * man says "करता हूँ". Models default to the masculine, so a female avatar with
+ * a female voice refers to herself in the masculine throughout, which to a Hindi
+ * speaker is not a stylistic wobble but plainly wrong.
+ *
+ * A caveat measured rather than assumed: Gemma 3 1B ignores this entirely.
+ * Against a persona prompt carrying no gender of its own it answered in the
+ * masculine every time, whether told it was female, told it was male, or told
+ * nothing, and three phrasings of the instruction changed nothing. What did
+ * work was the grammar of the persona prompt itself: described as "ऑर्डर लेने
+ * वाली सहायक", the same model used feminine forms consistently.
+ *
+ * So the reliable lever for a small local model is to write the persona in the
+ * gender you want, and this instruction is a supplement for models large enough
+ * to follow it. Anyone writing a Hindi persona should put the gender in the
+ * description rather than rely on this.
+ *
+ * Only the speaker's own forms are constrained. Nothing here touches how the
+ * model addresses the user, whose gender it has no way of knowing.
+ */
+const SPEAKER_GENDER_INSTRUCTIONS: Record<string, Record<string, string>> = {
+  'hi-IN': {
+    female:
+      'You are female, so use feminine first-person verb forms for yourself. ' +
+      'आप स्त्री हैं। अपने बारे में बात करते समय स्त्रीलिंग क्रिया रूपों का ' +
+      'प्रयोग करें, जैसे "करती हूँ", "सकती हूँ", "रही हूँ"।',
+    male:
+      'You are male, so use masculine first-person verb forms for yourself. ' +
+      'आप पुरुष हैं। अपने बारे में बात करते समय पुल्लिंग क्रिया रूपों का ' +
+      'प्रयोग करें, जैसे "करता हूँ", "सकता हूँ", "रहा हूँ"।',
+  },
+};
+
+/**
+ * Read a speaker's gender out of a Kokoro voice name.
+ *
+ * Kokoro names voices <language><gender>_<name>, so af_heart is an American
+ * female and hm_omega a Hindi male. Deriving it beats asking the caller for it
+ * twice, and a name that does not follow the convention simply yields nothing
+ * rather than a guess.
+ */
+const genderFromVoice = (voice: string): 'female' | 'male' | null => {
+  const marker = voice?.[1];
+  if (marker === 'f') return 'female';
+  if (marker === 'm') return 'male';
+  return null;
+};
+
+const withLanguageInstruction = (prompt: string, language: string, voice?: string): string => {
+  const parts = [prompt];
+
   const instruction = LANGUAGE_INSTRUCTIONS[language];
-  return instruction ? `${prompt}\n\n${instruction}` : prompt;
+  if (instruction) parts.push(instruction);
+
+  const gender = voice ? genderFromVoice(voice) : null;
+  const gendered = gender ? SPEAKER_GENDER_INSTRUCTIONS[language]?.[gender] : undefined;
+  if (gendered) parts.push(gendered);
+
+  return parts.join('\n\n');
 };
 
 /** Load a text generation pipeline, reporting download progress as it goes. */
@@ -276,7 +335,10 @@ self.onmessage = async (e: MessageEvent) => {
 
     baseSystemPrompt = systemPrompt;
     chatHistory = [
-      { role: 'system', content: withLanguageInstruction(systemPrompt, ttsLanguage) }
+      // payload.ttsVoice rather than the destructured ttsVoice: that one carries
+      // a default, and inferring the speaker's gender from a voice the caller
+      // never chose would put a claim in the prompt they did not make.
+      { role: 'system', content: withLanguageInstruction(systemPrompt, ttsLanguage, payload.ttsVoice) }
     ];
 
     try {
@@ -386,19 +448,24 @@ self.onmessage = async (e: MessageEvent) => {
   if (type === 'switchTts') {
     const { ttsVoice, ttsLanguage, ttsEngine } = payload;
     const oldLanguage = currentTtsLanguage;
+    const oldVoice = currentTtsVoice;
     if (ttsVoice) currentTtsVoice = ttsVoice;
     if (ttsLanguage) currentTtsLanguage = ttsLanguage;
     if (ttsEngine) currentTtsEngine = ttsEngine;
     console.log(`[ML Worker] Switched TTS configuration → Engine: ${currentTtsEngine}, Voice: ${currentTtsVoice}, Language: ${currentTtsLanguage}`);
 
-    // Re-language the system prompt when the language changes mid-session.
-    // Without this, switching to Hindi changed the voice but left the model
-    // still under English instructions, so it kept answering in English and the
-    // Hindi voice simply read that English aloud.
-    if (ttsLanguage && ttsLanguage !== oldLanguage && chatHistory.length > 0 && chatHistory[0].role === 'system') {
+    // Rebuild the system prompt when the language changes, or when the voice
+    // changes to one of a different gender. Without the first, switching to
+    // Hindi changed the voice but left the model under English instructions, so
+    // it kept answering in English and the Hindi voice read that aloud. Without
+    // the second, switching from a female to a male voice leaves the model still
+    // speaking of itself as a woman, which in Hindi is audible in every verb.
+    const languageChanged = Boolean(ttsLanguage) && ttsLanguage !== oldLanguage;
+    const genderChanged = genderFromVoice(currentTtsVoice) !== genderFromVoice(oldVoice);
+    if ((languageChanged || genderChanged) && chatHistory.length > 0 && chatHistory[0].role === 'system') {
       chatHistory[0] = {
         role: 'system',
-        content: withLanguageInstruction(baseSystemPrompt, currentTtsLanguage),
+        content: withLanguageInstruction(baseSystemPrompt, currentTtsLanguage, currentTtsVoice),
       };
     }
     
