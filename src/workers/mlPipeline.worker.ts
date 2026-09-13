@@ -115,6 +115,62 @@ const loadLlmPipeline = (model: string) => {
   });
 };
 
+type ChatTurn = { role: string; content: string };
+
+/**
+ * Force the conversation into strict user/assistant alternation.
+ *
+ * Stricter chat templates, Gemma's among them, refuse anything else outright
+ * with "Conversation roles must alternate", and the message points at the
+ * history rather than at what actually produced it. Two things produce it here.
+ * Trimming keeps the last six turns, and six turns back can land on an
+ * assistant, so the conversation opens with a reply to nothing. And an
+ * interrupted turn never records its assistant half, leaving two user turns
+ * together. Qwen's template tolerates both, which is why neither showed up
+ * until a second model arrived.
+ *
+ * Leading assistant turns are dropped, having nothing to answer. Same-role
+ * neighbours are merged rather than discarded, since what was said still
+ * belongs in the context.
+ */
+const alternating = (turns: ChatTurn[]): ChatTurn[] => {
+  const out: ChatTurn[] = [];
+  for (const turn of turns) {
+    if (out.length === 0 && turn.role !== 'user') continue;
+    const previous = out[out.length - 1];
+    if (previous && previous.role === turn.role) {
+      previous.content = `${previous.content}\n${turn.content}`;
+      continue;
+    }
+    out.push({ ...turn });
+  }
+  return out;
+};
+
+/**
+ * Shape the conversation the way this particular model expects it.
+ *
+ * The system turn is kept in our own history whatever the model wants, so that
+ * switching models mid-session never loses the instructions. Templates with no
+ * system role get it folded into the first thing the user said instead.
+ */
+const messagesForModel = (history: ChatTurn[], tokenizer: any): ChatTurn[] => {
+  const hasSystem = history.length > 0 && history[0].role === 'system';
+  if (!hasSystem) return alternating(history);
+
+  const [system, ...rest] = history;
+  const turns = alternating(rest);
+
+  // A template that never mentions the system role cannot render one.
+  const supportsSystem = String(tokenizer?.chat_template ?? '').includes('system');
+  if (supportsSystem) return [system, ...turns];
+
+  if (turns.length === 0) return [{ role: 'user', content: system.content }];
+  return turns.map((turn, i) =>
+    i === 0 ? { role: 'user', content: `${system.content}\n\n${turn.content}` } : turn
+  );
+};
+
 /** Load a speech recognition pipeline, reporting download progress as it goes. */
 const loadAsrPipeline = (model: string, device: 'webgpu' | 'wasm') =>
   pipeline('automatic-speech-recognition', model, {
@@ -370,10 +426,14 @@ self.onmessage = async (e: MessageEvent) => {
     // 2. LLM Inference & Streaming Phrase-by-Phrase TTS
     chatHistory.push({ role: 'user', content: transcript });
 
-    // Truncate chat history to prevent WebGPU OOM or Tensor Shape crashes
-    // We keep the system prompt (index 0) and the last 6 messages (3 turns)
+    // Truncate chat history to prevent WebGPU OOM or Tensor Shape crashes.
+    // Keep the system prompt and the last three exchanges, cutting on a user
+    // turn: six messages back can land on an assistant, which would open the
+    // conversation with a reply to nothing.
     if (chatHistory.length > 7) {
-      chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
+      const recent = chatHistory.slice(-6);
+      const firstUser = recent.findIndex(m => m.role === 'user');
+      chatHistory = [chatHistory[0], ...(firstUser === -1 ? [] : recent.slice(firstUser))];
     }
 
     let fullReplyText = '';
@@ -413,7 +473,7 @@ self.onmessage = async (e: MessageEvent) => {
 
     try {
       // @ts-ignore
-      await llmPipeline(chatHistory, { max_new_tokens: 128, streamer });
+      await llmPipeline(messagesForModel(chatHistory, llmPipeline.tokenizer), { max_new_tokens: 128, streamer });
       
       if (sentenceBuffer.trim().length > 0) {
         pushPhraseToTts(sentenceBuffer.trim(), true);
