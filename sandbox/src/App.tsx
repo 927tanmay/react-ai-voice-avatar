@@ -745,7 +745,7 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   ttsLanguage="${ttsLanguage}"
 ${llmMode === 'cloud' 
   ? '  onSubmit={async (text) => {\n    // Note: Supply your system prompt directly to your backend API here\n    return "Mock Response";\n  }}' 
-  : `  systemPrompt="${currentPersona.systemPrompt}"\n  llmModel="onnx-community/Qwen2.5-0.5B-Instruct"`}
+  : `  systemPrompt="${currentPersona.systemPrompt}"`}
 />`;
                   navigator.clipboard.writeText(code);
                   setCopied(true);
@@ -1143,7 +1143,7 @@ ${llmMode === 'cloud'
             ref={avatarRef}
             avatarPreset={devAvatarPreset}
             lightingPreset={lightingPreset}
-            llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
+            /* Model left unset so the engine picks one that can speak the selected language. */
             onSubmit={llmMode === 'cloud' ? handleCloudSubmit : undefined}
             systemPrompt={currentPersona.systemPrompt}
             ttsEngine={ttsEngine}
@@ -1163,7 +1163,7 @@ ${llmMode === 'cloud'
             ref={avatarRef}
             avatarPreset={currentPersona.preset}
             lightingPreset={lightingPreset}
-            llmModel={llmMode === 'local' ? 'onnx-community/Qwen2.5-0.5B-Instruct' : undefined}
+            /* Model left unset so the engine picks one that can speak the selected language. */
             onSubmit={personaId === 'cloud-bot' ? handleCloudBotSubmit : (llmMode === 'cloud' ? handleCloudSubmit : undefined)}
             onSynthesize={personaId === 'cloud-bot' ? handleCloudBotSynthesize : undefined}
             systemPrompt={currentPersona.systemPrompt}

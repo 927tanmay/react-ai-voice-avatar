@@ -210,6 +210,14 @@ self.onmessage = async (e: MessageEvent) => {
     currentTtsVoice = ttsVoice;
     currentTtsEngine = ttsEngine;
 
+    // Say which models this session will use. Several are chosen by language
+    // rather than named by the caller, and without this the only way to find out
+    // which one you got was to watch the network tab during a long download.
+    console.log(
+      `[ML Worker] Language ${ttsLanguage} → speech recognition: ${asrModel}, ` +
+      `text generation: ${payload.loadLlm === false ? 'skipped (onSubmit supplied)' : llmModel}`
+    );
+
     baseSystemPrompt = systemPrompt;
     chatHistory = [
       { role: 'system', content: withLanguageInstruction(systemPrompt, ttsLanguage) }
