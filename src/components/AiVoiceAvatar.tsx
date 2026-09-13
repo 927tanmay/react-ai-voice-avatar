@@ -50,6 +50,11 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   avatarSize?: 'sm' | 'md' | 'lg' | number;
 
   systemPrompt?: string;
+  /**
+   * Local text generation model, used only when `onSubmit` is absent. Defaults
+   * by language: Qwen2.5-0.5B for English, Gemma 3 1B for Hindi, which needs
+   * the larger model to produce correct Hindi at all.
+   */
   llmModel?: string;
   /**
    * Language for the built-in speech engines.
@@ -147,6 +152,23 @@ const ASR_MODEL_BY_LANGUAGE: Record<string, string> = {
   'hi-IN': 'onnx-community/whisper-small',
 };
 const DEFAULT_ASR_MODEL = 'onnx-community/whisper-base';
+
+/**
+ * Local language model per language.
+ *
+ * Qwen2.5-0.5B has almost no Hindi in it and answers in English or in broken
+ * Devanagari. Model size turned out to matter more than any multilingual claim:
+ * Qwen3-0.6B advertises 119 languages and still produced Hindi-shaped nonsense,
+ * while Gemma 3 1B answers correctly. It is roughly 270MB more than the default
+ * and is used only when Hindi is selected.
+ *
+ * Pass `llmModel` to pin one model, or `onSubmit` to skip local generation and
+ * use your own backend, which is what most production apps will do.
+ */
+const LLM_MODEL_BY_LANGUAGE: Record<string, string> = {
+  'hi-IN': 'onnx-community/gemma-3-1b-it-ONNX',
+};
+const DEFAULT_LLM_MODEL = 'onnx-community/Qwen2.5-0.5B-Instruct';
 
 const ARKIT_BLENDSHAPES = [
   "eyeBlinkLeft", "eyeLookDownLeft", "eyeLookInLeft", "eyeLookOutLeft", "eyeLookUpLeft", "eyeSquintLeft", "eyeWideLeft",
@@ -490,7 +512,9 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     currentSpeechPhonemesRef,
     currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
   } = useAiVoiceAvatar({
-    llmModel: props.llmModel,
+    // Only matters when no onSubmit is supplied, since that skips local
+    // generation entirely.
+    llmModel: props.llmModel ?? LLM_MODEL_BY_LANGUAGE[ttsLanguage] ?? DEFAULT_LLM_MODEL,
     asrModel: asrModel ?? ASR_MODEL_BY_LANGUAGE[asrLanguage ?? ttsLanguage] ?? DEFAULT_ASR_MODEL,
     ttsLanguage,
     ttsEngine: props.ttsEngine,

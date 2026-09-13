@@ -17,6 +17,8 @@ let currentTtsLanguage: string = 'en-US';
 let baseSystemPrompt: string = '';
 /** The speech recognition model currently loaded, to avoid reloading it needlessly. */
 let currentAsrModel: string = '';
+/** The text generation model currently loaded, to avoid reloading it needlessly. */
+let currentLlmModel: string = '';
 let currentTtsVoice: string = 'af_heart';
 let currentTtsEngine: 'kokoro' | 'mms' = 'mms';
 
@@ -97,6 +99,20 @@ const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
 const withLanguageInstruction = (prompt: string, language: string): string => {
   const instruction = LANGUAGE_INSTRUCTIONS[language];
   return instruction ? `${prompt}\n\n${instruction}` : prompt;
+};
+
+/** Load a text generation pipeline, reporting download progress as it goes. */
+const loadLlmPipeline = (model: string) => {
+  self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 0 } });
+  return pipeline('text-generation', model, {
+    device: currentDevice,
+    dtype: 'q4', // Quantization for speed
+    progress_callback: (p: any) => {
+      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress } });
+      }
+    },
+  });
 };
 
 /** Load a speech recognition pipeline, reporting download progress as it goes. */
@@ -222,16 +238,8 @@ self.onmessage = async (e: MessageEvent) => {
 
       // 2. Load LLM if not skipped
       if (payload.loadLlm !== false) {
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 0 } });
-        llmPipeline = await pipeline('text-generation', llmModel, {
-          device: currentDevice,
-          dtype: 'q4', // Quantization for speed
-          progress_callback: (p: any) => {
-            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-              self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress }});
-            }
-          }
-        });
+        currentLlmModel = llmModel;
+        llmPipeline = await loadLlmPipeline(llmModel);
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
@@ -280,6 +288,32 @@ self.onmessage = async (e: MessageEvent) => {
       self.postMessage({
         type: 'error',
         payload: { stage: 'asr', message: `Could not load ${asrModel}: ${err?.message || err}` },
+      });
+    }
+    return;
+  }
+
+  if (type === 'switchLlm') {
+    const { llmModel } = payload;
+    // Skip when unchanged, and when the host supplies its own replies: there is
+    // no local model to swap and downloading one would be pure waste.
+    if (!llmModel || llmModel === currentLlmModel || !llmPipeline) return;
+
+    const previousModel = currentLlmModel;
+    console.log(`[ML Worker] Switching language model → ${llmModel}`);
+    try {
+      llmPipeline = await loadLlmPipeline(llmModel);
+      currentLlmModel = llmModel;
+      chatHistory = chatHistory.slice(0, 1); // A new model has no memory of the old one's turns.
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 100 } });
+    } catch (err: any) {
+      console.error(
+        `[AiVoiceAvatar] Could not load language model "${llmModel}", ` +
+        `continuing with "${previousModel}".`, err
+      );
+      self.postMessage({
+        type: 'error',
+        payload: { stage: 'llm', message: `Could not load ${llmModel}: ${err?.message || err}` },
       });
     }
     return;

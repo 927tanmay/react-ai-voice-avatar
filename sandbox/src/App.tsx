@@ -841,11 +841,9 @@ ${llmMode === 'cloud'
                         const match = KOKORO_VOICES.find(v => v.language === l.id);
                         if (match) setTtsVoice(match.id);
                       }
-                      // Qwen-0.5B barely speaks Hindi, so the local brain would
-                      // answer in broken Hindi or quietly revert to English.
-                      // Send Hindi to the cloud route, which is what anyone
-                      // shipping Hindi would use anyway.
-                      if (l.id === 'hi-IN') switchLlmMode('cloud');
+                      // Hindi runs locally on Gemma 3 1B rather than Qwen-0.5B,
+                      // which the engine selects on its own, so there is no
+                      // longer any reason to push Hindi to the cloud route.
                     }}
                     style={{ background: ttsLanguage === l.id ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.05)', color: '#FFF', border: 'none', padding: '10px 4px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
                   >{l.label}</button>
@@ -886,9 +884,9 @@ ${llmMode === 'cloud'
               </div>
               {ttsLanguage === 'hi-IN' && llmMode === 'local' && (
                 <div style={{ margin: '0 0 10px 0', fontSize: '11px', color: '#FCD34D', lineHeight: '1.4', background: 'rgba(180, 83, 9, 0.15)', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(252, 211, 77, 0.25)' }}>
-                  Qwen2.5-0.5B has very little Hindi in it. Speech and
-                  transcription stay on-device, but replies will be broken or
-                  drift back to English. Use the cloud route for Hindi.
+                  Hindi switches the local brain to Gemma 3 1B, which answers in
+                  correct Devanagari where Qwen2.5-0.5B could not. It is a
+                  larger one-time download, around 730MB.
                 </div>
               )}
               {llmMode === 'cloud' && (

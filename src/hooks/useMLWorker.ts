@@ -189,6 +189,15 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     });
   }, [config.asrModel, isReady]);
 
+  // Same for the language model, which is also chosen by language.
+  useEffect(() => {
+    if (!workerRef.current || !isReady || !config.llmModel) return;
+    workerRef.current.postMessage({
+      type: 'switchLlm',
+      payload: { llmModel: config.llmModel },
+    });
+  }, [config.llmModel, isReady]);
+
   const processAudio = useCallback((audioBlob: Float32Array, language: string, skipLlm: boolean = false) => {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
