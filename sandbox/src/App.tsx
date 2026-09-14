@@ -1266,6 +1266,7 @@ ${llmMode === 'cloud'
             hideStatusPill={isMobile || _avatarStatus === 'loading'}
             loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
             onStatusChange={setAvatarStatus}
+            onError={(e) => console.warn(`[demo] ${e.severity} in ${e.stage}: ${e.message}`)}
           />
         ) : (
           <AiVoiceAvatarLazy

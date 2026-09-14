@@ -13,8 +13,8 @@ import { AvatarDynamicsEngine } from '../lib/avatarDynamics';
 import type { VisemeWeights } from '../lib/visemeTable';
 
 // Re-exported from ../types so the headless entry never pulls in this module.
-export type { AiVoiceAvatarCapabilities } from '../types';
-import type { AiVoiceAvatarCapabilities } from '../types';
+export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError } from '../types';
 
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
@@ -98,6 +98,15 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
 
   fallbackMode?: 'wasm' | 'disable' | 'error';
+  /**
+   * Called when something in the pipeline fails.
+   *
+   * Check `severity` first. A `degraded` report means the engine recovered on a
+   * worse path and the avatar still works, so it deserves a quiet notice rather
+   * than an error screen. Use this to log to your own monitoring, or to offer
+   * typed input when the microphone is refused.
+   */
+  onError?: (error: AiVoiceAvatarError) => void;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   lowMemoryMode?: boolean;
@@ -540,9 +549,20 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onSpeechStart: (text) => {
       setCaption({ text, speaker: 'avatar' });
     },
+    onError: props.onError,
     onCapabilityDetected: (caps) => {
       if (!caps.webgpu) {
         setEngineWarning('WebGPU unavailable — using WASM (slower)');
+        // Reported as an error so a host can log it, but degraded rather than
+        // fatal: everything still works, several times slower. On weak hardware
+        // this is the difference between a demo that feels broken and one that
+        // feels slow, and only the host knows which it would rather show.
+        props.onError?.({
+          stage: 'worker',
+          severity: 'degraded',
+          message: 'WebGPU is unavailable, so inference is running on WASM and will be noticeably slower.',
+          detail: 'webgpu-unavailable',
+        });
       } else {
         setEngineWarning(null);
       }

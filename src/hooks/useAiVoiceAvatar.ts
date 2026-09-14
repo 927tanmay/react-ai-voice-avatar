@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
-import type { AiVoiceAvatarCapabilities } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 
@@ -13,6 +13,28 @@ const CRUMB = 'rava:kokoro-init-crashed';
  * busy main thread, short enough not to be heard as latency.
  */
 const SCHEDULE_LEAD_SECONDS = 0.06;
+
+/**
+ * The engine's internal stage names, mapped to the coarser public ones.
+ *
+ * Internal names distinguish things a host app cannot act on, such as which of
+ * several worker spawn strategies failed. Anything unlisted is reported as a
+ * worker fault, which is where unrecognised failures come from in practice.
+ */
+const PUBLIC_ERROR_STAGE: Record<string, AiVoiceAvatarErrorStage> = {
+  microphone: 'microphone',
+  asr: 'speech-recognition',
+  llm: 'language-model',
+  pipeline: 'conversation',
+  init: 'worker',
+  'kokoro-init': 'speech-synthesis',
+  'kokoro-message': 'speech-synthesis',
+  'kokoro-worker': 'speech-synthesis',
+  'kokoro-worker-construct': 'speech-synthesis',
+  'ml-worker-construct': 'worker',
+  'ml-worker-init': 'worker',
+  'ml-worker-message': 'worker',
+};
 
 /** How long to wait for promised audio that never arrives before recovering. */
 const RESPONSE_STALL_TIMEOUT_MS = 10000;
@@ -31,6 +53,14 @@ export interface UseAiVoiceAvatarConfig {
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
   onTranscribe?: (audio: Float32Array) => Promise<string>;
   onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
+  /**
+   * Called when something in the pipeline fails.
+   *
+   * Check `severity` before reacting: most failures here are survivable because
+   * the engine falls back, and treating a `degraded` report as fatal would hide
+   * a working avatar behind an error screen.
+   */
+  onError?: (error: AiVoiceAvatarError) => void;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   vadAssetPath?: string;
@@ -142,6 +172,26 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   }, []);
 
+  /**
+   * Report a failure to the host application.
+   *
+   * Everything that can fail routes through here so a host has one place to
+   * listen and one shape to handle, rather than a console message it cannot
+   * see and a status pill it cannot style.
+   */
+  const reportError = useCallback((
+    stage: string,
+    message: string,
+    severity: AiVoiceAvatarError['severity'],
+  ) => {
+    configRef.current.onError?.({
+      stage: PUBLIC_ERROR_STAGE[stage] ?? 'worker',
+      severity,
+      message,
+      detail: stage,
+    });
+  }, []);
+
   const clearWatchdog = useCallback(() => {
     if (playbackWatchdogRef.current) {
       clearTimeout(playbackWatchdogRef.current);
@@ -177,7 +227,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     if (typeof window === 'undefined') return null;
     const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtxClass) {
-      console.warn('[AiVoiceAvatar] AudioContext is not supported in this browser, so speech cannot be played.');
+      const errMsg = 'AudioContext is not supported in this browser, so speech cannot be played.';
+      console.warn(`[AiVoiceAvatar] ${errMsg}`);
+      configRef.current.onError?.({
+        stage: 'audio-output', severity: 'fatal', message: errMsg, detail: 'audio-context',
+      });
       return null;
     }
 
@@ -402,10 +456,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     onSpeechEnd: activeTtsEngine === 'kokoro' ? handleSpeechEnd : undefined,
     loadingProgress: config.loadingProgress,
     workerBaseUrl: config.workerBaseUrl,
-    onError: (_stage, msg) => {
+    onError: (stage, msg) => {
       console.warn(`[AiVoiceAvatar] Kokoro engine failed (${msg}). Automatically falling back to MMS TTS for audio...`);
       setHasFallenBack(true);
       setActiveTtsEngine('mms');
+      // Degraded, not fatal: the avatar still speaks, in a plainer voice.
+      reportError(stage, `Kokoro voice engine failed, using the fallback voice instead: ${msg}`, 'degraded');
     },
   });
 
@@ -523,8 +579,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           });
       }
     },
-    onError: (_stage, _msg) => {
+    onError: (stage, msg) => {
       advance('pipeline-failed');
+      reportError(stage, msg, 'fatal');
       configRef.current.onInferenceEnd?.();
       resumeVadIfAllowed();
     }
@@ -696,7 +753,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (!navigator?.mediaDevices?.getUserMedia) {
         const errMsg = 'Microphone API not available (secure HTTPS context or localhost required).';
         console.warn(`[AiVoiceAvatar] ${errMsg}`);
-        if (!isUnmountedRef.current) setMicError(errMsg);
+        if (!isUnmountedRef.current) {
+          setMicError(errMsg);
+          reportError('microphone', errMsg, 'fatal');
+        }
         return false;
       }
 
@@ -818,7 +878,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       } catch (err) {
         console.error('[AiVoiceAvatar] Could not start the microphone:', err);
         if (!isUnmountedRef.current) {
-          setMicError('Microphone access denied or unavailable. Please enable permissions in browser settings.');
+          const errMsg = 'Microphone access denied or unavailable. Please enable permissions in browser settings.';
+          setMicError(errMsg);
+          // Fatal for listening, but typed input still works, so a host may
+          // prefer to offer that rather than block the whole experience.
+          reportError('microphone', errMsg, 'fatal');
         }
         return false;
       }
@@ -830,7 +894,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (!ok && micSetupRef.current === setup) micSetupRef.current = null;
     });
     return setup;
-  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, resumeVadIfAllowed]);
+  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, resumeVadIfAllowed, reportError]);
 
   // Release audio devices when the hook goes away. Deliberately dependency-free:
   // this must run on unmount and at no other time, because anything that makes
