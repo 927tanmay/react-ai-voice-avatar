@@ -1,27 +1,4 @@
 /**
- * True when the page is being served from a local development host.
- *
- * Avatars are normally streamed from a CDN pinned to this repository's main
- * branch, which means a locally modified GLB can never be seen until it is
- * committed, merged and the CDN cache expires. That makes working on an avatar
- * effectively impossible. Probing for a local copy first while developing fixes
- * that, and costs production nothing because this is false there.
- */
-function isLocalDevHost(): boolean {
-  if (typeof window === 'undefined' || !window.location) return false;
-  const { hostname, protocol } = window.location;
-  if (protocol === 'file:') return true;
-  return (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '[::1]' ||
-    hostname === '0.0.0.0' ||
-    hostname.endsWith('.localhost') ||
-    hostname.endsWith('.local')
-  );
-}
-
-/**
  * Git tag the bundled avatars are served from.
  *
  * Immutable by design: see the CDN URL below for why a branch is not.
@@ -57,9 +34,15 @@ export async function resolveAvatarUrl(
 
   let resolvedUrl = cdnUrl;
 
-  // Explicit opt-in wins; otherwise probe locally while developing, where a
-  // 404 in the console is a fair price for being able to see your own changes.
-  const shouldProbeLocal = enableLocalAssetProbe ?? isLocalDevHost();
+  // Opt-in only.
+  //
+  // This briefly defaulted to on for any localhost origin, so that a locally
+  // modified GLB could be seen without waiting for a merge and a CDN cache to
+  // expire. That was a convenience for developing this package paid for by
+  // everyone developing *with* it: the probe 404s when no local copy exists, and
+  // every Next.js app running on localhost got that 404 in its console on every
+  // avatar load. Confirmed in a real Next.js build before reverting it.
+  const shouldProbeLocal = enableLocalAssetProbe === true;
 
   if (shouldProbeLocal) {
     try {
