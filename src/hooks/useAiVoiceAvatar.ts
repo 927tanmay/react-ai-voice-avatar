@@ -3,6 +3,7 @@ import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
 import type { AiVoiceAvatarCapabilities } from '../types';
 import { isIOS } from '../lib/device';
+import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 
 const CRUMB = 'rava:kokoro-init-crashed';
 
@@ -76,7 +77,7 @@ export interface UseAiVoiceAvatarReturn {
 }
 
 export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvatarReturn {
-  const [status, setStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
+  const [status, setStatus] = useState<TurnStatus>('loading');
   const [analyser, setAnalyser] = useState<AnalyserNode | undefined>(undefined);
   const [micError, setMicError] = useState<string | null>(null);
   
@@ -120,6 +121,20 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [config]);
 
   const isInterruptedRef = useRef(false);
+
+  /**
+   * Move the conversation on, if this event is legal where we are.
+   *
+   * Every status change goes through here. The functional form of setState
+   * matters: these events arrive from timers, workers and a voice detector, so
+   * the status at the moment one is applied is often not the status the caller
+   * closed over. Reading it inside the updater is what makes a late event judge
+   * itself against the present rather than the past.
+   */
+  const advance = useCallback((event: TurnEvent) => {
+    setStatus(current => nextStatus(current, event) ?? current);
+  }, []);
+
 
   const resumeVadIfAllowed = useCallback(() => {
     if (configRef.current.listenMode !== 'push-to-talk' && !isInterruptedRef.current) {
@@ -236,7 +251,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           playbackWatchdogRef.current = null;
           isWaitingForMoreRef.current = false;
           resetPlaybackState();
-          setStatus('idle');
+          advance('reply-stalled');
           configRef.current.onInferenceEnd?.();
           resumeVadIfAllowed();
         }, RESPONSE_STALL_TIMEOUT_MS);
@@ -246,7 +261,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     clearWatchdog();
     resetPlaybackState();
-    setStatus('idle');
+    advance('reply-finished');
     configRef.current.onInferenceEnd?.();
     resumeVadIfAllowed();
   }, [clearWatchdog, resetPlaybackState, resumeVadIfAllowed]);
@@ -331,7 +346,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           finishIfDrained();
         };
 
-        setStatus('speaking');
+        advance('reply-audio-started');
       } catch (playbackErr) {
         console.error('[AiVoiceAvatar] Could not schedule an audio chunk, skipping it:', playbackErr);
         if (item.isLast) isWaitingForMoreRef.current = false;
@@ -502,14 +517,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           })
           .catch((err) => {
             console.error('onSubmit streaming error:', err);
-            setStatus('idle');
+            advance('pipeline-failed');
             configRef.current.onInferenceEnd?.();
             resumeVadIfAllowed();
           });
       }
     },
     onError: (_stage, _msg) => {
-      setStatus('idle');
+      advance('pipeline-failed');
       configRef.current.onInferenceEnd?.();
       resumeVadIfAllowed();
     }
@@ -559,7 +574,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         handleSpeechOutput(pcmData, sampleRate, text, '', isLast);
       } catch (err) {
         console.error('[AiVoiceAvatar] Cloud onSynthesize adapter failed:', err);
-        setStatus('idle');
+        advance('pipeline-failed');
         configRef.current.onInferenceEnd?.();
         resumeVadIfAllowed();
       }
@@ -583,7 +598,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
     isInterruptedRef.current = false;
     ensureAudioContext();
-    setStatus('speaking');
+    advance('speak-requested');
     synthesizeText(text.trim(), true);
   }, [synthesizeText, isReady, ensureAudioContext]);
 
@@ -594,18 +609,19 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     // Typed input is a user gesture too, and the reply to it needs to be
     // audible without a second interaction to unlock the speakers.
     ensureAudioContext();
-    setStatus('thinking');
+    advance('text-submitted');
     configRef.current.onInferenceStart?.();
     processText(text.trim(), !!configRef.current.onSubmit);
   }, [processText, ensureAudioContext]);
 
+  // Readiness announces itself and the rules decide what it means. This used to
+  // read `status` and depend on it, which re-ran the effect on every turn of
+  // every conversation to ask a question about model loading. The transition
+  // table already refuses both events everywhere they would be wrong, so the
+  // guards here were duplicating rules that now live in one place.
   useEffect(() => {
-    if (isReady && status === 'loading') {
-      setStatus('idle');
-    } else if (!isReady && status === 'idle') {
-      setStatus('loading');
-    }
-  }, [isReady, status]);
+    advance(isReady ? 'models-ready' : 'models-unready');
+  }, [isReady, advance]);
 
   /**
    * The voice detector's speech-end handler, held in a ref.
@@ -623,7 +639,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       // the answer to the very sentence that interrupted.
       isInterruptedRef.current = false;
 
-      setStatus('thinking');
+      advance('user-stopped-speaking');
       configRef.current.onInferenceStart?.();
       vadRef.current?.pause();
 
@@ -636,13 +652,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             configRef.current.onTranscriptUpdate?.(text, 'user');
             processText(text, !!configRef.current.onSubmit);
           } else {
-            setStatus('idle');
+            advance('pipeline-failed');
             configRef.current.onInferenceEnd?.();
             resumeVadIfAllowed();
           }
         } catch (err) {
           console.error('[AiVoiceAvatar] Cloud onTranscribe adapter failed:', err);
-          setStatus('idle');
+          advance('pipeline-failed');
           configRef.current.onInferenceEnd?.();
           resumeVadIfAllowed();
         }
@@ -734,7 +750,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
 
-            setStatus('listening');
+            advance('user-started-speaking');
 
             // Barge-in: the user started talking, so drop whatever the avatar
             // was about to say. Stopping playback alone is not enough, because
@@ -786,7 +802,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             isInterruptedRef.current = false;
             clearWatchdog();
             resetPlaybackState();
-            setStatus('idle');
+            advance('user-speech-misfired');
             resumeVadIfAllowed();
           },
           startOnLoad: false
@@ -860,14 +876,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     if (!micReady || !vadRef.current || isUnmountedRef.current) return;
 
     vadRef.current.start();
-    setStatus('listening');
+    advance('listen-requested');
   }, [isReady, ensureAudioContext, ensureMicrophone]);
 
   const stopListening = useCallback(() => {
     isInterruptedRef.current = true;
     vadRef.current?.pause();
-    setStatus('idle');
-  }, []);
+    advance('stop-requested');
+  }, [advance]);
 
   const interrupt = useCallback(() => {
     isInterruptedRef.current = true;
@@ -875,7 +891,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     stopAllScheduledAudio();
     resetPlaybackState();
     configRef.current.onUserInterrupt?.();
-    setStatus('idle');
+    advance('stop-requested');
     vadRef.current?.pause(); // ensure VAD is stopped
 
     // Immediately stop worker synthesis
