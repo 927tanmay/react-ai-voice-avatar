@@ -178,6 +178,26 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     }
   }, [config.ttsEngine, config.ttsVoice, config.ttsLanguage, isReady]);
 
+  // The recognition model is chosen by language, so changing language after the
+  // worker has booted has to swap it. The worker ignores a request for the model
+  // it already holds, so this is a no-op in the common case.
+  useEffect(() => {
+    if (!workerRef.current || !isReady || !config.asrModel) return;
+    workerRef.current.postMessage({
+      type: 'switchAsr',
+      payload: { asrModel: config.asrModel },
+    });
+  }, [config.asrModel, isReady]);
+
+  // Same for the language model, which is also chosen by language.
+  useEffect(() => {
+    if (!workerRef.current || !isReady || !config.llmModel) return;
+    workerRef.current.postMessage({
+      type: 'switchLlm',
+      payload: { llmModel: config.llmModel },
+    });
+  }, [config.llmModel, isReady]);
+
   const processAudio = useCallback((audioBlob: Float32Array, language: string, skipLlm: boolean = false) => {
     if (!workerRef.current) return;
     workerRef.current.postMessage({

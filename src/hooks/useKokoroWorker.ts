@@ -12,6 +12,12 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 export interface UseKokoroWorkerConfig {
   enabled: boolean;
   voice?: string;
+  /**
+   * Language to speak. Selects the voice when none is named, and decides how
+   * text is turned into phonemes. See src/lib/hindiG2P.ts for why Hindi takes a
+   * different route through the engine than English does.
+   */
+  language?: string;
   onSpeechOutput?: (audio: Float32Array, sampleRate: number, text: string, phonemes: string, isLast?: boolean) => void;
   onSpeechEnd?: () => void;
   onReady?: () => void;
@@ -101,7 +107,13 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
 
         kokoroWorker.postMessage({
           type: 'init',
-          payload: { voice: configRef.current.voice || 'af_heart' },
+          payload: {
+            // Left undefined when unset so the worker can pick the default
+            // voice for the language, rather than defaulting to English here
+            // and having the worker override it a moment later.
+            voice: configRef.current.voice,
+            language: configRef.current.language || 'en-US',
+          },
         });
 
         kokoroWorker.onmessage = (e: MessageEvent) => {
@@ -182,15 +194,15 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     };
   }, [config.enabled]);
 
-  // Forward voice changesp
+  // Forward voice and language changes.
   useEffect(() => {
-    if (workerRef.current && isReady && config.voice) {
-      workerRef.current.postMessage({
-        type: 'setVoice',
-        payload: { voice: config.voice },
-      });
-    }
-  }, [config.voice, isReady]);
+    if (!workerRef.current || !isReady) return;
+    if (!config.voice && !config.language) return;
+    workerRef.current.postMessage({
+      type: 'setVoice',
+      payload: { voice: config.voice, language: config.language },
+    });
+  }, [config.voice, config.language, isReady]);
 
   const synthesize = useCallback((text: string, isLast: boolean = true) => {
     if (!workerRef.current) return;

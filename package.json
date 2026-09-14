@@ -109,6 +109,7 @@
     "lint": "tsc --noEmit",
     "format": "prettier --write src",
     "test:smoke": "node scripts/smoke-test.js",
+    "test:hindi": "node --experimental-strip-types scripts/test-hindi-g2p.mjs",
     "test:e2e": "playwright test"
   },
   "overrides": {

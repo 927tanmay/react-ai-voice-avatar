@@ -308,6 +308,21 @@ const CHAR_TO_VISEME: Record<string, VisemeId> = {
   'ŋ': 'NN',
   'ɹ': 'RR', 'ɾ': 'RR',
   'ˈ': 'sil', 'ˌ': 'sil', 'ː': 'sil', 'ˑ': 'sil', // Stress and length markers
+
+  // ── IPA produced by the Hindi converter (src/lib/hindiG2P.ts) ─────────────
+  //
+  // Without these the retroflexes and the palatal nasal fall through to 'sil',
+  // so a Hindi sentence animates with gaps where its most distinctive
+  // consonants are, which is the opposite of the intended effect. The retroflex
+  // series keeps its dedicated curled-tongue shape, which is the visible
+  // difference between Hindi and English mouth movement.
+  'ʈ': 'DD_RETRO', 'ɖ': 'DD_RETRO', 'ɳ': 'DD_RETRO', 'ɽ': 'DD_RETRO',
+  'ʂ': 'SS',
+  'ɲ': 'NN',
+  'ʋ': 'FF',        // Hindi व is labiodental, closer to 'v' than to 'w'
+  'ɡ': 'KK',        // U+0261, the IPA script g, distinct from the ASCII 'g' above
+  'ʰ': 'ASPIRATE',  // Aspiration, the contrast between क and ख
+  '̃': 'NN',   // Combining tilde: a nasalised vowel
 };
 
 /**

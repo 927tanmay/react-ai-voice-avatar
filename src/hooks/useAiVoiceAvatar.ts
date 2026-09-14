@@ -371,6 +371,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd, interrupt: kokoroInterrupt } = useKokoroWorker({
     enabled: activeTtsEngine === 'kokoro',
     voice: config.ttsVoice,
+    language: config.ttsLanguage,
     onSpeechOutput: activeTtsEngine === 'kokoro' ? handleSpeechOutput : undefined,
     onSpeechEnd: activeTtsEngine === 'kokoro' ? handleSpeechEnd : undefined,
     loadingProgress: config.loadingProgress,

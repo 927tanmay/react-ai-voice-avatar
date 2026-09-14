@@ -50,15 +50,40 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   avatarSize?: 'sm' | 'md' | 'lg' | number;
 
   systemPrompt?: string;
+  /**
+   * Local text generation model, used only when `onSubmit` is absent. Defaults
+   * by language: Qwen2.5-0.5B for English, Gemma 3 1B for Hindi, which needs
+   * the larger model to produce correct Hindi at all.
+   */
   llmModel?: string;
   /**
-   * Language for the built-in speech engines. Only these two have local voice models today.
-   * For any other language, supply `onSynthesize` and use a cloud voice provider.
+   * Language for the built-in speech engines.
+   *
+   * With `ttsEngine: 'kokoro'` these all use Kokoro's own voices, including
+   * Hindi. With `'mms'` only English and Hindi have local models. For anything
+   * else, supply `onSynthesize` and use a cloud voice provider.
    */
-  ttsLanguage?: 'en-US' | 'hi-IN';
+  ttsLanguage?: 'en-US' | 'en-GB' | 'hi-IN';
   ttsEngine?: 'kokoro' | 'mms';
+  /**
+   * Kokoro voice id. Defaults to a voice matching `ttsLanguage`, so this is
+   * only needed to pick a specific one: `af_heart` and `am_michael` for
+   * American English, `bf_emma` for British, `hf_alpha` and `hm_omega` for
+   * Hindi. A voice whose language disagrees with `ttsLanguage` is corrected,
+   * with a warning, since an English voice reading Hindi is never intended.
+   */
   ttsVoice?: string;
+  /**
+   * Speech recognition model. Defaults by language: Whisper base for English,
+   * Whisper small for Hindi, which needs the larger model to be usable and is
+   * about three times the download. Set this to pin one model for every
+   * language, or to use a fine-tuned one.
+   */
   asrModel?: string;
+  /**
+   * Language to transcribe. Defaults to `ttsLanguage`, since a conversation is
+   * almost always held in one language.
+   */
   asrLanguage?: string;
 
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
@@ -111,6 +136,39 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    */
   onAudioLevelChange?: (level: number, source: 'mic' | 'tts') => void;
 }
+
+/**
+ * Speech recognition model per language.
+ *
+ * Whisper base is the smallest multilingual Whisper, and its accuracy outside
+ * English drops sharply: on Hindi it returns fluent, confident, wrong text
+ * rather than failing visibly. Whisper small is roughly three times the
+ * download and transcribes Hindi well enough to hold a conversation.
+ *
+ * The larger model is selected only for the languages that need it, so nobody
+ * pays for a language they never use. Pass `asrModel` to override either way.
+ */
+const ASR_MODEL_BY_LANGUAGE: Record<string, string> = {
+  'hi-IN': 'onnx-community/whisper-small',
+};
+const DEFAULT_ASR_MODEL = 'onnx-community/whisper-base';
+
+/**
+ * Local language model per language.
+ *
+ * Qwen2.5-0.5B has almost no Hindi in it and answers in English or in broken
+ * Devanagari. Model size turned out to matter more than any multilingual claim:
+ * Qwen3-0.6B advertises 119 languages and still produced Hindi-shaped nonsense,
+ * while Gemma 3 1B answers correctly. It is roughly 270MB more than the default
+ * and is used only when Hindi is selected.
+ *
+ * Pass `llmModel` to pin one model, or `onSubmit` to skip local generation and
+ * use your own backend, which is what most production apps will do.
+ */
+const LLM_MODEL_BY_LANGUAGE: Record<string, string> = {
+  'hi-IN': 'onnx-community/gemma-3-1b-it-ONNX',
+};
+const DEFAULT_LLM_MODEL = 'onnx-community/Qwen2.5-0.5B-Instruct';
 
 const ARKIT_BLENDSHAPES = [
   "eyeBlinkLeft", "eyeLookDownLeft", "eyeLookInLeft", "eyeLookOutLeft", "eyeLookUpLeft", "eyeSquintLeft", "eyeWideLeft",
@@ -417,11 +475,11 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     lightingPreset = 'studio',
     loadingProgress,
     fallbackMode = 'wasm',
-    asrLanguage = 'en-US',
+    asrLanguage,
     ttsLanguage = 'en-US',
     ttsEngine = 'kokoro',
     ttsVoice = 'af_heart',
-    asrModel = 'onnx-community/whisper-base',
+    asrModel,
     onSubmit,
     onTranscriptUpdate,
     onTranscribe,
@@ -454,14 +512,20 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     currentSpeechPhonemesRef,
     currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
   } = useAiVoiceAvatar({
-    llmModel: props.llmModel,
-    asrModel: props.asrModel,
+    // Only matters when no onSubmit is supplied, since that skips local
+    // generation entirely.
+    llmModel: props.llmModel ?? LLM_MODEL_BY_LANGUAGE[ttsLanguage] ?? DEFAULT_LLM_MODEL,
+    asrModel: asrModel ?? ASR_MODEL_BY_LANGUAGE[asrLanguage ?? ttsLanguage] ?? DEFAULT_ASR_MODEL,
     ttsLanguage,
     ttsEngine: props.ttsEngine,
     ttsVoice: props.ttsVoice,
     systemPrompt: props.systemPrompt,
     fallbackMode,
-    asrLanguage,
+    // People answer in the language they were addressed in, so listening
+    // follows speaking unless told otherwise. Defaulting this to English on its
+    // own meant choosing Hindi gave Hindi speech but English transcripts, and
+    // nothing revealed the mismatch until you actually said something.
+    asrLanguage: asrLanguage ?? ttsLanguage,
     onSubmit,
     onTranscriptUpdate: (text, speaker) => {
       if (speaker === 'user') {

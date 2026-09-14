@@ -13,6 +13,12 @@ let chatHistory: Array<{ role: string, content: string }> = [];
 
 let currentDevice: 'webgpu' | 'wasm' = 'webgpu';
 let currentTtsLanguage: string = 'en-US';
+/** The caller's prompt without any language instruction, so it can be re-applied. */
+let baseSystemPrompt: string = '';
+/** The speech recognition model currently loaded, to avoid reloading it needlessly. */
+let currentAsrModel: string = '';
+/** The text generation model currently loaded, to avoid reloading it needlessly. */
+let currentLlmModel: string = '';
 let currentTtsVoice: string = 'af_heart';
 let currentTtsEngine: 'kokoro' | 'mms' = 'mms';
 
@@ -66,6 +72,174 @@ const resolveTtsRepo = (lang: string): string => {
   );
   return LOCAL_TTS_REPOS['en-US'];
 };
+
+/**
+ * Names a language in its own script, plus English so a small model recognises it.
+ */
+const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
+  'hi-IN':
+    'Reply only in Hindi, written in the Devanagari script. ' +
+    'Do not reply in English and do not write Hindi in Latin letters. ' +
+    'हमेशा हिन्दी में देवनागरी लिपि में उत्तर दें।',
+};
+
+/**
+ * Tell the model which language to answer in.
+ *
+ * Selecting a voice changes how a reply is spoken, not what language it is
+ * written in, and a model given an English system prompt answers in English no
+ * matter which voice is waiting to read it out. That produced the worst possible
+ * result: an English sentence pronounced by a Hindi voice.
+ *
+ * The instruction goes last, because a small instruction-tuned model weights the
+ * end of its system prompt most heavily, and it names the script explicitly,
+ * since models asked for Hindi will otherwise often answer in transliterated
+ * Latin, which the phonemiser has no way to read as Hindi.
+ */
+/**
+ * Instructions for languages where the speaker's own gender inflects the verb.
+ *
+ * Hindi conjugates the first person for gender: a woman says "करती हूँ" where a
+ * man says "करता हूँ". Models default to the masculine, so a female avatar with
+ * a female voice refers to herself in the masculine throughout, which to a Hindi
+ * speaker is not a stylistic wobble but plainly wrong.
+ *
+ * A caveat measured rather than assumed: Gemma 3 1B ignores this entirely.
+ * Against a persona prompt carrying no gender of its own it answered in the
+ * masculine every time, whether told it was female, told it was male, or told
+ * nothing, and three phrasings of the instruction changed nothing. What did
+ * work was the grammar of the persona prompt itself: described as "ऑर्डर लेने
+ * वाली सहायक", the same model used feminine forms consistently.
+ *
+ * So the reliable lever for a small local model is to write the persona in the
+ * gender you want, and this instruction is a supplement for models large enough
+ * to follow it. Anyone writing a Hindi persona should put the gender in the
+ * description rather than rely on this.
+ *
+ * Only the speaker's own forms are constrained. Nothing here touches how the
+ * model addresses the user, whose gender it has no way of knowing.
+ */
+const SPEAKER_GENDER_INSTRUCTIONS: Record<string, Record<string, string>> = {
+  'hi-IN': {
+    female:
+      'You are female, so use feminine first-person verb forms for yourself. ' +
+      'आप स्त्री हैं। अपने बारे में बात करते समय स्त्रीलिंग क्रिया रूपों का ' +
+      'प्रयोग करें, जैसे "करती हूँ", "सकती हूँ", "रही हूँ"।',
+    male:
+      'You are male, so use masculine first-person verb forms for yourself. ' +
+      'आप पुरुष हैं। अपने बारे में बात करते समय पुल्लिंग क्रिया रूपों का ' +
+      'प्रयोग करें, जैसे "करता हूँ", "सकता हूँ", "रहा हूँ"।',
+  },
+};
+
+/**
+ * Read a speaker's gender out of a Kokoro voice name.
+ *
+ * Kokoro names voices <language><gender>_<name>, so af_heart is an American
+ * female and hm_omega a Hindi male. Deriving it beats asking the caller for it
+ * twice, and a name that does not follow the convention simply yields nothing
+ * rather than a guess.
+ */
+const genderFromVoice = (voice: string): 'female' | 'male' | null => {
+  const marker = voice?.[1];
+  if (marker === 'f') return 'female';
+  if (marker === 'm') return 'male';
+  return null;
+};
+
+const withLanguageInstruction = (prompt: string, language: string, voice?: string): string => {
+  const parts = [prompt];
+
+  const instruction = LANGUAGE_INSTRUCTIONS[language];
+  if (instruction) parts.push(instruction);
+
+  const gender = voice ? genderFromVoice(voice) : null;
+  const gendered = gender ? SPEAKER_GENDER_INSTRUCTIONS[language]?.[gender] : undefined;
+  if (gendered) parts.push(gendered);
+
+  return parts.join('\n\n');
+};
+
+/** Load a text generation pipeline, reporting download progress as it goes. */
+const loadLlmPipeline = (model: string) => {
+  self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 0 } });
+  return pipeline('text-generation', model, {
+    device: currentDevice,
+    dtype: 'q4', // Quantization for speed
+    progress_callback: (p: any) => {
+      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress } });
+      }
+    },
+  });
+};
+
+type ChatTurn = { role: string; content: string };
+
+/**
+ * Force the conversation into strict user/assistant alternation.
+ *
+ * Stricter chat templates, Gemma's among them, refuse anything else outright
+ * with "Conversation roles must alternate", and the message points at the
+ * history rather than at what actually produced it. Two things produce it here.
+ * Trimming keeps the last six turns, and six turns back can land on an
+ * assistant, so the conversation opens with a reply to nothing. And an
+ * interrupted turn never records its assistant half, leaving two user turns
+ * together. Qwen's template tolerates both, which is why neither showed up
+ * until a second model arrived.
+ *
+ * Leading assistant turns are dropped, having nothing to answer. Same-role
+ * neighbours are merged rather than discarded, since what was said still
+ * belongs in the context.
+ */
+const alternating = (turns: ChatTurn[]): ChatTurn[] => {
+  const out: ChatTurn[] = [];
+  for (const turn of turns) {
+    if (out.length === 0 && turn.role !== 'user') continue;
+    const previous = out[out.length - 1];
+    if (previous && previous.role === turn.role) {
+      previous.content = `${previous.content}\n${turn.content}`;
+      continue;
+    }
+    out.push({ ...turn });
+  }
+  return out;
+};
+
+/**
+ * Shape the conversation the way this particular model expects it.
+ *
+ * The system turn is kept in our own history whatever the model wants, so that
+ * switching models mid-session never loses the instructions. Templates with no
+ * system role get it folded into the first thing the user said instead.
+ */
+const messagesForModel = (history: ChatTurn[], tokenizer: any): ChatTurn[] => {
+  const hasSystem = history.length > 0 && history[0].role === 'system';
+  if (!hasSystem) return alternating(history);
+
+  const [system, ...rest] = history;
+  const turns = alternating(rest);
+
+  // A template that never mentions the system role cannot render one.
+  const supportsSystem = String(tokenizer?.chat_template ?? '').includes('system');
+  if (supportsSystem) return [system, ...turns];
+
+  if (turns.length === 0) return [{ role: 'user', content: system.content }];
+  return turns.map((turn, i) =>
+    i === 0 ? { role: 'user', content: `${system.content}\n\n${turn.content}` } : turn
+  );
+};
+
+/** Load a speech recognition pipeline, reporting download progress as it goes. */
+const loadAsrPipeline = (model: string, device: 'webgpu' | 'wasm') =>
+  pipeline('automatic-speech-recognition', model, {
+    device,
+    progress_callback: (p: any) => {
+      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress } });
+      }
+    },
+  });
 
 const processTtsQueue = async () => {
   if (isTtsProcessing) return;
@@ -151,34 +325,33 @@ self.onmessage = async (e: MessageEvent) => {
     currentTtsVoice = ttsVoice;
     currentTtsEngine = ttsEngine;
 
+    // Say which models this session will use. Several are chosen by language
+    // rather than named by the caller, and without this the only way to find out
+    // which one you got was to watch the network tab during a long download.
+    console.log(
+      `[ML Worker] Language ${ttsLanguage} → speech recognition: ${asrModel}, ` +
+      `text generation: ${payload.loadLlm === false ? 'skipped (onSubmit supplied)' : llmModel}`
+    );
+
+    baseSystemPrompt = systemPrompt;
     chatHistory = [
-      { role: 'system', content: systemPrompt }
+      // payload.ttsVoice rather than the destructured ttsVoice: that one carries
+      // a default, and inferring the speaker's gender from a voice the caller
+      // never chose would put a claim in the prompt they did not make.
+      { role: 'system', content: withLanguageInstruction(systemPrompt, ttsLanguage, payload.ttsVoice) }
     ];
 
     try {
       // 1. Check capabilities / ASR
       self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });
+      currentAsrModel = asrModel;
       try {
-        asrPipeline = await pipeline('automatic-speech-recognition', asrModel, {
-          device: 'webgpu',
-          progress_callback: (p: any) => {
-            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-              self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }});
-            }
-          }
-        });
+        asrPipeline = await loadAsrPipeline(asrModel, 'webgpu');
         currentDevice = 'webgpu';
       } catch (err) {
         console.warn('WebGPU ASR failed, falling back to WASM', err);
         if (fallbackMode === 'wasm') {
-          asrPipeline = await pipeline('automatic-speech-recognition', asrModel, {
-            device: 'wasm',
-            progress_callback: (p: any) => {
-              if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-                self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress }});
-              }
-            }
-          });
+          asrPipeline = await loadAsrPipeline(asrModel, 'wasm');
           currentDevice = 'wasm';
         } else if (fallbackMode === 'error') {
           self.postMessage({ type: 'error', payload: { stage: 'asr', message: 'WebGPU failed' } });
@@ -191,16 +364,8 @@ self.onmessage = async (e: MessageEvent) => {
 
       // 2. Load LLM if not skipped
       if (payload.loadLlm !== false) {
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 0 } });
-        llmPipeline = await pipeline('text-generation', llmModel, {
-          device: currentDevice,
-          dtype: 'q4', // Quantization for speed
-          progress_callback: (p: any) => {
-            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-              self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress }});
-            }
-          }
-        });
+        currentLlmModel = llmModel;
+        llmPipeline = await loadLlmPipeline(llmModel);
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
@@ -225,13 +390,84 @@ self.onmessage = async (e: MessageEvent) => {
     }
   }
 
+  if (type === 'switchAsr') {
+    const { asrModel } = payload;
+    if (!asrModel || asrModel === currentAsrModel) return;
+
+    // Reload only the recognition model. Recreating the whole worker would
+    // discard the language model too, and re-downloading a gigabyte because
+    // someone changed language is not a trade worth making.
+    const previousModel = currentAsrModel;
+    console.log(`[ML Worker] Switching speech recognition model → ${asrModel}`);
+    try {
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });
+      asrPipeline = await loadAsrPipeline(asrModel, currentDevice === 'wasm' ? 'wasm' : 'webgpu');
+      currentAsrModel = asrModel;
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 100 } });
+    } catch (err: any) {
+      // Keep the model that is already loaded rather than leaving the pipeline
+      // with nothing to transcribe with. Worse recognition beats none.
+      console.error(
+        `[AiVoiceAvatar] Could not load speech recognition model "${asrModel}", ` +
+        `continuing with "${previousModel}".`, err
+      );
+      self.postMessage({
+        type: 'error',
+        payload: { stage: 'asr', message: `Could not load ${asrModel}: ${err?.message || err}` },
+      });
+    }
+    return;
+  }
+
+  if (type === 'switchLlm') {
+    const { llmModel } = payload;
+    // Skip when unchanged, and when the host supplies its own replies: there is
+    // no local model to swap and downloading one would be pure waste.
+    if (!llmModel || llmModel === currentLlmModel || !llmPipeline) return;
+
+    const previousModel = currentLlmModel;
+    console.log(`[ML Worker] Switching language model → ${llmModel}`);
+    try {
+      llmPipeline = await loadLlmPipeline(llmModel);
+      currentLlmModel = llmModel;
+      chatHistory = chatHistory.slice(0, 1); // A new model has no memory of the old one's turns.
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 100 } });
+    } catch (err: any) {
+      console.error(
+        `[AiVoiceAvatar] Could not load language model "${llmModel}", ` +
+        `continuing with "${previousModel}".`, err
+      );
+      self.postMessage({
+        type: 'error',
+        payload: { stage: 'llm', message: `Could not load ${llmModel}: ${err?.message || err}` },
+      });
+    }
+    return;
+  }
+
   if (type === 'switchTts') {
     const { ttsVoice, ttsLanguage, ttsEngine } = payload;
     const oldLanguage = currentTtsLanguage;
+    const oldVoice = currentTtsVoice;
     if (ttsVoice) currentTtsVoice = ttsVoice;
     if (ttsLanguage) currentTtsLanguage = ttsLanguage;
     if (ttsEngine) currentTtsEngine = ttsEngine;
     console.log(`[ML Worker] Switched TTS configuration → Engine: ${currentTtsEngine}, Voice: ${currentTtsVoice}, Language: ${currentTtsLanguage}`);
+
+    // Rebuild the system prompt when the language changes, or when the voice
+    // changes to one of a different gender. Without the first, switching to
+    // Hindi changed the voice but left the model under English instructions, so
+    // it kept answering in English and the Hindi voice read that aloud. Without
+    // the second, switching from a female to a male voice leaves the model still
+    // speaking of itself as a woman, which in Hindi is audible in every verb.
+    const languageChanged = Boolean(ttsLanguage) && ttsLanguage !== oldLanguage;
+    const genderChanged = genderFromVoice(currentTtsVoice) !== genderFromVoice(oldVoice);
+    if ((languageChanged || genderChanged) && chatHistory.length > 0 && chatHistory[0].role === 'system') {
+      chatHistory[0] = {
+        role: 'system',
+        content: withLanguageInstruction(baseSystemPrompt, currentTtsLanguage, currentTtsVoice),
+      };
+    }
     
     // Load MMS pipeline only when running in MMS mode and either uninitialized or language changed
     if (currentTtsEngine !== 'kokoro' && (!ttsPipeline || (ttsLanguage && ttsLanguage !== oldLanguage))) {
@@ -257,10 +493,14 @@ self.onmessage = async (e: MessageEvent) => {
     // 2. LLM Inference & Streaming Phrase-by-Phrase TTS
     chatHistory.push({ role: 'user', content: transcript });
 
-    // Truncate chat history to prevent WebGPU OOM or Tensor Shape crashes
-    // We keep the system prompt (index 0) and the last 6 messages (3 turns)
+    // Truncate chat history to prevent WebGPU OOM or Tensor Shape crashes.
+    // Keep the system prompt and the last three exchanges, cutting on a user
+    // turn: six messages back can land on an assistant, which would open the
+    // conversation with a reply to nothing.
     if (chatHistory.length > 7) {
-      chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
+      const recent = chatHistory.slice(-6);
+      const firstUser = recent.findIndex(m => m.role === 'user');
+      chatHistory = [chatHistory[0], ...(firstUser === -1 ? [] : recent.slice(firstUser))];
     }
 
     let fullReplyText = '';
@@ -300,7 +540,7 @@ self.onmessage = async (e: MessageEvent) => {
 
     try {
       // @ts-ignore
-      await llmPipeline(chatHistory, { max_new_tokens: 128, streamer });
+      await llmPipeline(messagesForModel(chatHistory, llmPipeline.tokenizer), { max_new_tokens: 128, streamer });
       
       if (sentenceBuffer.trim().length > 0) {
         pushPhraseToTts(sentenceBuffer.trim(), true);
