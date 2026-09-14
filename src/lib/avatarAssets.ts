@@ -21,6 +21,13 @@ function isLocalDevHost(): boolean {
   );
 }
 
+/**
+ * Git tag the bundled avatars are served from.
+ *
+ * Immutable by design: see the CDN URL below for why a branch is not.
+ */
+const ASSET_TAG = 'avatars-v1';
+
 export async function resolveAvatarUrl(
   preset: 'ananya' | 'aarav' | 'default' | 'kiosk' = 'ananya',
   onProgress?: (pct: number, label: string) => void,
@@ -38,8 +45,15 @@ export async function resolveAvatarUrl(
 
   const fileName = fileMap[preset] || fileMap.ananya;
   const localPath = `/${fileName}`;
-  // Stream high-resolution GLB mesh over global edge CDN directly from GitHub releases (zero NPM bundle weight!)
-  const cdnUrl = `https://cdn.jsdelivr.net/gh/927tanmay/react-ai-voice-avatar@main/assets/avatars/${fileName}`;
+  // Stream the GLB from a global edge CDN rather than shipping it in the npm
+  // package, which keeps the install small.
+  //
+  // Pinned to a tag rather than to a branch. On `@main` every merge silently
+  // changes what existing installs download, and because jsDelivr caches
+  // aggressively, half your users see the old avatar and half the new one for
+  // as long as the cache holds. A tag is immutable, so an install keeps the
+  // avatar it was built against. Bump ASSET_TAG when a bundled avatar changes.
+  const cdnUrl = `https://cdn.jsdelivr.net/gh/927tanmay/react-ai-voice-avatar@${ASSET_TAG}/assets/avatars/${fileName}`;
 
   let resolvedUrl = cdnUrl;
 
