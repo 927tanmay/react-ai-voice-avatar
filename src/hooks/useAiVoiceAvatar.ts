@@ -213,6 +213,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     if (scheduledSourcesRef.current.length > 0) return;
     if (audioQueueRef.current.length > 0) return;
 
+    // An interrupted turn has already been given whatever state belongs to it:
+    // 'listening' if the user spoke over the avatar, 'idle' if they stopped it
+    // deliberately. Draining the leftovers of the abandoned reply must not
+    // overwrite that, or a late completion event drops someone back to idle in
+    // the middle of their own sentence.
+    if (isInterruptedRef.current) {
+      clearWatchdog();
+      resetPlaybackState();
+      return;
+    }
+
     if (isWaitingForMoreRef.current) {
       // More chunks are promised. Arm the watchdog so a stalled generator cannot
       // strand the pipeline in 'speaking' forever.
@@ -607,6 +618,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const handleVadSpeechEndRef = useRef<(audio: Float32Array) => void>(() => {});
   useEffect(() => {
     handleVadSpeechEndRef.current = async (audio: Float32Array) => {
+      // The user has finished speaking, so a reply is wanted again. This
+      // reopens the gate that barge-in closed; leaving it shut would silence
+      // the answer to the very sentence that interrupted.
+      isInterruptedRef.current = false;
+
       setStatus('thinking');
       configRef.current.onInferenceStart?.();
       vadRef.current?.pause();
@@ -725,6 +741,18 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // the workers keep generating and the next chunk would arrive and
             // play straight over the user.
             const wasSpeaking = scheduledSourcesRef.current.length > 0;
+
+            // Mark the turn interrupted before tearing anything down.
+            //
+            // Stopping the workers is a message, not an instruction that has
+            // already taken effect, so a chunk generated just before it arrives
+            // is still on its way here. Without this flag that chunk passes the
+            // guard in handleSpeechOutput, gets scheduled, and the avatar starts
+            // talking over the user in the moment right after they interrupted
+            // it. Cleared again when the user's turn ends and a new reply is
+            // legitimately expected.
+            isInterruptedRef.current = true;
+
             clearWatchdog();
             stopAllScheduledAudio();
             resetPlaybackState();
@@ -737,6 +765,29 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return;
             handleVadSpeechEndRef.current(audio);
+          },
+          /**
+           * A sound that started like speech and turned out not to be.
+           *
+           * The detector runs onVADMisfire *instead of* onSpeechEnd and discards
+           * the audio, so every piece of state that onSpeechStart set has to be
+           * undone here or it is never undone at all. A cough used to leave the
+           * avatar showing 'listening' for the rest of the session, and would
+           * now also leave the turn marked interrupted, silently discarding
+           * every reply from then on.
+           *
+           * Whatever the avatar was saying has already been stopped and cannot
+           * be recovered, so the honest resting place is idle and listening.
+           */
+          onVADMisfire: () => {
+            if (isUnmountedRef.current) return;
+            if (configRef.current.listenMode === 'push-to-talk') return;
+
+            isInterruptedRef.current = false;
+            clearWatchdog();
+            resetPlaybackState();
+            setStatus('idle');
+            resumeVadIfAllowed();
           },
           startOnLoad: false
         });
@@ -763,7 +814,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (!ok && micSetupRef.current === setup) micSetupRef.current = null;
     });
     return setup;
-  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState]);
+  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, resumeVadIfAllowed]);
 
   // Release audio devices when the hook goes away. Deliberately dependency-free:
   // this must run on unmount and at no other time, because anything that makes
