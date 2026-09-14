@@ -24,6 +24,13 @@ Add a talking, lip-synced 3D avatar to your existing AI chatbot in 30 lines. Kee
 ### 🎧 Entry 1: The Headless Hook ("Voice Mode for your App")
 If you are building a ChatGPT-style voice interface or a custom audio visualizer and **don't want any 3D dependencies**, use the headless hook. It provides all the speech-recognition, text-to-speech, and audio-reactive hooks with zero UI overhead.
 
+Import it from `react-ai-voice-avatar/headless` and Three.js never enters your module graph. Measured on the same Next.js App Router build, one route rendering the 3D avatar and one rendering only the hook:
+
+| Route | First Load JS |
+| --- | --- |
+| 3D avatar | 389 kB |
+| Headless hook | 117 kB |
+
 ```tsx
 import { useAiVoiceAvatar } from 'react-ai-voice-avatar';
 
@@ -84,11 +91,17 @@ npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 > ```
 
 > [!IMPORTANT]
-> **React 19.3 and `ERESOLVE`:** `@react-three/fiber@9.7` declares its React peer as `>=19 <19.3`, so installing it alongside React 19.3 or newer fails with `ERESOLVE unable to resolve dependency tree`. This is a Three.js binding constraint, not a limit of this package — our own peer range accepts React 19.3. Until fiber widens its range, pin React:
+> **React 19.3 and `ERESOLVE`:** `@react-three/fiber@9.7` still declares its React peer as `>=19 <19.3`, so a default `npm install` alongside React 19.3 or newer fails with `ERESOLVE unable to resolve dependency tree`. This is a Three.js binding constraint, not a limit of this package: our own peer range accepts React 19.3.
+>
+> That range is over-cautious. We build and run a Next.js App Router app against React 19.3.0 with `@react-three/fiber@9.7.0` and the avatar renders, loads its models and speaks with no errors. So install past it rather than downgrading:
+> ```bash
+> npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei --legacy-peer-deps
+> ```
+> If you would rather keep strict peer resolution, pinning React works too:
 > ```bash
 > npm install react@~19.2.0 react-dom@~19.2.0
 > ```
-> The headless entry point (`react-ai-voice-avatar/headless`) has no Three.js dependency at all and works on any React 18 or 19 version.
+> The headless entry point (`react-ai-voice-avatar/headless`) pulls in no Three.js at all, so it never hits this and works on any React 18 or 19 version.
 
 ### ⚡ DX & Performance (Lazy Code-Splitting)
 
