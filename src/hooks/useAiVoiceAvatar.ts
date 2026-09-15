@@ -130,6 +130,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
   const vadRef = useRef<any | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  /**
+   * A second context for input only.
+   *
+   * Pausing a reply suspends the playback context, and a suspended context
+   * freezes every graph on it. With the microphone meter sharing that context it
+   * went flat for the whole time a user was speaking over the avatar, which is
+   * exactly when a host app most wants to draw it. Input never suspends.
+   */
+  const inputContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   /** Set once the hook unmounts, so in-flight async setup can bail out. */
   const isUnmountedRef = useRef(false);
@@ -874,9 +883,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           return false;
         }
 
-        const mAnalyser = audioCtx.createAnalyser();
+        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+        const inputCtx: AudioContext = inputContextRef.current ?? new AudioCtxClass();
+        inputContextRef.current = inputCtx;
+
+        const mAnalyser = inputCtx.createAnalyser();
         mAnalyser.fftSize = 256;
-        const source = audioCtx.createMediaStreamSource(stream);
+        const source = inputCtx.createMediaStreamSource(stream);
         source.connect(mAnalyser);
         // Deliberately not connected to the destination, which would feed the
         // microphone back out through the speakers.
@@ -889,7 +902,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         const vad = vadModule?.MicVAD ? vadModule : (vadModule?.default ?? vadModule);
         const myvad = await vad.MicVAD.new({
           getStream: () => Promise.resolve(stream),
-          audioContext: audioCtx,
+          // Deliberately not given our audio context, so it builds its own.
+          //
+          // Pausing a reply suspends the playback context, and a suspended
+          // context stops every graph on it. Sharing one meant suspending
+          // playback also deafened the detector: it could never report that the
+          // sound had ended, so the conversation stuck on 'listening' forever.
+          // Two contexts cost a little memory and keep hearing independent of
+          // speaking, which is what they are.
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
           onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/",
           onSpeechStart: () => {
@@ -1013,6 +1033,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       stopAllScheduledAudio();
       try {
         audioContextRef.current?.close();
+      } catch (e) {}
+      try {
+        inputContextRef.current?.close();
       } catch (e) {}
       try {
         mediaStreamRef.current?.getTracks().forEach(t => t.stop());
