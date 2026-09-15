@@ -55,6 +55,18 @@ const cases = [
     expect: 'speaking',
   },
   {
+    name: 'a false trigger during a reply lets the reply continue',
+    start: 'speaking',
+    events: ['user-started-speaking', 'reply-resumed'],
+    expect: 'speaking',
+  },
+  {
+    name: 'a late chunk still cannot resume itself without the detector',
+    start: 'speaking',
+    events: ['user-started-speaking', 'reply-audio-started'],
+    expect: 'listening',
+  },
+  {
     name: 'a misfire returns to idle rather than sticking on listening',
     start: 'idle',
     events: ['user-started-speaking', 'user-speech-misfired'],

@@ -44,6 +44,14 @@ export type TurnEvent =
   | 'text-submitted'
   /** A chunk of the reply began playing. */
   | 'reply-audio-started'
+  /**
+   * A reply that was paused by a false trigger is continuing.
+   *
+   * Distinct from `reply-audio-started`, which is refused while someone is
+   * speaking so that a late chunk cannot take the floor back. This one is only
+   * ever sent after the detector has withdrawn its claim that anyone spoke.
+   */
+  | 'reply-resumed'
   /** The reply finished and the queue is empty. */
   | 'reply-finished'
   /** Promised audio never arrived. */
@@ -79,6 +87,7 @@ const TRANSITIONS: Record<TurnStatus, Partial<Record<TurnEvent, TurnStatus>>> = 
   listening: {
     'user-stopped-speaking': 'thinking',
     'user-speech-misfired': 'idle',
+    'reply-resumed': 'speaking',
     'stop-requested': 'idle',
     'pipeline-failed': 'idle',
     'text-submitted': 'thinking',

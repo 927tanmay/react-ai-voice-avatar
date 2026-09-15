@@ -144,8 +144,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const scheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   /** AudioContext time at which the next chunk should begin. */
   const nextStartTimeRef = useRef<number>(0);
-  /** Pending timers that hand each chunk's text to the lip sync engine on cue. */
-  const visemeTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  /**
+   * Pending lip sync cues, each holding the audio-clock time it belongs to and
+   * what it does, so a cue can be re-armed after playback is paused and resumed.
+   */
+  const visemeTimersRef = useRef<Array<{
+    timer: ReturnType<typeof setTimeout>;
+    startAt: number;
+    apply: () => void;
+  }>>([]);
   const audioQueueRef = useRef<Array<{ audioData: Float32Array; sampleRate: number; text: string; phonemes: string; isLast: boolean }>>([]);
   const isWaitingForMoreRef = useRef<boolean>(false);
   const currentSpeechTextRef = useRef<string>('');
@@ -270,6 +277,45 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, []);
 
   /**
+   * Pause the reply without discarding it.
+   *
+   * The detector announces speech the moment a sound crosses its threshold, and
+   * only decides later whether that sound was really speech. Tearing the reply
+   * down on the announcement meant a cough killed the answer outright.
+   *
+   * Suspending the audio context stops the sound instantly and keeps everything
+   * recoverable: scheduled chunks hold their places, and because the lip sync
+   * reads the audio clock, the mouth freezes with the voice rather than running
+   * on ahead. Only the lip sync cues need handling by hand, since they are
+   * wall-clock timers that would otherwise fire during the pause.
+   */
+  const suspendPlayback = useCallback(() => {
+    const ctx = audioContextRef.current;
+    if (!ctx || ctx.state !== 'running') return;
+    for (const cue of visemeTimersRef.current) clearTimeout(cue.timer);
+    ctx.suspend().catch(() => { /* already suspended or closed */ });
+  }, []);
+
+  /**
+   * Continue a reply that a false trigger paused.
+   *
+   * Cues are re-armed against the audio clock rather than restored to their old
+   * delays: the clock did not advance while suspended, so the remaining wait is
+   * simply the distance from now to where each cue belongs.
+   */
+  const resumePlayback = useCallback(() => {
+    const ctx = audioContextRef.current;
+    if (!ctx || ctx.state !== 'suspended') return;
+    ctx.resume()
+      .then(() => {
+        for (const cue of visemeTimersRef.current) {
+          cue.timer = setTimeout(cue.apply, Math.max(0, (cue.startAt - ctx.currentTime) * 1000));
+        }
+      })
+      .catch(() => { /* context closed under us */ });
+  }, []);
+
+  /**
    * Silence everything, immediately.
    *
    * Look-ahead scheduling means several sources can be queued on the audio
@@ -285,7 +331,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
     scheduledSourcesRef.current = [];
 
-    for (const timer of visemeTimersRef.current) clearTimeout(timer);
+    for (const cue of visemeTimersRef.current) clearTimeout(cue.timer);
     visemeTimersRef.current = [];
 
     audioQueueRef.current = [];
@@ -403,16 +449,16 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         // The lip sync engine reads these refs directly, so they must flip when
         // the chunk actually begins rather than when it is scheduled. A timer is
         // accurate to within a few milliseconds, which is imperceptible on a face.
-        const startsInMs = Math.max(0, (startAt - ctx.currentTime) * 1000);
-        const swapTimer = setTimeout(() => {
-          visemeTimersRef.current = visemeTimersRef.current.filter(t => t !== swapTimer);
+        const apply = () => {
+          visemeTimersRef.current = visemeTimersRef.current.filter(c => c.apply !== apply);
           currentSpeechTextRef.current = item.text;
           currentSpeechPhonemesRef.current = item.phonemes;
           currentAudioDurationRef.current = buffer.duration;
           playbackStartTimeRef.current = startAt;
           configRef.current.onSpeechStart?.(item.text);
-        }, startsInMs);
-        visemeTimersRef.current.push(swapTimer);
+        };
+        const startsInMs = Math.max(0, (startAt - ctx.currentTime) * 1000);
+        visemeTimersRef.current.push({ timer: setTimeout(apply, startsInMs), startAt, apply });
 
         source.onended = () => {
           try { source.disconnect(); } catch (e) { /* already torn down */ }
@@ -717,6 +763,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       // the answer to the very sentence that interrupted.
       isInterruptedRef.current = false;
 
+      // Confirmed speech, so the reply that was paused is genuinely unwanted.
+      // The audio context is resumed because the next reply plays through it;
+      // the chunks queued behind it are dropped first so none of the old one
+      // survives into the new turn.
+      stopAllScheduledAudio();
+      resetPlaybackState();
+      stopWorkerGenerationRef.current();
+      resumePlayback();
+
       advance('user-stopped-speaking');
       configRef.current.onInferenceStart?.();
 
@@ -849,21 +904,21 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // play straight over the user.
             const wasSpeaking = scheduledSourcesRef.current.length > 0;
 
-            // Mark the turn interrupted before tearing anything down.
-            //
+            // Mark the turn interrupted so a chunk already in flight cannot
+            // schedule itself and start the avatar talking over the user.
             // Stopping the workers is a message, not an instruction that has
-            // already taken effect, so a chunk generated just before it arrives
-            // is still on its way here. Without this flag that chunk passes the
-            // guard in handleSpeechOutput, gets scheduled, and the avatar starts
-            // talking over the user in the moment right after they interrupted
-            // it. Cleared again when the user's turn ends and a new reply is
-            // legitimately expected.
+            // already taken effect. Cleared when the turn resolves, either way.
             isInterruptedRef.current = true;
 
             clearWatchdog();
-            stopAllScheduledAudio();
-            resetPlaybackState();
-            stopWorkerGenerationRef.current();
+
+            // Pause rather than tear down. This fires the instant a sound
+            // crosses the threshold, before anything knows whether it was
+            // speech, so destroying the reply here means a cough kills the
+            // answer. The teardown happens once the detector confirms speech, in
+            // onSpeechEnd; if it withdraws instead, onVADMisfire resumes.
+            suspendPlayback();
+
             if (wasSpeaking) {
               configRef.current.onUserInterrupt?.();
             }
@@ -891,6 +946,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             if (configRef.current.listenMode === 'push-to-talk') return;
 
             isInterruptedRef.current = false;
+
+            // A reply was paused on the way in. Since nobody actually spoke,
+            // continue it rather than dropping the user back to idle mid-answer.
+            if (scheduledSourcesRef.current.length > 0) {
+              resumePlayback();
+              advance('reply-resumed');
+              return;
+            }
+
             clearWatchdog();
             resetPlaybackState();
             advance('user-speech-misfired');
@@ -925,7 +989,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (!ok && micSetupRef.current === setup) micSetupRef.current = null;
     });
     return setup;
-  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, resumeVadIfAllowed, reportError]);
+  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, resumeVadIfAllowed, reportError, suspendPlayback, resumePlayback, allowsInterruption]);
 
   // Release audio devices when the hook goes away. Deliberately dependency-free:
   // this must run on unmount and at no other time, because anything that makes
