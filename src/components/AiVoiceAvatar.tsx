@@ -127,6 +127,17 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * @param listenMode - `'vad'` is the former name for `'continuous'` and still works.
    */
   listenMode?: 'continuous' | 'push-to-talk' | 'vad';
+  /**
+   * Let the user talk over the avatar and cut it off mid-sentence. Defaults to
+   * true, because having to wait for a reply to finish is what makes a voice
+   * agent feel like a walkie-talkie rather than a conversation.
+   *
+   * Set false for a kiosk or a noisy room. With the microphone live during
+   * playback, an avatar on loud speakers can hear itself through weak echo
+   * cancellation and stop mid-sentence, which is worse than waiting. Ignored in
+   * push-to-talk, where the user takes the floor explicitly.
+   */
+  allowInterruption?: boolean;
   accentColor?: string;
 
   // Debug flag to show Leva panel
@@ -577,6 +588,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onnxWasmPath: props.onnxWasmPath,
     workerBaseUrl: props.workerBaseUrl,
     listenMode: props.listenMode,
+    allowInterruption: props.allowInterruption,
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
     onUserInterrupt: props.onUserInterrupt,

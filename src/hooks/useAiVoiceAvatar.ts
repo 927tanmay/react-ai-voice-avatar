@@ -68,6 +68,16 @@ export interface UseAiVoiceAvatarConfig {
   workerBaseUrl?: string;
   /** `'vad'` is the former name for `'continuous'` and still works. */
   listenMode?: 'continuous' | 'push-to-talk' | 'vad';
+  /**
+   * Let the user talk over the avatar and cut it off mid-sentence. On by
+   * default, because waiting for a reply to finish is the thing that makes a
+   * voice agent feel like a walkie-talkie.
+   *
+   * Turn it off for a kiosk or a noisy room, where the avatar hearing its own
+   * voice through the speakers and stopping itself is worse than waiting.
+   * Ignored in push-to-talk, which owns the floor explicitly.
+   */
+  allowInterruption?: boolean;
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
   onUserInterrupt?: () => void;
@@ -190,6 +200,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       message,
       detail: stage,
     });
+  }, []);
+
+  /**
+   * True when the user may talk over the avatar.
+   *
+   * Push-to-talk owns the floor explicitly, so interruption means nothing there.
+   * Otherwise it follows `allowInterruption`, which defaults on.
+   */
+  const allowsInterruption = useCallback((): boolean => {
+    if (configRef.current.listenMode === 'push-to-talk') return false;
+    return configRef.current.allowInterruption !== false;
   }, []);
 
   const clearWatchdog = useCallback(() => {
@@ -698,7 +719,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
       advance('user-stopped-speaking');
       configRef.current.onInferenceStart?.();
-      vadRef.current?.pause();
+
+      // Whether the microphone keeps listening while the avatar answers is the
+      // difference between a conversation and a walkie-talkie. Pausing it here
+      // made interruption impossible: the detector was deaf for the whole reply,
+      // so the barge-in path below could never fire during one.
+      //
+      // It is paused only when interruption is switched off, or in push-to-talk,
+      // where the user takes the floor explicitly anyway.
+      if (!allowsInterruption()) {
+        vadRef.current?.pause();
+      }
 
       // Cloud adapter: override local ASR.
       if (configRef.current.onTranscribe) {
