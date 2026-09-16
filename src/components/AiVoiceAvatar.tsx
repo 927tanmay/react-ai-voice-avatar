@@ -168,7 +168,8 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * Called with audio volume level (0.0 to 1.0) and the active audio source.
    * Useful for building audio-reactive 3D visualizers or HUDs outside the package.
    */
-  onAudioLevelChange?: (level: number, source: 'mic' | 'tts') => void;
+  /** Loudness of whichever side holds the floor; `'idle'` with 0 between turns. */
+  onAudioLevelChange?: (level: number, source: 'mic' | 'tts' | 'idle') => void;
 }
 
 /**
