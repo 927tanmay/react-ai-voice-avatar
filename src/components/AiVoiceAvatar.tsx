@@ -138,6 +138,20 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * push-to-talk, where the user takes the floor explicitly.
    */
   allowInterruption?: boolean;
+  /**
+   * Tuning for the voice detector, for rooms the defaults do not suit.
+   *
+   * Raise `positiveSpeechThreshold` (0-1) where background noise is being
+   * mistaken for talking, and lower it if quiet speakers go unheard. Raise
+   * `redemptionMs` if people are cut off while pausing to think mid-sentence.
+   */
+  speechDetection?: {
+    positiveSpeechThreshold?: number;
+    negativeSpeechThreshold?: number;
+    redemptionMs?: number;
+    minSpeechMs?: number;
+    preSpeechPadMs?: number;
+  };
   accentColor?: string;
 
   // Debug flag to show Leva panel
@@ -589,6 +603,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     workerBaseUrl: props.workerBaseUrl,
     listenMode: props.listenMode,
     allowInterruption: props.allowInterruption,
+    speechDetection: props.speechDetection,
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
     onUserInterrupt: props.onUserInterrupt,

@@ -37,22 +37,31 @@ const PUBLIC_ERROR_STAGE: Record<string, AiVoiceAvatarErrorStage> = {
 };
 
 /**
- * Shortest run of sound accepted as something the user actually said.
+ * How the voice detector decides what counts as someone talking.
  *
- * The detector classifies a cough as speech: it is loud, voiced, and crosses
- * every threshold it checks. What separates it from talking is length. A cough
- * is one burst of roughly a fifth of a second, where even the shortest real
- * utterance carries a vowel and runs longer.
+ * The library's own defaults are tuned to catch everything, which in a room
+ * with any life in it means catching coughs, doors and chairs. Silero returns a
+ * speech probability per frame, and a cough scores lower than talking does, so
+ * asking for more confidence is what separates them. The shipped default of 0.3
+ * is well below the 0.5 Silero itself suggests.
  *
- * Set below the shortest words worth catching, "no", "stop", "wait", which sit
- * around 300ms, and above the burst sounds that are not speech. Anything
- * shorter is treated as a false trigger, so a paused reply carries on rather
- * than being replaced by an answer to a cough.
+ * `redemptionMs` is the one that decides how natural a conversation feels: it is
+ * how long a silence runs before the turn is considered over. Kept generous, so
+ * thinking mid-sentence, or an "erm" between two halves of a request, does not
+ * hand the floor back before someone has finished.
  */
-const MIN_SPEECH_SECONDS = 0.28;
-
-/** The rate the voice detector resamples to before handing audio over. */
-const SPEECH_SAMPLE_RATE = 16000;
+const SPEECH_DETECTION_DEFAULTS = {
+  /** Confidence required to call a frame speech. Raise it in a noisy room. */
+  positiveSpeechThreshold: 0.5,
+  /** Confidence below which a frame is silence. Silero suggests 0.15 under the above. */
+  negativeSpeechThreshold: 0.35,
+  /** Silence before a turn ends. Long enough to pause for thought mid-sentence. */
+  redemptionMs: 1400,
+  /** Runs shorter than this are discarded as noise rather than transcribed. */
+  minSpeechMs: 500,
+  /** Audio kept from before the trigger, so the first syllable is not clipped. */
+  preSpeechPadMs: 800,
+};
 
 /** How long to wait for promised audio that never arrives before recovering. */
 const RESPONSE_STALL_TIMEOUT_MS = 10000;
@@ -96,6 +105,23 @@ export interface UseAiVoiceAvatarConfig {
    * Ignored in push-to-talk, which owns the floor explicitly.
    */
   allowInterruption?: boolean;
+  /**
+   * Tuning for the voice detector. Every field is optional.
+   *
+   * Raise `positiveSpeechThreshold` in a noisy room so passing sounds are not
+   * mistaken for talking, and lower it if quiet speakers go unheard. Raise
+   * `redemptionMs` if people are being cut off while they think mid-sentence,
+   * lower it if replies feel slow to start. `minSpeechMs` discards runs too
+   * short to be words before they reach transcription, which matters because
+   * speech recognition given a noise invents words rather than returning none.
+   */
+  speechDetection?: {
+    positiveSpeechThreshold?: number;
+    negativeSpeechThreshold?: number;
+    redemptionMs?: number;
+    minSpeechMs?: number;
+    preSpeechPadMs?: number;
+  };
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
   onUserInterrupt?: () => void;
@@ -785,27 +811,6 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const handleVadSpeechEndRef = useRef<(audio: Float32Array) => void>(() => {});
   useEffect(() => {
     handleVadSpeechEndRef.current = async (audio: Float32Array) => {
-      // Too short to be speech, whatever the detector decided.
-      //
-      // It hands over anything that crossed its thresholds for long enough, and
-      // a cough clears them all. Passing that to transcription does not fail
-      // quietly: speech recognition asked to find words in a cough invents some,
-      // and the avatar then abandons what it was saying to answer them. Treated
-      // as the false trigger it is, so a paused reply simply continues.
-      const seconds = audio.length / SPEECH_SAMPLE_RATE;
-      if (seconds < MIN_SPEECH_SECONDS) {
-        isInterruptedRef.current = false;
-        if (scheduledSourcesRef.current.length > 0) {
-          resumePlayback();
-          advance('reply-resumed');
-        } else {
-          resetPlaybackState();
-          advance('user-speech-misfired');
-          resumeVadIfAllowed();
-        }
-        return;
-      }
-
       // The user has finished speaking, so a reply is wanted again. This
       // reopens the gate that barge-in closed; leaving it shut would silence
       // the answer to the very sentence that interrupted.
@@ -951,6 +956,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           // speaking, which is what they are.
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
           onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/",
+          ...SPEECH_DETECTION_DEFAULTS,
+          ...(configRef.current.speechDetection ?? {}),
           onSpeechStart: () => {
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
