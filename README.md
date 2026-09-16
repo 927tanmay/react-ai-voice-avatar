@@ -354,6 +354,62 @@ expect and browser Whisper cannot detect it.
 
 ---
 
+## 🎤 Taking turns
+
+The user can talk over the avatar and cut it off mid-sentence. This is on by
+default, because waiting for a reply to finish is the thing that makes a voice
+agent feel like a walkie-talkie.
+
+```tsx
+<AiVoiceAvatar
+  allowInterruption={false}   // default: true
+  onUserInterrupt={() => analytics.track('barge_in')}
+/>
+```
+
+Turn it off for a kiosk or a noisy room, where the avatar hearing its own voice
+through the speakers and stopping itself is worse than waiting. It is ignored in
+`push-to-talk`, which owns the floor explicitly.
+
+### How a turn is decided
+
+Voice detection scores every 96ms frame for how much it sounds like speech. A
+cough, a door and a chair all clear a loudness bar as easily as a word does, so
+loudness alone cannot separate them — **sustain** can. A sound has to keep
+scoring as speech for `minSpeechMs` before the engine treats it as a turn.
+
+Below that bar, a sound only ducks the avatar's voice, reversibly. If it turns
+out to be a cough the reply resumes from where it paused, at the right place in
+the sentence and with the mouth still in sync. Nothing about the conversation
+changed, because nothing was decided on a noise.
+
+### Tuning for your room
+
+The defaults suit a quiet room and headphones. A shop floor is a different
+problem, and only you know which you have.
+
+```tsx
+<AiVoiceAvatar
+  speechDetection={{ positiveSpeechThreshold: 0.6, minSpeechMs: 700 }}
+/>
+```
+
+| Field | Default | Raise it when | Lower it when |
+| :--- | :--- | :--- | :--- |
+| `positiveSpeechThreshold` | `0.5` | Passing noise is mistaken for talking | Quiet speakers go unheard |
+| `negativeSpeechThreshold` | `0.35` | Turns end too slowly in a noisy room | Turns end while someone is still talking |
+| `minSpeechMs` | `500` | Short noises still start turns | Single-word answers are ignored |
+| `redemptionMs` | `1400` | People are cut off while thinking mid-sentence | Replies feel slow to start |
+| `preSpeechPadMs` | `800` | The first word is still being clipped | Rarely — this is the audio kept from *before* the trigger, and it is what stops the first syllable going missing |
+
+Two costs worth knowing before you change anything. A speaker who sits below
+`positiveSpeechThreshold` produces **no events at all** — raising it trades
+quiet voices for quiet rooms. And a filler like "hmm" held long enough to pass
+`minSpeechMs` still reaches transcription; a denylist catches the common ones
+after the fact, but sustain cannot tell a long "hmm" from a short word.
+
+---
+
 ## 🚨 Handling failures
 
 Pass `onError` and your app learns when something breaks, rather than finding out
@@ -466,7 +522,10 @@ Explore the canonical patterns in the `examples/` directory:
 | `showCaptions` | `boolean` | `true` | Renders a sleek glassmorphic subtitle overlay displaying spoken interaction dialog. |
 | `hideStatusPill`| `boolean` | `false` | When true, suppresses the default bottom-left microphone interactive control pill. |
 | `listenMode` | `'continuous' \| 'push-to-talk'` | `'continuous'` | `continuous` keeps the mic hot after the avatar finishes speaking naturally, but explicitly clicking Stop forces it off until tapped again. `push-to-talk` strictly requires manually tapping to start listening for every single turn. |
-| `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! |
+| `allowInterruption` | `boolean` | `true` | Lets the user talk over the avatar and cut it off mid-sentence. Turn off for a kiosk or noisy room, where the avatar hearing itself through the speakers is worse than waiting. Ignored in `push-to-talk`. See [Taking turns](#-taking-turns). |
+| `speechDetection` | `{ positiveSpeechThreshold?, negativeSpeechThreshold?, minSpeechMs?, redemptionMs?, preSpeechPadMs? }` | see [Taking turns](#-taking-turns) | Tunes how the microphone decides someone is talking. Every field optional. The defaults suit a quiet room; a shop floor needs a higher threshold and a longer `minSpeechMs`. |
+| `onUserInterrupt` | `() => void` | `undefined` | Fires when the user talks over the avatar and takes the floor. Only fires if the avatar actually had audio playing. |
+| `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! Fires with `0` and `'idle'` between turns, so a meter falls to rest rather than freezing. |
 | `onSubmit` | `(text: string) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. |
 | `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service. Receives raw microphone samples. |
 | `onSynthesize` | `(text: string) => Promise<Float32Array \| ArrayBuffer>` | `undefined` | Replaces local voice synthesis with your own service. Return raw PCM or an encoded MP3/WAV buffer. |
