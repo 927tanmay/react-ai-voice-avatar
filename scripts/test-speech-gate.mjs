@@ -129,6 +129,28 @@ check('real-start and a handover imply each other, at every length', async () =>
   return null;
 });
 
+/*
+ * The other side of the trade. Requiring a sound to sustain is what stops a
+ * cough taking a turn, and it is also what can drop a one-word answer — "yes",
+ * "haan", a read-back digit. This finds the boundary and states it in
+ * milliseconds, so the cost of changing minSpeechMs is visible rather than
+ * discovered by a user whose "yes" was ignored.
+ */
+check('the shortest utterance that takes a turn is about half a second', async () => {
+  let shortest = null;
+  for (let frames = 1; frames <= 20; frames++) {
+    const events = await observe(sound(frames));
+    if (events.includes(Message.SpeechEnd)) { shortest = frames; break; }
+  }
+  if (shortest === null) return 'no sound length took a turn at all';
+  const ms = Math.round(shortest * MS_PER_FRAME);
+  // 5 frames at 96ms. Anything shorter than this is discarded as noise, which
+  // is the point, and is also why a clipped single-word answer is the first
+  // thing to suspect if minSpeechMs is raised further.
+  if (ms < 400 || ms > 560) return `expected the boundary near 480ms, measured ${ms}ms`;
+  return null;
+});
+
 check('a quiet speaker below the threshold is never heard at all', async () => {
   // 0.45 sits under the shipped 0.5. Worth pinning: this is the cost of the
   // setting, and the reason `speechDetection` is exposed to host applications.
