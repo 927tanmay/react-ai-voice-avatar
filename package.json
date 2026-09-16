@@ -110,6 +110,7 @@
   },
   "scripts": {
     "build": "rimraf dist && node scripts/build-workers.mjs && vite build",
+    "prepublishOnly": "npm run build && npm run test:smoke",
     "dev": "vite",
     "lint": "tsc --noEmit",
     "format": "prettier --write src",
