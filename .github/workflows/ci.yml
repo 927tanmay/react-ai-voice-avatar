@@ -9,6 +9,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The packaging test drives a real browser through a model download, so the
+    # honest ceiling is tens of minutes rather than a couple. Without a limit a
+    # hang runs to GitHub's six hour default and is killed as a timeout with no
+    # useful signal, which has happened here before.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js
@@ -20,7 +25,25 @@ jobs:
       - name: Pre-bundle workers (generates code that tsc needs)
         run: node scripts/build-workers.mjs
       - run: npm run lint
+
+      # The fast suites run before anything that downloads a model. Together
+      # they take a couple of seconds and cover the rules a type checker cannot:
+      # which conversation transitions are legal, what the voice detector
+      # promises about a sound that turns out not to be speech, and whether
+      # Devanagari still phonemises to symbols Kokoro knows.
+      #
+      # These existed and were not wired up here, so every one of them was
+      # passing only on the machine of whoever last remembered to run it.
+      - name: Turn-taking rules
+        run: npm run test:turn-state
+      - name: Speech detection gate
+        run: npm run test:speech-gate
+      - name: Hindi phonemisation
+        run: npm run test:hindi
+
       - run: npm run build
+      - name: Bundle integrity
+        run: npm run test:smoke
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
       - name: Run Playwright tests
