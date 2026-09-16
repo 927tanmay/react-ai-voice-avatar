@@ -36,6 +36,24 @@ const PUBLIC_ERROR_STAGE: Record<string, AiVoiceAvatarErrorStage> = {
   'ml-worker-message': 'worker',
 };
 
+/**
+ * Shortest run of sound accepted as something the user actually said.
+ *
+ * The detector classifies a cough as speech: it is loud, voiced, and crosses
+ * every threshold it checks. What separates it from talking is length. A cough
+ * is one burst of roughly a fifth of a second, where even the shortest real
+ * utterance carries a vowel and runs longer.
+ *
+ * Set below the shortest words worth catching, "no", "stop", "wait", which sit
+ * around 300ms, and above the burst sounds that are not speech. Anything
+ * shorter is treated as a false trigger, so a paused reply carries on rather
+ * than being replaced by an answer to a cough.
+ */
+const MIN_SPEECH_SECONDS = 0.28;
+
+/** The rate the voice detector resamples to before handing audio over. */
+const SPEECH_SAMPLE_RATE = 16000;
+
 /** How long to wait for promised audio that never arrives before recovering. */
 const RESPONSE_STALL_TIMEOUT_MS = 10000;
 
@@ -767,6 +785,27 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const handleVadSpeechEndRef = useRef<(audio: Float32Array) => void>(() => {});
   useEffect(() => {
     handleVadSpeechEndRef.current = async (audio: Float32Array) => {
+      // Too short to be speech, whatever the detector decided.
+      //
+      // It hands over anything that crossed its thresholds for long enough, and
+      // a cough clears them all. Passing that to transcription does not fail
+      // quietly: speech recognition asked to find words in a cough invents some,
+      // and the avatar then abandons what it was saying to answer them. Treated
+      // as the false trigger it is, so a paused reply simply continues.
+      const seconds = audio.length / SPEECH_SAMPLE_RATE;
+      if (seconds < MIN_SPEECH_SECONDS) {
+        isInterruptedRef.current = false;
+        if (scheduledSourcesRef.current.length > 0) {
+          resumePlayback();
+          advance('reply-resumed');
+        } else {
+          resetPlaybackState();
+          advance('user-speech-misfired');
+          resumeVadIfAllowed();
+        }
+        return;
+      }
+
       // The user has finished speaking, so a reply is wanted again. This
       // reopens the gate that barge-in closed; leaving it shut would silence
       // the answer to the very sentence that interrupted.

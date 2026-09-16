@@ -479,9 +479,38 @@ self.onmessage = async (e: MessageEvent) => {
     }
   }
 
+/**
+ * Things Whisper says when handed audio containing no words.
+ *
+ * Asked to transcribe a cough, a door or a breath, it does not return nothing.
+ * It returns whatever filler is most common in its training data, confidently
+ * and in full sentences. These are the phrases it reaches for, drawn from the
+ * subtitle corpora it learned from, and an avatar that answers one has
+ * abandoned a real reply to respond to a noise.
+ *
+ * Matched only against the whole transcript, never as a substring, so someone
+ * genuinely saying "thank you" is still heard.
+ */
+const NON_SPEECH_TRANSCRIPTS = new Set([
+  'you', 'thank you', 'thank you.', 'thanks for watching!', 'thanks for watching.',
+  'thank you for watching', 'thank you for watching.', 'bye', 'bye.', 'bye bye',
+  'okay', 'okay.', 'oh', 'oh.', 'mm', 'mmm', 'hmm', 'uh', 'um', 'ah',
+  '[blank_audio]', '[music]', '[silence]', '(upbeat music)', 'subtitles by the amara.org community',
+  'शुक्रिया', 'धन्यवाद', 'धन्यवाद.',
+]);
+
+/** True when a transcript is one of the phrases produced by non-speech audio. */
+const isNonSpeech = (transcript: string): boolean => {
+  const normalised = transcript.trim().toLowerCase().replace(/\s+/g, ' ');
+  return normalised.length < 2 || NON_SPEECH_TRANSCRIPTS.has(normalised);
+};
+
   async function runLlmInference(transcript: string) {
-    if (!transcript || transcript.trim().length < 2) {
-      self.postMessage({ type: 'error', payload: { stage: 'pipeline', message: 'Empty or noise transcript ignored.' } });
+    if (!transcript || isNonSpeech(transcript)) {
+      self.postMessage({
+        type: 'error',
+        payload: { stage: 'pipeline', message: `Ignored a transcript with no speech in it: ${JSON.stringify(transcript)}` },
+      });
       return;
     }
 
