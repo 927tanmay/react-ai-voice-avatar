@@ -115,7 +115,8 @@
     "test:smoke": "node scripts/smoke-test.js",
     "test:hindi": "node --experimental-strip-types scripts/test-hindi-g2p.mjs",
     "test:e2e": "playwright test",
-    "test:turn-state": "node --experimental-strip-types scripts/test-turn-state.mjs"
+    "test:turn-state": "node --experimental-strip-types scripts/test-turn-state.mjs",
+    "test:speech-gate": "node scripts/test-speech-gate.mjs"
   },
   "overrides": {
     "onnxruntime-web": "$onnxruntime-web",

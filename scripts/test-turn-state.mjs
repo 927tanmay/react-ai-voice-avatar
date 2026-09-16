@@ -73,6 +73,28 @@ const cases = [
     expect: 'idle',
   },
   {
+    // The detector now waits for a sound to sustain before the engine sends
+    // 'user-started-speaking' at all, so a cough during a reply produces no
+    // events here whatsoever. The reply is ducked and un-ducked below the
+    // conversation, and the turn is untouched. This asserts the absence.
+    name: 'a cough during a reply is not an event at all',
+    start: 'speaking',
+    events: [],
+    expect: 'speaking',
+  },
+  {
+    name: 'a cough while listening leaves the floor with the user',
+    start: 'listening',
+    events: [],
+    expect: 'listening',
+  },
+  {
+    name: 'sustained speech during a reply still takes the floor',
+    start: 'speaking',
+    events: ['user-started-speaking', 'user-stopped-speaking'],
+    expect: 'thinking',
+  },
+  {
     name: 'interrupting while the avatar thinks',
     start: 'thinking',
     events: ['user-started-speaking'],

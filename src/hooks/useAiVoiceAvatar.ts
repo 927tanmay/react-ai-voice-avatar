@@ -66,6 +66,22 @@ const SPEECH_DETECTION_DEFAULTS = {
 /** How long to wait for promised audio that never arrives before recovering. */
 const RESPONSE_STALL_TIMEOUT_MS = 10000;
 
+/**
+ * What we ask the browser for when opening the microphone.
+ *
+ * Named because the device may be reopened later — the detector releases it
+ * while paused — and the second request has to match the first, or the meter
+ * and the detector end up reading differently processed audio.
+ */
+const MIC_CONSTRAINTS: MediaStreamConstraints = {
+  audio: {
+    channelCount: 1,
+    echoCancellation: true,
+    autoGainControl: true,
+    noiseSuppression: true,
+  },
+};
+
 export interface UseAiVoiceAvatarConfig {
   llmModel?: string;
   asrModel?: string;
@@ -126,7 +142,14 @@ export interface UseAiVoiceAvatarConfig {
   onInferenceEnd?: () => void;
   onUserInterrupt?: () => void;
   onSpeechStart?: (text: string) => void;
-  onAudioLevelChange?: (level: number, source: 'mic' | 'tts') => void;
+  /**
+   * Loudness of whichever side currently holds the floor, once per frame.
+   *
+   * `source` says which side that is. It has always been able to be `'idle'` —
+   * the callback fires with a level of 0 between turns so a meter can fall to
+   * rest rather than freeze — but the type used to claim otherwise.
+   */
+  onAudioLevelChange?: (level: number, source: 'mic' | 'tts' | 'idle') => void;
 }
 
 export interface UseAiVoiceAvatarReturn {
@@ -169,6 +192,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   useEffect(() => { statusRef.current = status; }, [status]);
 
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  /**
+   * The graph node feeding the microphone meter, kept so it can be detached
+   * when the device is reopened. Without this the old node stays connected to
+   * a dead stream and the meter reads a device nobody is talking into.
+   */
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
@@ -900,14 +929,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            echoCancellation: true,
-            autoGainControl: true,
-            noiseSuppression: true,
-          },
-        });
+        const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
 
         // The hook went away while the permission dialog was open.
         if (isUnmountedRef.current) {
@@ -933,11 +955,44 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
         const mAnalyser = inputCtx.createAnalyser();
         mAnalyser.fftSize = 256;
-        const source = inputCtx.createMediaStreamSource(stream);
-        source.connect(mAnalyser);
-        // Deliberately not connected to the destination, which would feed the
-        // microphone back out through the speakers.
         micAnalyserRef.current = mAnalyser;
+
+        /** Point the level meter at whichever stream is currently live. */
+        const meterOn = (live: MediaStream) => {
+          try { micSourceRef.current?.disconnect(); } catch (e) { /* already detached */ }
+          const source = inputCtx.createMediaStreamSource(live);
+          // Deliberately not connected to the destination, which would feed the
+          // microphone back out through the speakers.
+          source.connect(mAnalyser);
+          micSourceRef.current = source;
+        };
+        meterOn(stream);
+
+        /**
+         * Hand the detector a live microphone, reopening the device if the one
+         * we have has been stopped.
+         *
+         * The detector releases the microphone whenever it is paused, and its
+         * own default for resuming is to call getUserMedia again and keep the
+         * result to itself. That left this hook holding a stream whose tracks
+         * had ended: the level meter read a dead device for the rest of the
+         * session, and teardown stopped tracks that were already stopped while
+         * the detector's replacement stayed open. Minting the replacement here
+         * keeps one stream authoritative, and rewires the meter to it.
+         */
+        const acquireStream = async (): Promise<MediaStream> => {
+          const held = mediaStreamRef.current;
+          if (held?.getAudioTracks().some(t => t.readyState === 'live')) return held;
+
+          const fresh = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+          if (isUnmountedRef.current) {
+            fresh.getTracks().forEach(t => t.stop());
+            return fresh;
+          }
+          mediaStreamRef.current = fresh;
+          meterOn(fresh);
+          return fresh;
+        };
 
         // @ricky0123/vad-web is CJS, so the shape of the namespace depends on whether
         // the consumer's bundler pre-bundled it: named exports may sit directly on the
@@ -945,7 +1000,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         const vadModule: any = await import('@ricky0123/vad-web');
         const vad = vadModule?.MicVAD ? vadModule : (vadModule?.default ?? vadModule);
         const myvad = await vad.MicVAD.new({
-          getStream: () => Promise.resolve(stream),
+          getStream: acquireStream,
+          resumeStream: acquireStream,
           // Deliberately not given our audio context, so it builds its own.
           //
           // Pausing a reply suspends the playback context, and a suspended
@@ -958,16 +1014,43 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/",
           ...SPEECH_DETECTION_DEFAULTS,
           ...(configRef.current.speechDetection ?? {}),
+          /**
+           * A single frame crossed the threshold. That is all this means.
+           *
+           * One frame is 96ms, and a cough, a door or a chair clears that bar
+           * as easily as a word does. So nothing here commits: the avatar's
+           * voice ducks, instantly and reversibly, and the conversation is left
+           * exactly where it was. Whether anyone actually spoke is decided by
+           * the two handlers below, one of which always follows this one.
+           */
           onSpeechStart: () => {
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
 
-            advance('user-started-speaking');
+            clearWatchdog();
+            suspendPlayback();
+          },
 
-            // Barge-in: the user started talking, so drop whatever the avatar
-            // was about to say. Stopping playback alone is not enough, because
-            // the workers keep generating and the next chunk would arrive and
-            // play straight over the user.
+          /**
+           * The sound has lasted long enough to be speech. Now it counts.
+           *
+           * Everything that changes the conversation waited for this, because
+           * up to here a noise and a word are indistinguishable. The detector
+           * only reaches this point once `minSpeechMs` of speech frames have
+           * accumulated, and it is exactly the condition under which the sound
+           * will later be handed over as audio rather than withdrawn — so a
+           * turn taken here is always a turn that gets transcribed.
+           *
+           * This is what stops a cough rewriting the conversation. Tuning
+           * thresholds only ever changed how loud a noise had to be; requiring
+           * it to sustain is what actually separates a noise from a sentence.
+           */
+          onSpeechRealStart: () => {
+            if (isUnmountedRef.current) return;
+            if (configRef.current.listenMode === 'push-to-talk') return;
+
+            // Whether the avatar had the floor. Its audio is suspended rather
+            // than stopped, so the schedule is still standing here.
             const wasSpeaking = scheduledSourcesRef.current.length > 0;
 
             // Mark the turn interrupted so a chunk already in flight cannot
@@ -976,14 +1059,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // already taken effect. Cleared when the turn resolves, either way.
             isInterruptedRef.current = true;
 
-            clearWatchdog();
-
-            // Pause rather than tear down. This fires the instant a sound
-            // crosses the threshold, before anything knows whether it was
-            // speech, so destroying the reply here means a cough kills the
-            // answer. The teardown happens once the detector confirms speech, in
-            // onSpeechEnd; if it withdraws instead, onVADMisfire resumes.
-            suspendPlayback();
+            advance('user-started-speaking');
 
             if (wasSpeaking) {
               configRef.current.onUserInterrupt?.();
@@ -995,36 +1071,24 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             handleVadSpeechEndRef.current(audio);
           },
           /**
-           * A sound that started like speech and turned out not to be.
+           * The sound stopped before it ever became speech. A cough, in short.
            *
-           * The detector runs onVADMisfire *instead of* onSpeechEnd and discards
-           * the audio, so every piece of state that onSpeechStart set has to be
-           * undone here or it is never undone at all. A cough used to leave the
-           * avatar showing 'listening' for the rest of the session, and would
-           * now also leave the turn marked interrupted, silently discarding
-           * every reply from then on.
+           * The detector runs this *instead of* onSpeechEnd and discards the
+           * audio, and it only reaches here when onSpeechRealStart never fired.
+           * So nothing was committed: the status never moved, the turn was
+           * never marked interrupted, and the workers were never stopped.
+           * Lifting the duck is the whole of the recovery.
            *
-           * Whatever the avatar was saying has already been stopped and cannot
-           * be recovered, so the honest resting place is idle and listening.
+           * This handler used to carry the burden of undoing a half-taken turn,
+           * and each thing it forgot to undo was a bug that outlived the cough
+           * — a status stuck on 'listening', or a reply gate left shut so every
+           * later answer was silently dropped. There is nothing to forget now.
            */
           onVADMisfire: () => {
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return;
 
-            isInterruptedRef.current = false;
-
-            // A reply was paused on the way in. Since nobody actually spoke,
-            // continue it rather than dropping the user back to idle mid-answer.
-            if (scheduledSourcesRef.current.length > 0) {
-              resumePlayback();
-              advance('reply-resumed');
-              return;
-            }
-
-            clearWatchdog();
-            resetPlaybackState();
-            advance('user-speech-misfired');
-            resumeVadIfAllowed();
+            resumePlayback();
           },
           startOnLoad: false
         });
@@ -1055,7 +1119,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (!ok && micSetupRef.current === setup) micSetupRef.current = null;
     });
     return setup;
-  }, [ensureAudioContext, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, resumeVadIfAllowed, reportError, suspendPlayback, resumePlayback, allowsInterruption]);
+  }, [ensureAudioContext, clearWatchdog, reportError, suspendPlayback, resumePlayback, advance]);
 
   // Release audio devices when the hook goes away. Deliberately dependency-free:
   // this must run on unmount and at no other time, because anything that makes
@@ -1077,6 +1141,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         console.warn('VAD destroy ignored on cleanup:', err);
       }
       stopAllScheduledAudio();
+      try {
+        micSourceRef.current?.disconnect();
+      } catch (e) {}
       try {
         audioContextRef.current?.close();
       } catch (e) {}
@@ -1129,9 +1196,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
   // Audio polling loop for onAudioLevelChange callback
   useEffect(() => {
+    // Reused across frames. Allocating this inside the loop meant a new array
+    // sixty times a second for the lifetime of the page, which is a steady
+    // drip of garbage for a number that fits in a register.
+    let spectrum: Uint8Array<ArrayBuffer> | null = null;
+
     const loop = () => {
       animationFrameRef.current = requestAnimationFrame(loop);
-      
+
       const onLevelChange = configRef.current.onAudioLevelChange;
       if (!onLevelChange) return;
 
@@ -1148,20 +1220,21 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       }
 
       if (activeAnalyser) {
-        const dataArray = new Uint8Array(activeAnalyser.frequencyBinCount);
-        activeAnalyser.getByteFrequencyData(dataArray);
-        
+        const bins = activeAnalyser.frequencyBinCount;
+        if (!spectrum || spectrum.length !== bins) spectrum = new Uint8Array(bins);
+        activeAnalyser.getByteFrequencyData(spectrum);
+
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+        for (let i = 0; i < bins; i++) {
+          sum += spectrum[i];
         }
-        const average = sum / dataArray.length;
+        const average = sum / bins;
         const normalized = Math.min(1, average / 128); // Normalize 0-1
-        
-        onLevelChange(normalized, sourceContext as 'mic' | 'tts');
+
+        onLevelChange(normalized, sourceContext);
       } else {
         // Broadcast 0 when idle so HUD can collapse smoothly
-        onLevelChange(0, 'idle' as 'tts');
+        onLevelChange(0, 'idle');
       }
     };
 
