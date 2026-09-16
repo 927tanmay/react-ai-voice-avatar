@@ -31,6 +31,16 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
   const [isReady, setIsReady] = useState(false);
   const configRef = useRef(config);
   const recreateAttemptsRef = useRef(0);
+  /**
+   * Which attempt to spawn a worker is the current one.
+   *
+   * Spawning is asynchronous — the worker's code is imported before the Worker
+   * exists — so an effect can be cleaned up while its worker is still on the
+   * way. The cleanup then has nothing to terminate, and the abandoned attempt
+   * arrives afterwards and claims `workerRef`. Comparing this counter is how a
+   * late arrival finds out it is no longer wanted.
+   */
+  const spawnTokenRef = useRef(0);
 
   useEffect(() => {
     configRef.current = config;
@@ -52,6 +62,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     let isMounted = true;
     let kokoroWorker: Worker | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const token = ++spawnTokenRef.current;
 
     const spawnWorker = async (useFallback = false) => {
       if (!isMounted || !config.enabled) return;
@@ -81,6 +92,18 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
             configRef.current.onError?.('kokoro-worker', 'Blob worker failed. Remove COEP headers or provide workerBaseUrl.');
             return;
           }
+        }
+
+        // This attempt was abandoned while its code was being imported. Under
+        // StrictMode that is every first mount, and without this the orphan
+        // went on loading an 80MB model, finished, and then took ownership of
+        // workerRef — leaving the hook posting work to a worker whose replies
+        // its own handlers had already been told to ignore. The request
+        // vanished, and the avatar waited for audio that was never coming.
+        if (!isMounted || token !== spawnTokenRef.current) {
+          try { kokoroWorkerInst.terminate(); } catch (e) { /* never started */ }
+          if (pendingBlobUrl) URL.revokeObjectURL(pendingBlobUrl);
+          return;
         }
 
         kokoroWorker = kokoroWorkerInst;

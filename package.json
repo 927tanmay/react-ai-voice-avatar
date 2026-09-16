@@ -1,7 +1,7 @@
 {
   "name": "react-ai-voice-avatar",
   "version": "0.2.1",
-  "description": "Zero-config 3D conversational AI voice avatar and real-time lip-sync engine for React. Run 100% locally with WebGPU/ONNX or plug in external cloud LLMs (OpenAI, Claude, APIs).",
+  "description": "Open-source alternative to real-time avatar APIs like HeyGen Interactive Avatar and Tavus. A talking, lip-synced 3D avatar that runs on your user's GPU, driven by your own LLM. No video stream, no per-minute billing.",
   "keywords": [
     "react",
     "threejs",
@@ -24,7 +24,11 @@
     "hybrid-cloud",
     "openai",
     "claude",
-    "llm-integration"
+    "llm-integration",
+    "heygen-alternative",
+    "lipsync",
+    "hindi",
+    "voice-assistant"
   ],
   "author": "Tanmay <https://github.com/927tanmay>",
   "repository": {
@@ -43,6 +47,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "main": "./dist/index.js",
@@ -110,7 +115,9 @@
     "format": "prettier --write src",
     "test:smoke": "node scripts/smoke-test.js",
     "test:hindi": "node --experimental-strip-types scripts/test-hindi-g2p.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:turn-state": "node --experimental-strip-types scripts/test-turn-state.mjs",
+    "test:speech-gate": "node scripts/test-speech-gate.mjs"
   },
   "overrides": {
     "onnxruntime-web": "$onnxruntime-web",

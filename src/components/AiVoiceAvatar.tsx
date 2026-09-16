@@ -13,8 +13,8 @@ import { AvatarDynamicsEngine } from '../lib/avatarDynamics';
 import type { VisemeWeights } from '../lib/visemeTable';
 
 // Re-exported from ../types so the headless entry never pulls in this module.
-export type { AiVoiceAvatarCapabilities } from '../types';
-import type { AiVoiceAvatarCapabilities } from '../types';
+export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError } from '../types';
 
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
@@ -98,6 +98,15 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
 
   fallbackMode?: 'wasm' | 'disable' | 'error';
+  /**
+   * Called when something in the pipeline fails.
+   *
+   * Check `severity` first. A `degraded` report means the engine recovered on a
+   * worse path and the avatar still works, so it deserves a quiet notice rather
+   * than an error screen. Use this to log to your own monitoring, or to offer
+   * typed input when the microphone is refused.
+   */
+  onError?: (error: AiVoiceAvatarError) => void;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   lowMemoryMode?: boolean;
@@ -118,6 +127,31 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * @param listenMode - `'vad'` is the former name for `'continuous'` and still works.
    */
   listenMode?: 'continuous' | 'push-to-talk' | 'vad';
+  /**
+   * Let the user talk over the avatar and cut it off mid-sentence. Defaults to
+   * true, because having to wait for a reply to finish is what makes a voice
+   * agent feel like a walkie-talkie rather than a conversation.
+   *
+   * Set false for a kiosk or a noisy room. With the microphone live during
+   * playback, an avatar on loud speakers can hear itself through weak echo
+   * cancellation and stop mid-sentence, which is worse than waiting. Ignored in
+   * push-to-talk, where the user takes the floor explicitly.
+   */
+  allowInterruption?: boolean;
+  /**
+   * Tuning for the voice detector, for rooms the defaults do not suit.
+   *
+   * Raise `positiveSpeechThreshold` (0-1) where background noise is being
+   * mistaken for talking, and lower it if quiet speakers go unheard. Raise
+   * `redemptionMs` if people are cut off while pausing to think mid-sentence.
+   */
+  speechDetection?: {
+    positiveSpeechThreshold?: number;
+    negativeSpeechThreshold?: number;
+    redemptionMs?: number;
+    minSpeechMs?: number;
+    preSpeechPadMs?: number;
+  };
   accentColor?: string;
 
   // Debug flag to show Leva panel
@@ -134,7 +168,8 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * Called with audio volume level (0.0 to 1.0) and the active audio source.
    * Useful for building audio-reactive 3D visualizers or HUDs outside the package.
    */
-  onAudioLevelChange?: (level: number, source: 'mic' | 'tts') => void;
+  /** Loudness of whichever side holds the floor; `'idle'` with 0 between turns. */
+  onAudioLevelChange?: (level: number, source: 'mic' | 'tts' | 'idle') => void;
 }
 
 /**
@@ -540,9 +575,20 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onSpeechStart: (text) => {
       setCaption({ text, speaker: 'avatar' });
     },
+    onError: props.onError,
     onCapabilityDetected: (caps) => {
       if (!caps.webgpu) {
         setEngineWarning('WebGPU unavailable — using WASM (slower)');
+        // Reported as an error so a host can log it, but degraded rather than
+        // fatal: everything still works, several times slower. On weak hardware
+        // this is the difference between a demo that feels broken and one that
+        // feels slow, and only the host knows which it would rather show.
+        props.onError?.({
+          stage: 'worker',
+          severity: 'degraded',
+          message: 'WebGPU is unavailable, so inference is running on WASM and will be noticeably slower.',
+          detail: 'webgpu-unavailable',
+        });
       } else {
         setEngineWarning(null);
       }
@@ -557,6 +603,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onnxWasmPath: props.onnxWasmPath,
     workerBaseUrl: props.workerBaseUrl,
     listenMode: props.listenMode,
+    allowInterruption: props.allowInterruption,
+    speechDetection: props.speechDetection,
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
     onUserInterrupt: props.onUserInterrupt,

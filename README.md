@@ -6,12 +6,16 @@
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel)](https://react-ai-voice-avatar.vercel.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-**The definitive zero-config 3D conversational AI voice avatar and real-time lip-sync frontend for React.**
+**The open-source alternative to real-time avatar APIs, as a React component.**
 
-Add a talking, lip-synced 3D avatar to your existing AI chatbot in 30 lines. Keep your own LLM, your own backend, and your own API keys. We handle the 60 FPS 3D ARKit facial lip-syncing, natural voice synthesis (TTS), and speech recognition (ASR) entirely on-device in the browser—saving you massive server-side GPU costs and video-streaming latency.
+HeyGen Interactive Avatar, Tavus and Soul Machines sell a talking avatar that holds a conversation, rendered on their servers and billed per streaming minute. This does the same job as an npm install: the avatar renders on your user's GPU, so there is no video stream, no per-minute cost, and no third party in the middle of your conversations.
 
-### 🌐 [**Experience the Live Interactive Demo on Vercel ➔**](https://react-ai-voice-avatar.vercel.app/)
-*(Features real-time Kokoro-82M ONNX voice synthesis and 3D lip-sync running entirely inside your browser!)*
+You bring the model. Point it at OpenAI, Anthropic, your own fine-tune or your existing chat endpoint, and keep your keys on your own backend. The package owns the parts that are tedious to build and easy to get wrong: microphone capture, knowing when someone has finished speaking, interrupting the avatar mid-sentence when they talk over it, streaming speech synthesis, and driving 52 ARKit facial blendshapes at 60 FPS so the mouth matches the words.
+
+It can also run with no backend at all. Speech recognition, generation and voice all have in-browser implementations, which makes for a convincing demo and a genuinely offline kiosk. Most production apps will use their own model and keep only speech and lip-sync on the device.
+
+### 🌐 [**Try the live demo ➔**](https://react-ai-voice-avatar.vercel.app/)
+*Speech recognition, voice synthesis and lip-sync, all running in your browser tab.*
 
 ![React AI Voice Avatar Demo](./assets/gif/react-avatar-demo.gif)
 
@@ -24,8 +28,17 @@ Add a talking, lip-synced 3D avatar to your existing AI chatbot in 30 lines. Kee
 ### 🎧 Entry 1: The Headless Hook ("Voice Mode for your App")
 If you are building a ChatGPT-style voice interface or a custom audio visualizer and **don't want any 3D dependencies**, use the headless hook. It provides all the speech-recognition, text-to-speech, and audio-reactive hooks with zero UI overhead.
 
+Import it from `react-ai-voice-avatar/headless` and Three.js never enters your module graph. Measured on the same Next.js App Router build, one route rendering the 3D avatar and one rendering only the hook:
+
+| Route | First Load JS |
+| --- | --- |
+| 3D avatar | 389 kB |
+| Headless hook | 117 kB |
+
 ```tsx
-import { useAiVoiceAvatar } from 'react-ai-voice-avatar';
+// The /headless subpath is what keeps Three.js out of your bundle.
+// Importing the hook from the package root pulls the 3D stack in with it.
+import { useAiVoiceAvatar } from 'react-ai-voice-avatar/headless';
 
 function MyChatGPTVoiceOrb() {
   const { startListening, stopListening, isListening, status } = useAiVoiceAvatar({
@@ -84,11 +97,17 @@ npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei
 > ```
 
 > [!IMPORTANT]
-> **React 19.3 and `ERESOLVE`:** `@react-three/fiber@9.7` declares its React peer as `>=19 <19.3`, so installing it alongside React 19.3 or newer fails with `ERESOLVE unable to resolve dependency tree`. This is a Three.js binding constraint, not a limit of this package — our own peer range accepts React 19.3. Until fiber widens its range, pin React:
+> **React 19.3 and `ERESOLVE`:** `@react-three/fiber@9.7` still declares its React peer as `>=19 <19.3`, so a default `npm install` alongside React 19.3 or newer fails with `ERESOLVE unable to resolve dependency tree`. This is a Three.js binding constraint, not a limit of this package: our own peer range accepts React 19.3.
+>
+> That range is over-cautious. We build and run a Next.js App Router app against React 19.3.0 with `@react-three/fiber@9.7.0` and the avatar renders, loads its models and speaks with no errors. So install past it rather than downgrading:
+> ```bash
+> npm install react-ai-voice-avatar three @react-three/fiber @react-three/drei --legacy-peer-deps
+> ```
+> If you would rather keep strict peer resolution, pinning React works too:
 > ```bash
 > npm install react@~19.2.0 react-dom@~19.2.0
 > ```
-> The headless entry point (`react-ai-voice-avatar/headless`) has no Three.js dependency at all and works on any React 18 or 19 version.
+> The headless entry point (`react-ai-voice-avatar/headless`) pulls in no Three.js at all, so it never hits this and works on any React 18 or 19 version.
 
 ### ⚡ DX & Performance (Lazy Code-Splitting)
 
@@ -297,6 +316,128 @@ onSubmit={async function* (text) {
 
 ---
 
+## 🗣️ Languages
+
+English and Hindi both run entirely on the device. Set `ttsLanguage` and the
+engine picks a matching voice, a matching speech-recognition model, and a
+matching phoneme path.
+
+```tsx
+<AiVoiceAvatar ttsLanguage="hi-IN" />
+```
+
+Hindi needed real work rather than a config flag. Kokoro ships four Hindi voices
+inside the same checkpoint as the English ones, but the JavaScript wrapper does
+not list them, and the bundled eSpeak build carries English data only and rejects
+`hi` outright. So this package includes its own Devanagari-to-phoneme converter.
+Devanagari is close to phonemic, which makes that tractable; the hard part is
+schwa deletion, the rule that makes कमल read as "kamal" rather than "kamala", and
+getting it wrong produces speech that still sounds like speech while sounding
+like someone spelling Hindi out.
+
+Because the converter emits real phonemes, Hindi gets phoneme-driven lip-sync
+with distinct mouth shapes for the retroflex consonants, not the amplitude-only
+mouth flapping most engines fall back to outside English. Code-switching works
+too: English words inside a Hindi sentence are routed to the English phonemiser,
+so "मुझे coffee चाहिए" is pronounced correctly throughout.
+
+> [!NOTE]
+> **Local Hindi is a demo, not a product.** Models small enough to run in a
+> browser are far weaker in Hindi than in English. It is good enough to show the
+> pipeline working end to end and not good enough to ship. For production Hindi,
+> route hearing and thinking to an API through `onTranscribe` and `onSubmit`;
+> the voice and lip-sync stay local and are genuinely good.
+
+A session is one language at a time. Someone who switches language mid-conversation
+will be mistranscribed, because the recognition model is told which language to
+expect and browser Whisper cannot detect it.
+
+---
+
+## 🎤 Taking turns
+
+The user can talk over the avatar and cut it off mid-sentence. This is on by
+default, because waiting for a reply to finish is the thing that makes a voice
+agent feel like a walkie-talkie.
+
+```tsx
+<AiVoiceAvatar
+  allowInterruption={false}   // default: true
+  onUserInterrupt={() => analytics.track('barge_in')}
+/>
+```
+
+Turn it off for a kiosk or a noisy room, where the avatar hearing its own voice
+through the speakers and stopping itself is worse than waiting. It is ignored in
+`push-to-talk`, which owns the floor explicitly.
+
+### How a turn is decided
+
+Voice detection scores every 96ms frame for how much it sounds like speech. A
+cough, a door and a chair all clear a loudness bar as easily as a word does, so
+loudness alone cannot separate them — **sustain** can. A sound has to keep
+scoring as speech for `minSpeechMs` before the engine treats it as a turn.
+
+Below that bar, a sound only ducks the avatar's voice, reversibly. If it turns
+out to be a cough the reply resumes from where it paused, at the right place in
+the sentence and with the mouth still in sync. Nothing about the conversation
+changed, because nothing was decided on a noise.
+
+### Tuning for your room
+
+The defaults suit a quiet room and headphones. A shop floor is a different
+problem, and only you know which you have.
+
+```tsx
+<AiVoiceAvatar
+  speechDetection={{ positiveSpeechThreshold: 0.6, minSpeechMs: 700 }}
+/>
+```
+
+| Field | Default | Raise it when | Lower it when |
+| :--- | :--- | :--- | :--- |
+| `positiveSpeechThreshold` | `0.5` | Passing noise is mistaken for talking | Quiet speakers go unheard |
+| `negativeSpeechThreshold` | `0.35` | Turns end too slowly in a noisy room | Turns end while someone is still talking |
+| `minSpeechMs` | `500` | Short noises still start turns | Single-word answers are ignored |
+| `redemptionMs` | `1400` | People are cut off while thinking mid-sentence | Replies feel slow to start |
+| `preSpeechPadMs` | `800` | The first word is still being clipped | Rarely — this is the audio kept from *before* the trigger, and it is what stops the first syllable going missing |
+
+Two costs worth knowing before you change anything. A speaker who sits below
+`positiveSpeechThreshold` produces **no events at all** — raising it trades
+quiet voices for quiet rooms. And a filler like "hmm" held long enough to pass
+`minSpeechMs` still reaches transcription; a denylist catches the common ones
+after the fact, but sustain cannot tell a long "hmm" from a short word.
+
+---
+
+## 🚨 Handling failures
+
+Pass `onError` and your app learns when something breaks, rather than finding out
+from a console message it cannot see.
+
+```tsx
+<AiVoiceAvatar
+  onError={(e) => {
+    if (e.severity === 'fatal') showFallbackUI(e.stage);
+    logToSentry(e);
+  }}
+/>
+```
+
+Check `severity` before reacting. Most failures here are survivable because the
+engine falls back: WebGPU to WASM, Kokoro to a smaller voice model. Those arrive
+as `degraded` and the avatar still works, so treating them as fatal would hide a
+working experience behind an error screen. A refused microphone is `fatal` for
+listening while typed input still works, which is a judgement only your app can
+make.
+
+`stage` is one of `microphone`, `speech-recognition`, `language-model`,
+`speech-synthesis`, `audio-output`, `worker` or `conversation`. There is also a
+`detail` string carrying the engine's internal stage name for bug reports; it is
+not stable across versions, so do not branch on it.
+
+---
+
 ## 🎨 Bring Your Own 3D Avatar (Custom GLB)
 
 You are not locked into our built-in avatars (`ananya` and `aarav`)! You can use any custom `.glb` humanoid model by passing its URL or local path to the `modelSrc` prop:
@@ -322,9 +463,34 @@ Models exported from Ready Player Me also work, since they carry the same ARKit 
 
 ---
 
-## 🏗️ Architecture & Deployment Modes
+## 🏗️ What runs where
 
-Explore our structured canonical architecture patterns in the `examples/` directory:
+Four stages, and you choose where each one happens. The defaults are all local,
+which is why the demo needs no keys, but the interesting production setups are
+mixed.
+
+| Stage | On the device | Your backend instead |
+| :--- | :--- | :--- |
+| **Hearing** — speech to text | Whisper via ONNX | `onTranscribe` |
+| **Thinking** — the reply | Qwen or Gemma via WebGPU | `onSubmit` |
+| **Speaking** — text to audio | Kokoro-82M | `onSynthesize` |
+| **Face** — lip-sync and animation | Always here | Not applicable |
+
+The face never leaves the device, which is the whole point: that is what avatar
+APIs charge per minute for, and it is the one stage that cannot be outsourced
+without a video stream.
+
+The common production shape is `onSubmit` alone. Hearing and speaking stay local,
+so no audio ever leaves the browser, while generation goes to whatever model you
+already run. That keeps the download to a few hundred megabytes, keeps your keys
+on your server, and still gives you a conversation nobody else can read.
+
+Fully local is real, not a demo trick, and it is the right answer for a kiosk, a
+regulated environment, or anywhere without reliable connectivity. Be aware of the
+cost: the first visit downloads roughly 600 MB before anyone can speak, and the
+quality ceiling is whatever a model that size can do.
+
+Explore the canonical patterns in the `examples/` directory:
 
 | Example Pattern | Folder | Highlights & Architecture |
 | :--- | :--- | :--- |
@@ -347,23 +513,30 @@ Explore our structured canonical architecture patterns in the `examples/` direct
 | `modelSrc` | `string` | `undefined` | Absolute local path or remote URL to a custom GLTF/GLB humanoid armature avatar model. |
 | `lightingPreset` | `'studio' \| 'cyberpunk_violet' \| 'cool_azure' \| 'warm_amber' \| 'clean_white' \| 'none'` | `'studio'` | Pre-built cinematic studio lighting atmospheres directly applied to your 3D viewport without manual Three.js configuration! |
 | `systemPrompt` | `string` | `"You are Ananya..."`| Conversational persona directives and context injected into active LLMs. |
-| `llmModel` | `string` | `"onnx-community/Qwen2.5-0.5B-Instruct"` | Hugging Face identifier for local client-side WebGPU Transformer reasoning weights when offline mode is used without `onSubmit`. |
-| `asrModel` | `string` | `"onnx-community/whisper-base"` | Hugging Face identifier for the local WebGPU Whisper speech recognition model. Pass `"Xenova/whisper-tiny"` for faster downloads. |
+| `llmModel` | `string` | by language | Hugging Face id for the local WebGPU reasoning model, used only when `onSubmit` is absent. Defaults to Qwen2.5-0.5B for English and Gemma 3 1B for Hindi, which Qwen that size cannot speak. Set it to pin one model for every language. |
+| `asrModel` | `string` | by language | Hugging Face id for the local Whisper model. Defaults to Whisper base for English and Whisper small for Hindi, which base transcribes badly. Pass `"Xenova/whisper-tiny"` for a faster download and worse accuracy. |
 | `ttsEngine` | `'kokoro' \| 'mms'` | `'kokoro'` | High-fidelity neural voice synthesis engine executing inside dedicated Web Workers. |
-| `ttsVoice` | `string` | `'af_heart'` | Kokoro voice profile. All 28 bundled voices are English: `af_*` and `am_*` are American, `bf_*` and `bm_*` are British (e.g. `af_heart`, `af_bella`, `am_michael`, `bf_emma`). An unknown value throws with the full list. |
-| `ttsLanguage`| `'en-US' \| 'hi-IN'` | `'en-US'` | Language for the built-in speech engines. Only these two have local voice models today. For any other language, pass `onSynthesize` and use a cloud voice provider. |
+| `ttsVoice` | `string` | by language | Kokoro voice id. `af_*` and `am_*` American, `bf_*` and `bm_*` British, `hf_*` and `hm_*` Hindi (`af_heart`, `am_michael`, `bf_emma`, `hf_alpha`, `hm_omega`). Defaults to one matching `ttsLanguage`. A voice whose language disagrees is corrected with a warning. |
+| `ttsLanguage`| `'en-US' \| 'en-GB' \| 'hi-IN'` | `'en-US'` | Conversation language. Selects the voice, the recognition model and the phoneme path. Also sets `asrLanguage` unless you set that yourself. For any other language, pass `onSynthesize` and use a cloud voice provider. |
+| `asrLanguage`| `string` | `ttsLanguage` | Language to transcribe. Follows `ttsLanguage` by default, since a conversation is almost always held in one language. |
 | `showCaptions` | `boolean` | `true` | Renders a sleek glassmorphic subtitle overlay displaying spoken interaction dialog. |
 | `hideStatusPill`| `boolean` | `false` | When true, suppresses the default bottom-left microphone interactive control pill. |
 | `listenMode` | `'continuous' \| 'push-to-talk'` | `'continuous'` | `continuous` keeps the mic hot after the avatar finishes speaking naturally, but explicitly clicking Stop forces it off until tapped again. `push-to-talk` strictly requires manually tapping to start listening for every single turn. |
-| `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! |
+| `allowInterruption` | `boolean` | `true` | Lets the user talk over the avatar and cut it off mid-sentence. Turn off for a kiosk or noisy room, where the avatar hearing itself through the speakers is worse than waiting. Ignored in `push-to-talk`. See [Taking turns](#-taking-turns). |
+| `speechDetection` | `{ positiveSpeechThreshold?, negativeSpeechThreshold?, minSpeechMs?, redemptionMs?, preSpeechPadMs? }` | see [Taking turns](#-taking-turns) | Tunes how the microphone decides someone is talking. Every field optional. The defaults suit a quiet room; a shop floor needs a higher threshold and a longer `minSpeechMs`. |
+| `onUserInterrupt` | `() => void` | `undefined` | Fires when the user talks over the avatar and takes the floor. Only fires if the avatar actually had audio playing. |
+| `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! Fires with `0` and `'idle'` between turns, so a meter falls to rest rather than freezing. |
 | `onSubmit` | `(text: string) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. |
+| `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service. Receives raw microphone samples. |
+| `onSynthesize` | `(text: string) => Promise<Float32Array \| ArrayBuffer>` | `undefined` | Replaces local voice synthesis with your own service. Return raw PCM or an encoded MP3/WAV buffer. |
+| `onError` | `(e: AiVoiceAvatarError) => void` | `undefined` | Fires when a stage fails. Carries `stage`, `message` and a `severity` of `degraded` or `fatal`. See [Handling failures](#-handling-failures). |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | `undefined` | Callback delivering real-time microphone transcriptions and assistant spoken utterance strings. |
 | `onStatusChange`| `(status: string) => void` | `undefined` | Emits live state transitions (`loading`, `idle`, `listening`, `thinking`, `speaking`). |
 | `debug` | `boolean` | `false` | When true, renders an interactive floating GUI (Leva) to inspect and tune individual 3D blendshapes. |
 | `vadAssetPath` | `string` | `undefined` | Optional URL or local path override for self-hosting `@ricky0123/vad-web` ONNX asset binaries in airgapped deployments. |
 | `onnxWasmPath` | `string` | `undefined` | Optional URL override for self-hosting `onnxruntime-web` WASM distribution files. |
 | `workerBaseUrl`| `string` | `undefined` | CSP Escape Hatch: if `blob:` workers are blocked by your server, fetch pre-compiled Web Workers from this URL directory. |
-| `enableLocalAssetProbe` | `boolean` | `false` | When true, performs an HTTP HEAD check on local `/ananya.glb` routes before falling back to CDN. Disabled by default to prevent 404 console errors in SPAs. |
+| `enableLocalAssetProbe` | `boolean` | `false` | When true, HEAD-checks `/ananya.glb` in your own public directory before falling back to the CDN. Off by default: with no local copy the probe 404s, and that 404 lands in every visitor's console. |
 | `statusPillStyle` | `React.CSSProperties` | `undefined` | Optional custom CSS styling & absolute positioning overrides for the interactive Status Pill overlay. |
 | `accentColor` | `string` | `undefined` | Custom CSS color string (e.g., `#38BDF8`) for the active status indicator rings and highlights. |
 

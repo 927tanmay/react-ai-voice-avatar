@@ -20,4 +20,4 @@ export type {
 export { StatusPill } from './components/StatusPill';
 export type { StatusPillProps } from './components/StatusPill';
 
-export type { AiVoiceAvatarCapabilities } from './types';
+export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from './types';

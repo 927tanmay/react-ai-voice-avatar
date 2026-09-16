@@ -36,6 +36,16 @@ export interface UseMLWorkerReturn {
 export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
   const workerRef = useRef<Worker | null>(null);
   const [isReady, setIsReady] = useState(false);
+  /**
+   * Which attempt to spawn a worker is the current one.
+   *
+   * Spawning is asynchronous — the worker's code is imported before the Worker
+   * exists — so an effect can be cleaned up while its worker is still on the
+   * way. The cleanup then has nothing to terminate, and the abandoned attempt
+   * arrives afterwards and claims `workerRef`. Comparing this counter is how a
+   * late arrival finds out it is no longer wanted.
+   */
+  const spawnTokenRef = useRef(0);
 
   // Keep latest config in ref for callbacks
   const configRef = useRef(config);
@@ -47,6 +57,7 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     if (typeof window === 'undefined' || typeof Worker === 'undefined') return; // P4: Next.js SSR Guard
     let isMounted = true;
     let worker: Worker | null = null;
+    const token = ++spawnTokenRef.current;
 
     const timer = setTimeout(async () => {
       if (!isMounted) return;
@@ -80,6 +91,17 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
             }
           }
           
+          // Abandoned while its code was being imported — see the note on
+          // spawnTokenRef. An orphan here is worse than a wasted download: it
+          // would claim workerRef and then have every reply it sent ignored,
+          // because the handlers below belong to an effect that has already
+          // been cleaned up.
+          if (!isMounted || token !== spawnTokenRef.current) {
+            try { newWorker.terminate(); } catch (e) { /* never started */ }
+            if (pendingBlobUrl) URL.revokeObjectURL(pendingBlobUrl);
+            return;
+          }
+
           worker = newWorker;
           workerRef.current = newWorker;
           let hasReceivedMessage = false;

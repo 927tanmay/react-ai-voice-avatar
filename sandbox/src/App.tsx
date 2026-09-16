@@ -1266,6 +1266,11 @@ ${llmMode === 'cloud'
             hideStatusPill={isMobile || _avatarStatus === 'loading'}
             loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
             onStatusChange={setAvatarStatus}
+            // This repo develops the avatar meshes, so prefer a local copy in
+            // sandbox/public over the CDN. Consumers leave this off.
+            enableLocalAssetProbe
+
+            onError={(e) => console.warn(`[demo] ${e.severity} in ${e.stage}: ${e.message}`)}
           />
         ) : (
           <AiVoiceAvatarLazy
@@ -1287,6 +1292,10 @@ ${llmMode === 'cloud'
             hideStatusPill={isMobile || _avatarStatus === 'loading'}
             loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
             onStatusChange={setAvatarStatus}
+            // This repo develops the avatar meshes, so prefer a local copy in
+            // sandbox/public over the CDN. Consumers leave this off.
+            enableLocalAssetProbe
+
           />
         )}
       </Canvas>

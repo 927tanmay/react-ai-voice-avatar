@@ -15,6 +15,36 @@ const TEST_DIR = path.join(ROOT_DIR, '.pack-test');
 const MAX_TARBALL_MB = 2.6;
 const MAX_UNPACKED_MB = 6.5;
 
+/**
+ * Run an npm command, retrying the failures that are not ours.
+ *
+ * This test scaffolds a real Vite app and installs from the real registry, so
+ * it depends on the whole npm ecosystem being reachable for a few minutes. A
+ * tarball that 404s because it was published moments ago and has not finished
+ * propagating is not a fault in this package, but it fails the build exactly as
+ * loudly as one — and on a repository inviting contributors, a red tick nobody
+ * can explain costs more than the occasional slow retry.
+ *
+ * Deliberately not silent about it: a retry is printed, so a genuinely broken
+ * dependency looks like three failures rather than one mysterious pause.
+ */
+function installing(command, cwd, attempts = 3) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      execSync(command, { stdio: 'inherit', cwd });
+      return;
+    } catch (err) {
+      if (attempt >= attempts) {
+        console.error(`❌ \`${command}\` failed ${attempts} times. This is not a transient registry problem.`);
+        throw err;
+      }
+      const waitSeconds = attempt * 5;
+      console.warn(`⚠️  \`${command}\` failed (attempt ${attempt}/${attempts}). Retrying in ${waitSeconds}s...`);
+      execSync(`sleep ${waitSeconds}`);
+    }
+  }
+}
+
 function checkPackageSize() {
   const meta = JSON.parse(execSync('npm pack --dry-run --json', { cwd: ROOT_DIR }).toString())[0];
   const tarballMb = meta.size / 1024 / 1024;
@@ -54,21 +84,21 @@ async function run() {
   fs.mkdirSync(TEST_DIR, { recursive: true });
   
   // Use npm create vite without prompts
-  execSync('npm create vite@latest app -- --template react-ts', { stdio: 'inherit', cwd: TEST_DIR });
+  installing('npm create vite@latest app -- --template react-ts', TEST_DIR);
   const APP_DIR = path.join(TEST_DIR, 'app');
-  
+
   console.log('📥 3. Installing dependencies & the packed tarball...');
-  execSync('npm install', { stdio: 'inherit', cwd: APP_DIR });
+  installing('npm install', APP_DIR);
   // `npm create vite` scaffolds the newest React, but @react-three/fiber@9.7
   // declares `peer react ">=19 <19.3"`, so React 19.3 makes the install fail with
   // ERESOLVE. Pin React to a version fiber accepts, so this test exercises our
   // packaging rather than React's release cadence. Drop the pin once fiber widens
   // its peer range.
-  execSync('npm install react@~19.2.0 react-dom@~19.2.0', { stdio: 'inherit', cwd: APP_DIR });
+  installing('npm install react@~19.2.0 react-dom@~19.2.0', APP_DIR);
   // Install required peer dependencies
-  execSync('npm install three@^0.167.0 @react-three/fiber@^9.0.0 @react-three/drei@^10.7.7', { stdio: 'inherit', cwd: APP_DIR });
+  installing('npm install three@^0.167.0 @react-three/fiber@^9.0.0 @react-three/drei@^10.7.7', APP_DIR);
   // Install the absolute path to the tarball
-  execSync(`npm install ${tarballPath}`, { stdio: 'inherit', cwd: APP_DIR });
+  installing(`npm install ${tarballPath}`, APP_DIR);
 
   console.log('✍️ 4. Writing Test App.tsx & vite.config.ts...');
   
