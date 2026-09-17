@@ -1,5 +1,6 @@
 import { pipeline, AutomaticSpeechRecognitionPipeline, TextGenerationPipeline, TextToAudioPipeline, TextStreamer, env } from '@huggingface/transformers';
 import { normalizeToDevanagari } from '../lib/transliterate';
+import { createDownloadProgress } from '../lib/downloadProgress';
 
 // Setup environment specifically for the worker
 env.allowLocalModels = false;
@@ -160,17 +161,19 @@ const withLanguageInstruction = (prompt: string, language: string, voice?: strin
   return parts.join('\n\n');
 };
 
+/** Report one model's download as a single forward-only figure. See downloadProgress.ts. */
+const reportProgress = (model: 'asr' | 'llm' | 'tts') =>
+  createDownloadProgress(pct => {
+    self.postMessage({ type: 'loadingProgress', payload: { model, pct } });
+  });
+
 /** Load a text generation pipeline, reporting download progress as it goes. */
 const loadLlmPipeline = (model: string) => {
   self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 0 } });
   return pipeline('text-generation', model, {
     device: currentDevice,
     dtype: 'q4', // Quantization for speed
-    progress_callback: (p: any) => {
-      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress } });
-      }
-    },
+    progress_callback: reportProgress('llm'),
   });
 };
 
@@ -234,11 +237,7 @@ const messagesForModel = (history: ChatTurn[], tokenizer: any): ChatTurn[] => {
 const loadAsrPipeline = (model: string, device: 'webgpu' | 'wasm') =>
   pipeline('automatic-speech-recognition', model, {
     device,
-    progress_callback: (p: any) => {
-      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress } });
-      }
-    },
+    progress_callback: reportProgress('asr'),
   });
 
 const processTtsQueue = async () => {
@@ -375,11 +374,7 @@ self.onmessage = async (e: MessageEvent) => {
         const ttsRepo = resolveTtsRepo(currentTtsLanguage);
         ttsPipeline = await pipeline('text-to-speech', ttsRepo, {
           device: 'wasm',
-          progress_callback: (p: any) => {
-            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-              self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: p.progress }});
-            }
-          }
+          progress_callback: reportProgress('tts'),
         });
         self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
       }

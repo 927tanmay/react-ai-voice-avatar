@@ -1,4 +1,5 @@
 import { pipeline } from '@huggingface/transformers';
+import { createDownloadProgress } from '../lib/downloadProgress';
 // Prevent esbuild from tree-shaking the ONNX Runtime WASM backend registration side-effects
 if (typeof self !== 'undefined' && self.location && self.location.href && self.location.href.includes('prevent-tree-shaking')) {
   console.log(pipeline);
@@ -354,14 +355,13 @@ self.onmessage = async (e: MessageEvent) => {
         }
       }
 
-      const progressCallback = (data: any) => {
-        if (data && data.status === 'progress' && typeof data.progress === 'number') {
-          self.postMessage({
-            type: 'loadingProgress',
-            payload: { model: 'kokoro', pct: Math.min(99, Math.round(data.progress)) },
-          });
-        }
-      };
+      // Summed across the model's files and forward-only; see downloadProgress.ts.
+      const progressCallback = createDownloadProgress(pct => {
+        self.postMessage({
+          type: 'loadingProgress',
+          payload: { model: 'kokoro', pct: Math.round(pct) },
+        });
+      });
 
       try {
         console.log('[Kokoro Worker] Initializing Kokoro-82M on WebGPU (fp32)...');
