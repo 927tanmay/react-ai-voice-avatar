@@ -246,7 +246,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
             onStatusChange={setStatus}
             onModelLoaded={() => setMeshReady(true)}
             onUserInterrupt={() => setInterrupted(true)}
-            enableLocalAssetProbe
+            enableLocalAssetProbe={import.meta.env.DEV}
             onError={(e) => {
               console.warn(`[hero] ${e.severity} in ${e.stage}: ${e.message}`);
               if (e.stage === 'microphone') {

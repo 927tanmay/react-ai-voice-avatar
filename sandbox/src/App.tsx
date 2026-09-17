@@ -1310,9 +1310,12 @@ ${llmMode === 'cloud'
             hideStatusPill={isMobile || _avatarStatus === 'loading'}
             loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
             onStatusChange={setAvatarStatus}
-            // This repo develops the avatar meshes, so prefer a local copy in
-            // sandbox/public over the CDN. Consumers leave this off.
-            enableLocalAssetProbe
+            // Dev only. This repo develops the avatar meshes, so a local copy
+            // in sandbox/public is preferred while working on them — but those
+            // files are symlinks and gitignored, so they never deploy, and
+            // leaving the probe on put a 404 for /ananya.glb in the console of
+            // every visitor to the live demo. Consumers leave this off entirely.
+            enableLocalAssetProbe={import.meta.env.DEV}
 
             onError={(e) => console.warn(`[demo] ${e.severity} in ${e.stage}: ${e.message}`)}
           />
@@ -1336,9 +1339,12 @@ ${llmMode === 'cloud'
             hideStatusPill={isMobile || _avatarStatus === 'loading'}
             loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
             onStatusChange={setAvatarStatus}
-            // This repo develops the avatar meshes, so prefer a local copy in
-            // sandbox/public over the CDN. Consumers leave this off.
-            enableLocalAssetProbe
+            // Dev only. This repo develops the avatar meshes, so a local copy
+            // in sandbox/public is preferred while working on them — but those
+            // files are symlinks and gitignored, so they never deploy, and
+            // leaving the probe on put a 404 for /ananya.glb in the console of
+            // every visitor to the live demo. Consumers leave this off entirely.
+            enableLocalAssetProbe={import.meta.env.DEV}
 
           />
         )}
