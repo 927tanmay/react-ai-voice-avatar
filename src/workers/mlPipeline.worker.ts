@@ -172,7 +172,13 @@ const loadLlmPipeline = (model: string) => {
   self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 0 } });
   return pipeline('text-generation', model, {
     device: currentDevice,
-    dtype: 'q4', // Quantization for speed
+    // q4, not q4f16, even though q4f16 is transformers.js's recommendation for
+    // WebGPU and is 461 MB against 750 MB for Qwen2.5-0.5B. Measured in Chrome
+    // on WebGPU with shader-f16, greedy decoding, identical prompts: q4 answered
+    // every one ("The capital of France is Paris."), while q4f16 repeated each
+    // question back verbatim and degenerated into repeated fragments. Qwen's
+    // activations overflow half precision. Re-measure before changing this.
+    dtype: 'q4',
     progress_callback: reportProgress('llm'),
   });
 };
