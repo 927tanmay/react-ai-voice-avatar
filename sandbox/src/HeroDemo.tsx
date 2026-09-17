@@ -35,7 +35,16 @@ const DOWNLOAD_SIZE = '~1.3 GB';
 
 const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
 
-export const HeroDemo: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
+interface HeroDemoProps {
+  isMobile: boolean;
+  /** How many scenarios the page offers below, named in the link to them. */
+  scenarioCount: number;
+  onShowScenarios: () => void;
+  /** Height of the page header above, so the hero still fills one screen. */
+  headerHeight: number;
+}
+
+export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onShowScenarios, headerHeight }) => {
   const avatarRef = useRef<AiVoiceAvatarHandle>(null);
 
   // Nothing downloads until this is true. The avatar still renders and idles,
@@ -103,7 +112,7 @@ export const HeroDemo: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
   return (
     <section
       style={{
-        minHeight: '100dvh',
+        minHeight: `calc(100dvh - ${headerHeight}px)`,
         boxSizing: 'border-box',
         display: 'grid',
         gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.1fr)',
@@ -129,9 +138,14 @@ export const HeroDemo: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
 
         {!engaged && (
           <>
-            <button onClick={() => setEngaged(true)} style={primaryButton}>
-              Talk to it
-            </button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '20px' }}>
+              <button onClick={() => setEngaged(true)} style={primaryButton}>
+                Talk to it
+              </button>
+              <button onClick={onShowScenarios} style={textButton}>
+                See all {scenarioCount} scenarios ↓
+              </button>
+            </div>
             <p style={noteStyle}>
               Runs entirely in your browser. The first conversation downloads {DOWNLOAD_SIZE} of models, then it's cached.
               {!hasWebGpu && (
@@ -181,7 +195,11 @@ export const HeroDemo: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '32px', alignItems: 'center' }}>
           <code style={codeChip}>npm install react-ai-voice-avatar</code>
-          <a href="https://github.com/927tanmay/react-ai-voice-avatar" target="_blank" rel="noreferrer" style={linkStyle}>GitHub →</a>
+          {/* Once the visitor has engaged the call to action above is gone, so
+              the way to the scenarios moves down here rather than vanishing. */}
+          {engaged && (
+            <button onClick={onShowScenarios} style={textButton}>See all {scenarioCount} scenarios ↓</button>
+          )}
         </div>
       </div>
 
@@ -318,9 +336,13 @@ const codeChip: React.CSSProperties = {
   padding: '8px 12px',
 };
 
-const linkStyle: React.CSSProperties = {
+const textButton: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  font: 'inherit',
   color: '#E2E8F0',
-  fontSize: '14px',
+  fontSize: '15px',
   fontWeight: 600,
-  textDecoration: 'none',
 };

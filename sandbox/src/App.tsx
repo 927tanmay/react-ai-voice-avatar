@@ -180,9 +180,31 @@ const LIGHTING_PRESETS: Array<{ id: 'studio' | 'cyberpunk_violet' | 'cool_azure'
   { id: 'none', label: 'Ambient Only', icon: '🌑' },
 ];
 
+const LANDING_HEADER_HEIGHT = 64;
+
+const navLinkStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  font: 'inherit',
+  fontSize: '14px',
+  fontWeight: 600,
+  color: '#CBD5E1',
+  textDecoration: 'none',
+};
+
 // --- Landing Page Component ---
 const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSelect }) => {
   const isMobile = useMediaQuery('(max-width: 900px)');
+  const scenariosRef = useRef<HTMLDivElement>(null);
+  // The scenarios sit below a full-height hero, so without a way to them from
+  // the top a visitor has no reason to know they exist.
+  const showScenarios = () => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    scenariosRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  };
+
   return (
     <div style={{
       width: '100vw',
@@ -194,12 +216,33 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
       padding: '0',
       boxSizing: 'border-box'
     }}>
+      <header style={{
+        maxWidth: '1200px',
+        height: `${LANDING_HEADER_HEIGHT}px`,
+        margin: '0 auto',
+        padding: isMobile ? '0 16px' : '0 24px',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <span style={{ fontSize: '15px', fontWeight: 700, color: '#F8FAFC', letterSpacing: '-0.2px' }}>
+          react-ai-voice-avatar
+        </span>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '16px' : '28px' }}>
+          <button onClick={showScenarios} style={navLinkStyle}>Scenarios</button>
+          <a href="https://github.com/927tanmay/react-ai-voice-avatar#readme" target="_blank" rel="noreferrer" style={navLinkStyle}>Docs</a>
+          <a href="https://github.com/927tanmay/react-ai-voice-avatar" target="_blank" rel="noreferrer" style={navLinkStyle}>GitHub</a>
+        </nav>
+      </header>
+
       {/* The product itself, before any choice has to be made. This page used to
           open on seven scenario cards, and the first one answered in canned
           placeholder text, so a visitor's first conversation was with a stub. */}
-      <HeroDemo isMobile={isMobile} />
+      <HeroDemo isMobile={isMobile} scenarioCount={PERSONAS.length} onShowScenarios={showScenarios} headerHeight={LANDING_HEADER_HEIGHT} />
 
-      <div style={{
+      <div ref={scenariosRef} style={{
+        scrollMarginTop: '16px',
         maxWidth: '1200px',
         margin: '0 auto',
         padding: isMobile ? '24px 16px 40px' : '32px 24px 56px',
