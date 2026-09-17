@@ -482,13 +482,15 @@ without a video stream.
 
 The common production shape is `onSubmit` alone. Hearing and speaking stay local,
 so no audio ever leaves the browser, while generation goes to whatever model you
-already run. That keeps the download to a few hundred megabytes, keeps your keys
-on your server, and still gives you a conversation nobody else can read.
+already run. That keeps the download to about 600 MB (Whisper base and the Kokoro
+voice), keeps your keys on your server, and still gives you a conversation nobody
+else can read.
 
 Fully local is real, not a demo trick, and it is the right answer for a kiosk, a
 regulated environment, or anywhere without reliable connectivity. Be aware of the
-cost: the first visit downloads roughly 600 MB before anyone can speak, and the
-quality ceiling is whatever a model that size can do.
+cost: in English the first visit downloads roughly 1.3 GB before anyone can speak
+(the language model alone is 750 MB), about 2.1 GB in Hindi, and the quality
+ceiling is whatever a model that size can do.
 
 Explore the canonical patterns in the `examples/` directory:
 

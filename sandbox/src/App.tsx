@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { AiVoiceAvatar, AiVoiceAvatarLazy, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import { AudioVisualizer } from './components/AudioVisualizer';
+import { HeroDemo } from './HeroDemo';
 import './style.css';
 
 const useMediaQuery = (query: string) => {
@@ -156,9 +157,12 @@ const KOKORO_VOICES: Array<{ id: string; label: string; language: TtsLanguage }>
  * bar starts rather than after.
  */
 const LOCAL_MODELS: Record<TtsLanguage, { asr: string; llm: string; voice: string; download: string }> = {
-  'en-US': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~0.6 GB' },
-  'en-GB': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~0.6 GB' },
-  'hi-IN': { asr: 'Whisper small', llm: 'Gemma 3 1B', voice: 'Kokoro-82M', download: '~1.3 GB' },
+  // Summed from the files the engine requests: English is Whisper base 278 MB +
+  // Qwen q4 750 MB + Kokoro fp32 310 MB; Hindi is Whisper small 923 MB + Gemma q4
+  // 819 MB + Kokoro 310 MB. Both were previously understated by more than half.
+  'en-US': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~1.3 GB' },
+  'en-GB': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~1.3 GB' },
+  'hi-IN': { asr: 'Whisper small', llm: 'Gemma 3 1B', voice: 'Kokoro-82M', download: '~2.1 GB' },
 };
 
 const TTS_LANGUAGES: Array<{ id: TtsLanguage; label: string }> = [
@@ -178,42 +182,39 @@ const LIGHTING_PRESETS: Array<{ id: 'studio' | 'cyberpunk_violet' | 'cool_azure'
 
 // --- Landing Page Component ---
 const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSelect }) => {
+  const isMobile = useMediaQuery('(max-width: 900px)');
   return (
-    <div style={{ 
-      width: '100vw', 
-      height: '100dvh', 
-      backgroundColor: '#0C0D10', 
+    <div style={{
+      width: '100vw',
+      height: '100dvh',
+      backgroundColor: '#0C0D10',
       fontFamily: "'Inter', -apple-system, sans-serif",
       overflowY: 'auto',
       overflowX: 'hidden',
       padding: '0',
       boxSizing: 'border-box'
     }}>
-      <div style={{ 
-        maxWidth: '1200px', 
+      {/* The product itself, before any choice has to be made. This page used to
+          open on seven scenario cards, and the first one answered in canned
+          placeholder text, so a visitor's first conversation was with a stub. */}
+      <HeroDemo isMobile={isMobile} />
+
+      <div style={{
+        maxWidth: '1200px',
         margin: '0 auto',
-        padding: '56px 24px',
+        padding: isMobile ? '24px 16px 40px' : '32px 24px 56px',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '100dvh'
       }}>
-        
-        {/* Header / About */}
-        <div style={{ textAlign: 'left', marginBottom: '56px' }}>
-          <h1 style={{ fontSize: '48px', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-1px', margin: '0 0 20px 0' }}>
-            React <span style={{ color: '#38BDF8' }}>AI Voice Avatar</span>
-          </h1>
-          <p style={{ fontSize: '18px', color: '#94A3B8', lineHeight: '1.6', maxWidth: '600px', margin: '0' }}>
-            Real-time Edge WebGPU conversational voice AI. 
-            Drop a fully-rigged, lip-syncing 3D avatar into your React app with sub-second latency and zero cloud dependencies.
-          </p>
-        </div>
 
         {/* Scenarios Grid */}
-        <h2 style={{ fontSize: '14px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '2px', textAlign: 'left', marginBottom: '28px' }}>
-          Select a Scenario to Begin
+        <h2 style={{ fontSize: '14px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '2px', textAlign: 'left', margin: '0 0 8px' }}>
+          More scenarios
         </h2>
+        <p style={{ fontSize: '15px', color: '#94A3B8', margin: '0 0 28px' }}>
+          Kiosks, support, Hindi, two avatars debating, and a sandbox for every engine setting.
+        </p>
         
         <div style={{ 
           display: 'grid', 
@@ -279,7 +280,7 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
 
         {/* Footer */}
         <div style={{ 
-          marginTop: 'auto', 
+          marginTop: '56px',
           paddingTop: '24px', 
           borderTop: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'flex',
