@@ -97,6 +97,18 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onUserInterrupt?: () => void;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
 
+  /**
+   * Download and start the models. Defaults to true. Set false to render the
+   * avatar without spending hundreds of megabytes on a visitor who has not
+   * engaged yet, and flip it true when they do.
+   */
+  loadModels?: boolean;
+  /**
+   * Fires once the 3D mesh is parsed and in the scene. Parsing a multi-megabyte
+   * GLB takes long enough to leave an empty canvas on screen, so use this to
+   * hold a placeholder over it until there is something to see.
+   */
+  onModelLoaded?: () => void;
   fallbackMode?: 'wasm' | 'disable' | 'error';
   /**
    * Called when something in the pipeline fails.
@@ -235,14 +247,24 @@ interface AvatarModelProps {
   currentAudioDurationRef: React.RefObject<number>;
   playbackStartTimeRef: React.RefObject<number>;
   audioContextRef: React.RefObject<AudioContext | null>;
+  onLoaded?: () => void;
 }
 
 function AvatarModel({
   url, status, debug, analyser,
   currentSpeechTextRef, currentSpeechPhonemesRef, currentAudioDurationRef,
-  playbackStartTimeRef, audioContextRef,
+  playbackStartTimeRef, audioContextRef, onLoaded,
 }: AvatarModelProps) {
   const { scene } = useGLTF(url);
+
+  // useGLTF suspends until the mesh is parsed, so reaching an effect here means
+  // it is in the scene. Keyed on the scene alone: a host passing a fresh arrow
+  // function every render should hear about each mesh once, not each render.
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
+  useEffect(() => {
+    onLoadedRef.current?.();
+  }, [scene]);
   const morphMeshesRef = useRef<THREE.Mesh[]>([]);
 
   // Lip sync & facial dynamics engine instances (created once, zero React rerenders)
@@ -556,6 +578,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     ttsVoice: props.ttsVoice,
     systemPrompt: props.systemPrompt,
     fallbackMode,
+    loadModels: props.loadModels,
     // People answer in the language they were addressed in, so listening
     // follows speaking unless told otherwise. Defaulting this to English on its
     // own meant choosing Hindi gave Hindi speech but English transcripts, and
@@ -682,6 +705,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
           currentAudioDurationRef={currentAudioDurationRef}
           playbackStartTimeRef={playbackStartTimeRef}
           audioContextRef={audioContextRef}
+          onLoaded={props.onModelLoaded}
         />
       </group>
 
