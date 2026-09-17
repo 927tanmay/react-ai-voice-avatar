@@ -83,6 +83,17 @@ const MIC_CONSTRAINTS: MediaStreamConstraints = {
 };
 
 export interface UseAiVoiceAvatarConfig {
+  /**
+   * Whether to download and start the speech, language and voice models.
+   * Defaults to true.
+   *
+   * Set it false to render an avatar nobody has engaged with yet — on a landing
+   * page, or in a widget most visitors never open — and flip it true when they
+   * do. The models are hundreds of megabytes; a page should not spend that on
+   * someone who only scrolled past. Status stays `'loading'` until it is true
+   * and the models are up, so show your own call to action in the meantime.
+   */
+  loadModels?: boolean;
   llmModel?: string;
   asrModel?: string;
   ttsLanguage?: string;
@@ -596,9 +607,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   }, [config.ttsEngine, hasFallenBack]);
 
+  const loadModels = config.loadModels !== false;
+
   // ─── Kokoro TTS Worker (loaded lazily, only when engine === 'kokoro') ───
   const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd, interrupt: kokoroInterrupt } = useKokoroWorker({
-    enabled: activeTtsEngine === 'kokoro',
+    enabled: loadModels && activeTtsEngine === 'kokoro',
     voice: config.ttsVoice,
     language: config.ttsLanguage,
     onSpeechOutput: activeTtsEngine === 'kokoro' ? handleSpeechOutput : undefined,
@@ -616,6 +629,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
   const crumbSetRef = useRef(false);
   useEffect(() => {
+    // The breadcrumb counts page loads that began loading Kokoro and never
+    // finished, as evidence of a crash. A deferred avatar has not begun, so
+    // counting it would read two unengaged visits as two crashes and quietly
+    // downgrade the voice for good.
+    if (!loadModels) return;
     if (activeTtsEngine !== 'kokoro' || typeof window === 'undefined') return;
     
     if (isKokoroReady) {
@@ -626,10 +644,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       localStorage.setItem(CRUMB, String(priorCrashes + 1));
       crumbSetRef.current = true;
     }
-  }, [activeTtsEngine, isKokoroReady, hasFallenBack]);
+  }, [loadModels, activeTtsEngine, isKokoroReady, hasFallenBack]);
 
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
   const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, interrupt: mlInterrupt } = useMLWorker({
+    enabled: loadModels,
     llmModel: config.llmModel,
     asrModel: config.asrModel,
     asrLanguage: config.asrLanguage,

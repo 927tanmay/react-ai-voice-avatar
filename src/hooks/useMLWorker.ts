@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { AiVoiceAvatarCapabilities } from '../types';
 
 export interface UseMLWorkerConfig {
+  /** Spawn the worker and load its models. Defaults to true. */
+  enabled?: boolean;
   llmModel?: string;
   asrModel?: string;
   asrLanguage?: string;
@@ -53,8 +55,11 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     configRef.current = config;
   }, [config]);
 
+  const enabled = config.enabled !== false;
+
   useEffect(() => {
     if (typeof window === 'undefined' || typeof Worker === 'undefined') return; // P4: Next.js SSR Guard
+    if (!enabled) return;
     let isMounted = true;
     let worker: Worker | null = null;
     const token = ++spawnTokenRef.current;
@@ -185,7 +190,9 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
       workerRef.current = null;
       setIsReady(false);
     };
-  }, []);
+    // Re-runs only when loading is switched on or off. Safe to re-run because a
+    // spawn abandoned mid-import terminates itself; see spawnTokenRef.
+  }, [enabled]);
 
   useEffect(() => {
     if (workerRef.current && isReady) {

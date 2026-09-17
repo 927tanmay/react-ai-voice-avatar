@@ -47,6 +47,8 @@ jobs:
         run: npm run test:speech-gate
       - name: Hindi phonemisation
         run: npm run test:hindi
+      - name: Download progress
+        run: npm run test:download-progress
 
       - run: npm run build
       - name: Bundle integrity

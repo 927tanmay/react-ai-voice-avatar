@@ -120,6 +120,22 @@ import { AiVoiceAvatarLazy } from 'react-ai-voice-avatar';
 <AiVoiceAvatarLazy avatarPreset="ananya" />
 ```
 
+#### Show the avatar before anyone commits to a download
+
+Lazy loading defers the 3D engine. The speech and language models are the larger
+cost, and by default they start downloading as soon as the avatar mounts. On a
+landing page most visitors only look, so render the avatar idle and load the
+models when someone actually engages:
+
+```tsx
+const [engaged, setEngaged] = useState(false);
+
+<AiVoiceAvatar loadModels={engaged} hideStatusPill={!engaged} />
+<button onClick={() => setEngaged(true)}>Talk to it</button>
+```
+
+The live demo's landing page works this way.
+
 #### 📐 Architectural Best Practices
 - **Standard Import (`AiVoiceAvatar`)**: Recommended for full-screen applications where the avatar *is* the primary product (e.g., Kiosks, Digital Tutors). The browser aggressively downloads the 3D canvas and ML models immediately so the avatar is ready instantly.
 - **Lazy Import (`AiVoiceAvatarLazy`)**: Recommended for widgets, modals, or sub-routes (e.g., a "Support Desk" chat bubble in a SaaS dashboard). Defers downloading the 1.5MB 3D engine and WebWorkers until the user actually opens the widget.
@@ -482,13 +498,15 @@ without a video stream.
 
 The common production shape is `onSubmit` alone. Hearing and speaking stay local,
 so no audio ever leaves the browser, while generation goes to whatever model you
-already run. That keeps the download to a few hundred megabytes, keeps your keys
-on your server, and still gives you a conversation nobody else can read.
+already run. That keeps the download to about 600 MB (Whisper base and the Kokoro
+voice), keeps your keys on your server, and still gives you a conversation nobody
+else can read.
 
 Fully local is real, not a demo trick, and it is the right answer for a kiosk, a
 regulated environment, or anywhere without reliable connectivity. Be aware of the
-cost: the first visit downloads roughly 600 MB before anyone can speak, and the
-quality ceiling is whatever a model that size can do.
+cost: in English the first visit downloads roughly 1.3 GB before anyone can speak
+(the language model alone is 750 MB), about 2.1 GB in Hindi, and the quality
+ceiling is whatever a model that size can do.
 
 Explore the canonical patterns in the `examples/` directory:
 
@@ -522,6 +540,8 @@ Explore the canonical patterns in the `examples/` directory:
 | `showCaptions` | `boolean` | `true` | Renders a sleek glassmorphic subtitle overlay displaying spoken interaction dialog. |
 | `hideStatusPill`| `boolean` | `false` | When true, suppresses the default bottom-left microphone interactive control pill. |
 | `listenMode` | `'continuous' \| 'push-to-talk'` | `'continuous'` | `continuous` keeps the mic hot after the avatar finishes speaking naturally, but explicitly clicking Stop forces it off until tapped again. `push-to-talk` strictly requires manually tapping to start listening for every single turn. |
+| `loadModels` | `boolean` | `true` | Set `false` to render the avatar without downloading any models, then flip it `true` when the visitor engages. For landing pages and widgets most visitors never talk to. Status stays `'loading'` until it is true and the models are up, so show your own call to action meanwhile. |
+| `onModelLoaded` | `() => void` | `undefined` | Fires once the 3D mesh is parsed and in the scene. Parsing a multi-megabyte GLB leaves the canvas empty for a few seconds; use this to hold a placeholder over it. |
 | `allowInterruption` | `boolean` | `true` | Lets the user talk over the avatar and cut it off mid-sentence. Turn off for a kiosk or noisy room, where the avatar hearing itself through the speakers is worse than waiting. Ignored in `push-to-talk`. See [Taking turns](#-taking-turns). |
 | `speechDetection` | `{ positiveSpeechThreshold?, negativeSpeechThreshold?, minSpeechMs?, redemptionMs?, preSpeechPadMs? }` | see [Taking turns](#-taking-turns) | Tunes how the microphone decides someone is talking. Every field optional. The defaults suit a quiet room; a shop floor needs a higher threshold and a longer `minSpeechMs`. |
 | `onUserInterrupt` | `() => void` | `undefined` | Fires when the user talks over the avatar and takes the floor. Only fires if the avatar actually had audio playing. |

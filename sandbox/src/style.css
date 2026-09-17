@@ -294,3 +294,14 @@ code {
     border-right-color: var(--border);
   }
 }
+
+/* Hero: spinner held over the avatar panel while the mesh parses. */
+@keyframes hero-spin {
+  to { transform: rotate(360deg); }
+}
+.hero-pulse {
+  animation: hero-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-pulse { animation: none; }
+}

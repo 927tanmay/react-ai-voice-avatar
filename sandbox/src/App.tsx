@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { AiVoiceAvatar, AiVoiceAvatarLazy, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import { AudioVisualizer } from './components/AudioVisualizer';
+import { HeroDemo } from './HeroDemo';
 import './style.css';
 
 const useMediaQuery = (query: string) => {
@@ -156,9 +157,12 @@ const KOKORO_VOICES: Array<{ id: string; label: string; language: TtsLanguage }>
  * bar starts rather than after.
  */
 const LOCAL_MODELS: Record<TtsLanguage, { asr: string; llm: string; voice: string; download: string }> = {
-  'en-US': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~0.6 GB' },
-  'en-GB': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~0.6 GB' },
-  'hi-IN': { asr: 'Whisper small', llm: 'Gemma 3 1B', voice: 'Kokoro-82M', download: '~1.3 GB' },
+  // Summed from the files the engine requests: English is Whisper base 278 MB +
+  // Qwen q4 750 MB + Kokoro fp32 310 MB; Hindi is Whisper small 923 MB + Gemma q4
+  // 819 MB + Kokoro 310 MB. Both were previously understated by more than half.
+  'en-US': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~1.3 GB' },
+  'en-GB': { asr: 'Whisper base', llm: 'Qwen2.5-0.5B', voice: 'Kokoro-82M', download: '~1.3 GB' },
+  'hi-IN': { asr: 'Whisper small', llm: 'Gemma 3 1B', voice: 'Kokoro-82M', download: '~2.1 GB' },
 };
 
 const TTS_LANGUAGES: Array<{ id: TtsLanguage; label: string }> = [
@@ -176,44 +180,84 @@ const LIGHTING_PRESETS: Array<{ id: 'studio' | 'cyberpunk_violet' | 'cool_azure'
   { id: 'none', label: 'Ambient Only', icon: '🌑' },
 ];
 
+const LANDING_HEADER_HEIGHT = 64;
+
+const navLinkStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  font: 'inherit',
+  fontSize: '14px',
+  fontWeight: 600,
+  color: '#CBD5E1',
+  textDecoration: 'none',
+};
+
 // --- Landing Page Component ---
 const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSelect }) => {
+  const isMobile = useMediaQuery('(max-width: 900px)');
+  const scenariosRef = useRef<HTMLDivElement>(null);
+  // The scenarios sit below a full-height hero, so without a way to them from
+  // the top a visitor has no reason to know they exist.
+  const showScenarios = () => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    scenariosRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  };
+
   return (
-    <div style={{ 
-      width: '100vw', 
-      height: '100dvh', 
-      backgroundColor: '#0C0D10', 
+    <div style={{
+      width: '100vw',
+      height: '100dvh',
+      backgroundColor: '#0C0D10',
       fontFamily: "'Inter', -apple-system, sans-serif",
       overflowY: 'auto',
       overflowX: 'hidden',
       padding: '0',
       boxSizing: 'border-box'
     }}>
-      <div style={{ 
-        maxWidth: '1200px', 
+      <header style={{
+        maxWidth: '1200px',
+        height: `${LANDING_HEADER_HEIGHT}px`,
         margin: '0 auto',
-        padding: '56px 24px',
+        padding: isMobile ? '0 16px' : '0 24px',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <span style={{ fontSize: '15px', fontWeight: 700, color: '#F8FAFC', letterSpacing: '-0.2px' }}>
+          react-ai-voice-avatar
+        </span>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '16px' : '28px' }}>
+          <button onClick={showScenarios} style={navLinkStyle}>Scenarios</button>
+          <a href="https://github.com/927tanmay/react-ai-voice-avatar#readme" target="_blank" rel="noreferrer" style={navLinkStyle}>Docs</a>
+          <a href="https://github.com/927tanmay/react-ai-voice-avatar" target="_blank" rel="noreferrer" style={navLinkStyle}>GitHub</a>
+        </nav>
+      </header>
+
+      {/* The product itself, before any choice has to be made. This page used to
+          open on seven scenario cards, and the first one answered in canned
+          placeholder text, so a visitor's first conversation was with a stub. */}
+      <HeroDemo isMobile={isMobile} scenarioCount={PERSONAS.length} onShowScenarios={showScenarios} headerHeight={LANDING_HEADER_HEIGHT} />
+
+      <div ref={scenariosRef} style={{
+        scrollMarginTop: '16px',
+        maxWidth: '1200px',
+        margin: '0 auto',
+        padding: isMobile ? '24px 16px 40px' : '32px 24px 56px',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '100dvh'
       }}>
-        
-        {/* Header / About */}
-        <div style={{ textAlign: 'left', marginBottom: '56px' }}>
-          <h1 style={{ fontSize: '48px', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-1px', margin: '0 0 20px 0' }}>
-            React <span style={{ color: '#38BDF8' }}>AI Voice Avatar</span>
-          </h1>
-          <p style={{ fontSize: '18px', color: '#94A3B8', lineHeight: '1.6', maxWidth: '600px', margin: '0' }}>
-            Real-time Edge WebGPU conversational voice AI. 
-            Drop a fully-rigged, lip-syncing 3D avatar into your React app with sub-second latency and zero cloud dependencies.
-          </p>
-        </div>
 
         {/* Scenarios Grid */}
-        <h2 style={{ fontSize: '14px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '2px', textAlign: 'left', marginBottom: '28px' }}>
-          Select a Scenario to Begin
+        <h2 style={{ fontSize: '14px', fontWeight: 700, color: '#E2E8F0', textTransform: 'uppercase', letterSpacing: '2px', textAlign: 'left', margin: '0 0 8px' }}>
+          More scenarios
         </h2>
+        <p style={{ fontSize: '15px', color: '#94A3B8', margin: '0 0 28px' }}>
+          Kiosks, support, Hindi, two avatars debating, and a sandbox for every engine setting.
+        </p>
         
         <div style={{ 
           display: 'grid', 
@@ -279,7 +323,7 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
 
         {/* Footer */}
         <div style={{ 
-          marginTop: 'auto', 
+          marginTop: '56px',
           paddingTop: '24px', 
           borderTop: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'flex',
@@ -1266,9 +1310,12 @@ ${llmMode === 'cloud'
             hideStatusPill={isMobile || _avatarStatus === 'loading'}
             loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
             onStatusChange={setAvatarStatus}
-            // This repo develops the avatar meshes, so prefer a local copy in
-            // sandbox/public over the CDN. Consumers leave this off.
-            enableLocalAssetProbe
+            // Dev only. This repo develops the avatar meshes, so a local copy
+            // in sandbox/public is preferred while working on them — but those
+            // files are symlinks and gitignored, so they never deploy, and
+            // leaving the probe on put a 404 for /ananya.glb in the console of
+            // every visitor to the live demo. Consumers leave this off entirely.
+            enableLocalAssetProbe={import.meta.env.DEV}
 
             onError={(e) => console.warn(`[demo] ${e.severity} in ${e.stage}: ${e.message}`)}
           />
@@ -1292,9 +1339,12 @@ ${llmMode === 'cloud'
             hideStatusPill={isMobile || _avatarStatus === 'loading'}
             loadingProgress={(pct, label) => { setLoadingPct(pct); setLoadingLabel(label); }}
             onStatusChange={setAvatarStatus}
-            // This repo develops the avatar meshes, so prefer a local copy in
-            // sandbox/public over the CDN. Consumers leave this off.
-            enableLocalAssetProbe
+            // Dev only. This repo develops the avatar meshes, so a local copy
+            // in sandbox/public is preferred while working on them — but those
+            // files are symlinks and gitignored, so they never deploy, and
+            // leaving the probe on put a 404 for /ananya.glb in the console of
+            // every visitor to the live demo. Consumers leave this off entirely.
+            enableLocalAssetProbe={import.meta.env.DEV}
 
           />
         )}

@@ -1,5 +1,6 @@
 import { pipeline, AutomaticSpeechRecognitionPipeline, TextGenerationPipeline, TextToAudioPipeline, TextStreamer, env } from '@huggingface/transformers';
 import { normalizeToDevanagari } from '../lib/transliterate';
+import { createDownloadProgress } from '../lib/downloadProgress';
 
 // Setup environment specifically for the worker
 env.allowLocalModels = false;
@@ -160,17 +161,25 @@ const withLanguageInstruction = (prompt: string, language: string, voice?: strin
   return parts.join('\n\n');
 };
 
+/** Report one model's download as a single forward-only figure. See downloadProgress.ts. */
+const reportProgress = (model: 'asr' | 'llm' | 'tts') =>
+  createDownloadProgress(pct => {
+    self.postMessage({ type: 'loadingProgress', payload: { model, pct } });
+  });
+
 /** Load a text generation pipeline, reporting download progress as it goes. */
 const loadLlmPipeline = (model: string) => {
   self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 0 } });
   return pipeline('text-generation', model, {
     device: currentDevice,
-    dtype: 'q4', // Quantization for speed
-    progress_callback: (p: any) => {
-      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: p.progress } });
-      }
-    },
+    // q4, not q4f16, even though q4f16 is transformers.js's recommendation for
+    // WebGPU and is 461 MB against 750 MB for Qwen2.5-0.5B. Measured in Chrome
+    // on WebGPU with shader-f16, greedy decoding, identical prompts: q4 answered
+    // every one ("The capital of France is Paris."), while q4f16 repeated each
+    // question back verbatim and degenerated into repeated fragments. Qwen's
+    // activations overflow half precision. Re-measure before changing this.
+    dtype: 'q4',
+    progress_callback: reportProgress('llm'),
   });
 };
 
@@ -234,11 +243,7 @@ const messagesForModel = (history: ChatTurn[], tokenizer: any): ChatTurn[] => {
 const loadAsrPipeline = (model: string, device: 'webgpu' | 'wasm') =>
   pipeline('automatic-speech-recognition', model, {
     device,
-    progress_callback: (p: any) => {
-      if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: p.progress } });
-      }
-    },
+    progress_callback: reportProgress('asr'),
   });
 
 const processTtsQueue = async () => {
@@ -359,6 +364,10 @@ self.onmessage = async (e: MessageEvent) => {
         }
       }
 
+      // Download progress stops at 99 until loading is confirmed, so completion
+      // has to be announced. Without it the row for a finished model sat at
+      // 99% for the rest of the load and looked stalled.
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 100 } });
       self.postMessage({ type: 'capabilities', payload: { webgpu: currentDevice === 'webgpu', estimatedVram: null } });
       await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -366,6 +375,7 @@ self.onmessage = async (e: MessageEvent) => {
       if (payload.loadLlm !== false) {
         currentLlmModel = llmModel;
         llmPipeline = await loadLlmPipeline(llmModel);
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 100 } });
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
@@ -375,11 +385,7 @@ self.onmessage = async (e: MessageEvent) => {
         const ttsRepo = resolveTtsRepo(currentTtsLanguage);
         ttsPipeline = await pipeline('text-to-speech', ttsRepo, {
           device: 'wasm',
-          progress_callback: (p: any) => {
-            if (typeof p.progress === 'number' && !Number.isNaN(p.progress)) {
-              self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: p.progress }});
-            }
-          }
+          progress_callback: reportProgress('tts'),
         });
         self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
       }
