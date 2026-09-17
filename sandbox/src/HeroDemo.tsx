@@ -147,7 +147,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
               </button>
             </div>
             <p style={noteStyle}>
-              Runs entirely in your browser. The first conversation downloads {DOWNLOAD_SIZE} of models, then it's cached.
+              Runs entirely in your browser. The first conversation downloads {DOWNLOAD_SIZE} of models, which your browser usually keeps for next time.
               {!hasWebGpu && (
                 <span style={{ display: 'block', marginTop: '8px', color: '#F59E0B' }}>
                   Your browser doesn't expose WebGPU, so this will be very slow. Chrome or Edge on a desktop is best.
@@ -178,7 +178,12 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
                 </div>
               );
             })}
-            <p style={{ ...noteStyle, marginTop: '4px' }}>This only happens once. Next visit it starts in seconds.</p>
+            {/* "Usually", not a promise: the browser decides what it keeps, and in
+                testing Chromium refused to cache the two largest model files
+                (310 MB and 750 MB) while caching a 199 MB one. transformers.js
+                logs that as a warning and carries on, so a returning visitor can
+                download them again. Whether stock Chrome does the same is untested. */}
+            <p style={{ ...noteStyle, marginTop: '4px' }}>Your browser usually keeps these, so later visits start much faster.</p>
           </div>
         )}
 
