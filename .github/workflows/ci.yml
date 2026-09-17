@@ -19,7 +19,14 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 24, not 20: three of the test scripts import TypeScript sources
+          # directly and need --experimental-strip-types, which arrived in Node
+          # 22.6. On 20 they fail with "bad option" before running a single
+          # check. This is the version the repo is developed on.
+          #
+          # It constrains contributors, not consumers: the published package is
+          # plain JavaScript and its engines field still says node >=18.
+          node-version: 24
           cache: 'npm'
       - run: npm ci
       - name: Pre-bundle workers (generates code that tsc needs)
