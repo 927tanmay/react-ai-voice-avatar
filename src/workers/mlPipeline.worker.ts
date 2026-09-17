@@ -358,6 +358,10 @@ self.onmessage = async (e: MessageEvent) => {
         }
       }
 
+      // Download progress stops at 99 until loading is confirmed, so completion
+      // has to be announced. Without it the row for a finished model sat at
+      // 99% for the rest of the load and looked stalled.
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 100 } });
       self.postMessage({ type: 'capabilities', payload: { webgpu: currentDevice === 'webgpu', estimatedVram: null } });
       await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -365,6 +369,7 @@ self.onmessage = async (e: MessageEvent) => {
       if (payload.loadLlm !== false) {
         currentLlmModel = llmModel;
         llmPipeline = await loadLlmPipeline(llmModel);
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 100 } });
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
