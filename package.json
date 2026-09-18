@@ -1,6 +1,6 @@
 {
   "name": "react-ai-voice-avatar",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Open-source alternative to real-time avatar APIs like HeyGen Interactive Avatar and Tavus. A talking, lip-synced 3D avatar that runs on your user's GPU, driven by your own LLM. No video stream, no per-minute billing.",
   "keywords": [
     "react",

@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.4.0
+
+Three changes an integrator can act on, all found while rebuilding the demo.
+
+### An avatar can render before anyone downloads a model
+
+Mounting the avatar used to start every model download at once — about 1.3 GB
+for the English defaults. That is right for a kiosk built to be talked to, and
+wrong for a landing page or a support widget, where most visitors look and move
+on. Each of them paid for a download they never used.
+
+```tsx
+const [engaged, setEngaged] = useState(false);
+
+<AiVoiceAvatar loadModels={engaged} hideStatusPill={!engaged} />
+<button onClick={() => setEngaged(true)}>Talk to it</button>
+```
+
+`loadModels={false}` renders the avatar and lets it idle with nothing
+downloaded. Status stays `'loading'` until it is true and the models are up, so
+show your own call to action meanwhile.
+
+### `onModelLoaded`
+
+Parsing a multi-megabyte GLB leaves the canvas empty for several seconds, which
+reads as a broken page rather than a loading one. This fires once the mesh is in
+the scene, so you can hold a placeholder over it.
+
+### `loadingProgress` no longer runs backwards
+
+transformers.js reports download progress once per file, each with that file's
+own percentage. A model is several files, and both workers forwarded each one
+under the model's name, so the figure lurched between them — watching the demo
+load, speech recognition read 67% and then 60%. Any progress bar built on this
+callback ran backwards during the one wait every new user sits through.
+
+The engine now reports the running total transformers.js already computes across
+every file, held forward-only and capped at 99 until loading genuinely
+completes. Verified across 1,344 samples of a real load, with no figure ever
+decreasing.
+
+Model downloads are also announced as complete when they finish, so a bar for a
+finished model no longer sits at 99% while the others load.
+
+### Corrections
+
+The download sizes quoted in the README were understated by more than half.
+English is about 1.3 GB, not 0.6 (the language model alone is 750 MB), and Hindi
+about 2.1 GB, not 1.3. Nothing about the package changed; the numbers were
+wrong.
+
+### Known limits
+
+- Browsers may refuse to cache the largest model files. Chromium declined the
+  310 MB voice and 750 MB language model while caching a 199 MB file, and
+  transformers.js logs the refusal as a warning and carries on, so a returning
+  visitor downloads them again. Stock Chrome is untested.
+- `q4f16` is not used for the local language model despite being smaller and
+  recommended for WebGPU. Measured on WebGPU with shader-f16, Qwen2.5-0.5B at
+  q4f16 repeated prompts back verbatim instead of answering them; its
+  activations overflow half precision. It loads and generates without error, so
+  only reading the output reveals it.
+
 ## 0.3.0
 
 The release that makes the voice loop good enough to put in front of real
