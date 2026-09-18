@@ -614,12 +614,32 @@ const handleTextSubmit = (userInput: string) => {
 
 ## 🤝 Contributing & Open Issues Roadmap
 
-We actively welcome community contributions! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for local development guides and our curated list of **Open Issues** available for contributors:
+We actively welcome community contributions. [CONTRIBUTING.md](CONTRIBUTING.md)
+has the local development guide, and **[ROADMAP.md](ROADMAP.md)** has what is
+worth doing next, why, and what is already known about each item — including the
+measurements behind the open questions.
 
-1. **🇮🇳 Hindi/Indic Voices (In Progress)**: The foundation is already built! Our `phonemeTiming.ts` engine was specifically designed for retroflex/aspirated consonant distinction, `visemeTable` carries Devanagari mappings, and `transliterate.ts` exists in the core. The remaining work revolves entirely around fine-tuning TTS voice quality rather than engine architecture. This remains a core long-term differentiator!
-2. **🎭 Expanding Regional 3D Avatar Personas**: We provide both Ananya (girl) and Aarav (boy) out of the box! We invite contributors to submit new royalty-free character GLB models (~3MB) rigged with standard 52 Apple ARKit facial blendshapes. Avatar meshes are served from a CDN rather than bundled, so adding one adds nothing to the npm install (2.2 MB tarball, 5.6 MB unpacked, asserted in CI by `scripts/verify-pack.mjs`).
-3. **🎙️ VAD Ambient Noise & Sensitivity Tuning (`vadSensitivity`)**: Raising speech thresholds for noisy rooms and hospital kiosks.
-4. **📱 React Native / Expo Support**: Exploring bindings to run ONNX inference and Three.js seamlessly on mobile architectures.
+The largest pieces currently open:
+
+1. **💾 Making the models cache reliably.** Chromium refused to store the two
+   largest model files while caching a smaller one, so a returning visitor can
+   download them again. transformers.js reports that as a warning and continues,
+   which makes it invisible.
+2. **📉 Shrinking the first visit.** English costs about 1.3 GB before anyone can
+   speak. Smaller voice and recognition builds exist; quantising the voice needs
+   someone to listen to both before it lands.
+3. **🎭 Expanding regional 3D avatar personas.** Ananya and Aarav ship out of the
+   box. Royalty-free character GLBs (~3MB) rigged with the standard 52 Apple
+   ARKit facial blendshapes are welcome. Avatar meshes are served from a CDN
+   rather than bundled, so adding one adds nothing to the npm install (2.3 MB
+   tarball, 6.0 MB unpacked, asserted in CI by `scripts/verify-pack.mjs`).
+4. **🙌 Gestures.** The avatar stands still while it speaks. Hand and arm
+   movement tied to speech is the most visible thing still missing.
+5. **📱 React Native / Expo support.** Exploring bindings to run ONNX inference
+   and Three.js on mobile runtimes.
+
+Hindi speech and VAD sensitivity tuning (`speechDetection`) were previously
+listed here and have both shipped.
 
 ---
 
