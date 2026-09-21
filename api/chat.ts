@@ -234,10 +234,13 @@ export default async function handler(req: any, res: any) {
 
       const data: any = await upstream.json();
       if (!upstream.ok) {
-        // Groq's own message can name the account. The demo only needs to know
-        // that this path failed, so it can use the local model instead.
-        console.error('[api/chat] upstream rejected', upstream.status, data?.error?.type);
-        return res.status(502).json({ error: 'upstream' });
+        // The provider's message can name the account, so only its status and
+        // machine-readable code come back out. Those two are enough to tell an
+        // expired key from a model that needs its terms accepted, which is
+        // otherwise invisible: runtime logs need a login to read.
+        const code = data?.error?.code || data?.error?.type || null;
+        console.error('[api/chat] upstream rejected', upstream.status, code);
+        return res.status(502).json({ error: 'upstream', upstreamStatus: upstream.status, code });
       }
 
       const reply = data?.choices?.[0]?.message?.content?.trim();
