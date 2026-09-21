@@ -425,6 +425,48 @@ self.onmessage = async (e: MessageEvent) => {
     return;
   }
 
+  /**
+   * Load the local language model after startup skipped it.
+   *
+   * A host that supplies `onSubmit` never downloads one, which is right: its
+   * replies come from somewhere else. But an application can want both — answer
+   * from a hosted model straight away, and quietly fetch the local one so the
+   * conversation keeps working when the network, the quota or the wifi does
+   * not. This is what makes that second half possible.
+   *
+   * Turns answered by the host are invisible to this worker, so they are passed
+   * in here. Without them the local model takes over mid-conversation with no
+   * memory of what was already said, and the first thing it does is ask a
+   * question that was answered a minute ago.
+   */
+  if (type === 'loadLocalLlm') {
+    if (llmPipeline) {
+      self.postMessage({ type: 'localLlmReady' });
+      return;
+    }
+
+    const model = payload?.llmModel || 'onnx-community/Qwen2.5-0.5B-Instruct';
+    try {
+      llmPipeline = await loadLlmPipeline(model);
+      currentLlmModel = model;
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'llm', pct: 100 } });
+
+      const seed = Array.isArray(payload?.history) ? payload.history : [];
+      if (seed.length > 0) {
+        chatHistory = [chatHistory[0], ...seed.slice(-6)];
+      }
+
+      self.postMessage({ type: 'localLlmReady' });
+    } catch (err: any) {
+      console.error('[AiVoiceAvatar] Could not load the local language model.', err);
+      self.postMessage({
+        type: 'error',
+        payload: { stage: 'llm', message: `Could not load ${model}: ${err?.message || err}` },
+      });
+    }
+    return;
+  }
+
   if (type === 'switchLlm') {
     const { llmModel } = payload;
     // Skip when unchanged, and when the host supplies its own replies: there is

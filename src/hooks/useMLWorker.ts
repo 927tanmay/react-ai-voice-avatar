@@ -17,6 +17,8 @@ export interface UseMLWorkerConfig {
   systemPrompt?: string;
   loadLlm?: boolean;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
+  /** Fires when a local model requested after startup has finished loading. */
+  onLocalLlmReady?: () => void;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   onSpeechOutput?: (audio: Float32Array | null, sampleRate: number, text: string, isLast?: boolean) => void;
@@ -31,6 +33,7 @@ export interface UseMLWorkerReturn {
   processText: (text: string, skipLlm?: boolean) => void;
   synthesizeText: (text: string, isLast?: boolean) => void;
   clearHistory: () => void;
+  loadLocalLlm: (history?: Array<{ role: string; content: string }>) => void;
   updateConfig: (newConfig: Partial<UseMLWorkerConfig>) => void;
   interrupt: () => void;
 }
@@ -167,6 +170,8 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
               configRef.current.onStreamWord?.(payload.word, payload.fullText);
             } else if (type === 'speechEnd') {
               configRef.current.onSpeechEnd?.();
+            } else if (type === 'localLlmReady') {
+              configRef.current.onLocalLlmReady?.();
             } else if (type === 'error') {
               console.error(`[ML Worker] Error in stage ${payload.stage}:`, payload.message);
               configRef.current.onError?.(payload.stage, payload.message);
@@ -260,6 +265,22 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     workerRef.current?.postMessage({ type: 'clearHistory' });
   }, []);
 
+  /**
+   * Download and hold a local language model although startup skipped one.
+   *
+   * `history` carries the turns the host answered itself, which the worker
+   * never saw, so the local model arrives knowing what has been said.
+   */
+  const loadLocalLlm = useCallback(
+    (history?: Array<{ role: string; content: string }>) => {
+      workerRef.current?.postMessage({
+        type: 'loadLocalLlm',
+        payload: { llmModel: configRef.current.llmModel, history: history || [] },
+      });
+    },
+    []
+  );
+
   const updateConfig = useCallback((newConfig: Partial<UseMLWorkerConfig>) => {
     workerRef.current?.postMessage({ type: 'updateConfig', payload: newConfig });
   }, []);
@@ -270,6 +291,7 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     processText,
     synthesizeText,
     clearHistory,
+    loadLocalLlm,
     updateConfig,
     interrupt
   };

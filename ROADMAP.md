@@ -58,20 +58,24 @@ the output reveals it. Recorded in a comment in `mlPipeline.worker.ts`.
 **Needs a human ear.** Quantising the voice changes how it sounds. Nobody should
 merge that without listening to the same sentence through both.
 
-**Cheaper win, no quality cost:** do not download the language model until the
-visitor actually speaks. Hearing and voice are enough to greet someone; the
-language model is only needed for the first reply.
+**Done for the demo:** the 750 MB language model is no longer part of the first
+visit at all. Replies come from the hosted route (item 3), so a visitor
+downloads ~590 MB — Whisper and the voice — before speaking, and on a capable
+desktop the local model arrives later, behind the conversation. The remaining
+saving is the voice and recognition models themselves, which is the table above.
 
-### 3. Give the demo a real brain
+### ~~3. Give the demo a real brain~~ — done
 
-The local 0.5B model is the weakest part of the first impression: it answers
-"what drinks do you have?" with a question. A small rate-limited serverless
-route calling a cheap hosted model would make the demo conversation good, and
-would demonstrate the bring-your-own-model architecture the README sells.
+Replies now come from Llama 3.3 70B on Groq's free tier through `api/chat.ts`,
+and the local model downloads behind the conversation on a desktop that can run
+it, taking over when it lands. The page names whichever one is answering.
 
-Blocked on an API key, which goes in the deployment's environment variables
-rather than the repo. Cost is a small per-conversation API spend, so the route
-needs a rate limit per visitor.
+The endpoint is public, so it is built to be worth nothing to a stranger: the
+system prompt is fixed server-side, replies are capped at 80 tokens, a visitor
+gets 12 an hour and the whole site 800 a day, and any refusal falls back to the
+local model rather than erroring. `scripts/test-chat-route.mjs` covers those
+guards. Counters are per serverless instance, so the caps are approximate; the
+account has no payment method, so the worst case is a 429 rather than a bill.
 
 ---
 
@@ -98,11 +102,15 @@ bones; `avatarDynamics.ts` is where the idle motion already lives.
 
 Purely visual. No effect on reliability.
 
-### 6. A mobile answer
+### 6. A mobile answer — half done
 
-A 1.3 GB download is not viable on a phone, and the demo currently just warns
-about it. The honest options are to route phones to a hosted model (item 3), or
-to offer text input with local voice only, which needs no language model at all.
+Phones now get hosted replies and never download the language model, so the
+demo is ~590 MB rather than 1.3 GB and actually holds a conversation. That is
+still a large download on a phone, and untested on real hardware: whether
+Whisper and Kokoro run at a usable speed on a mid-range Android, and whether
+iOS Safari survives the memory, are open questions. Measuring that comes before
+any further work here. Text input with local voice remains the fallback if the
+answer is no.
 
 ### 7. Mixed-language conversations
 

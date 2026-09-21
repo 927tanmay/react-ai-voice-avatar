@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### A hosted model can answer while the local one downloads
+
+`onSubmit` already skipped the in-browser language model, which is right for an
+application that has its own: 750 MB downloaded and never used. But it made the
+choice permanent, and the two halves are useful together — a kiosk that must
+survive the wifi dropping, a phone that will never accept the download, a public
+demo running on someone's quota.
+
+```tsx
+<AiVoiceAvatar
+  onSubmit={localReady ? undefined : askMyBackend}
+  preloadLocalLlm
+  onLocalLlmReady={() => setLocalReady(true)}
+/>
+```
+
+The local model downloads behind the conversation, `onLocalLlmReady` says when
+it can take over, and dropping `onSubmit` hands it the floor. The turns the
+backend answered go with it, so it does not begin by asking something that was
+answered a minute ago — the worker never saw those turns, because it was told to
+skip them.
+
+- Added: `preloadLocalLlm`, `onLocalLlmReady`.
+
 ## 0.4.0
 
 Three changes an integrator can act on, all found while rebuilding the demo.

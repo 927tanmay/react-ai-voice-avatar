@@ -508,6 +508,34 @@ cost: in English the first visit downloads roughly 1.3 GB before anyone can spea
 (the language model alone is 750 MB), about 2.1 GB in Hindi, and the quality
 ceiling is whatever a model that size can do.
 
+### 🔀 Hosted now, local when warm
+
+You do not have to choose once. `preloadLocalLlm` fetches the in-browser model
+behind the conversation while your backend answers, and `onLocalLlmReady` tells
+you when it can take over:
+
+```tsx
+const [localReady, setLocalReady] = useState(false);
+
+<AiVoiceAvatar
+  // Dropping onSubmit is what hands the conversation over.
+  onSubmit={localReady ? undefined : askMyBackend}
+  preloadLocalLlm
+  onLocalLlmReady={() => setLocalReady(true)}
+/>
+```
+
+Nobody waits for a gigabyte to say the first word, and the turns your backend
+answered are handed to the local model, so it does not restart the conversation
+from nothing. Useful for a kiosk that must keep working when the wifi drops, a
+demo on someone else's quota, or a phone, which will never accept the download
+but can hold a conversation the moment it loads.
+
+The live demo runs exactly this: replies come from a hosted model, and on a
+desktop with WebGPU the in-browser model downloads during the conversation and
+takes the floor when it lands. The page says which one is answering at any
+moment.
+
 Explore the canonical patterns in the `examples/` directory:
 
 | Example Pattern | Folder | Highlights & Architecture |
@@ -547,6 +575,8 @@ Explore the canonical patterns in the `examples/` directory:
 | `onUserInterrupt` | `() => void` | `undefined` | Fires when the user talks over the avatar and takes the floor. Only fires if the avatar actually had audio playing. |
 | `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! Fires with `0` and `'idle'` between turns, so a meter falls to rest rather than freezing. |
 | `onSubmit` | `(text: string) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. |
+| `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
+| `onLocalLlmReady` | `() => void` | `undefined` | Fires once the model requested by `preloadLocalLlm` has loaded. Drop `onSubmit` here to hand the conversation over; the turns your backend answered are carried across, so the local model knows what was already said. |
 | `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service. Receives raw microphone samples. |
 | `onSynthesize` | `(text: string) => Promise<Float32Array \| ArrayBuffer>` | `undefined` | Replaces local voice synthesis with your own service. Return raw PCM or an encoded MP3/WAV buffer. |
 | `onError` | `(e: AiVoiceAvatarError) => void` | `undefined` | Fires when a stage fails. Carries `stage`, `message` and a `severity` of `degraded` or `fatal`. See [Handling failures](#-handling-failures). |
