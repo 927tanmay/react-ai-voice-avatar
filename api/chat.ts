@@ -82,17 +82,28 @@ const MAX_TOKENS = 80;
 const MAX_HISTORY_TURNS = 2;
 
 /**
- * The persona, fixed server-side.
+ * The persona, fixed server-side, and the facts it is allowed to state.
  *
- * If this came from the request body, anyone could point a general-purpose
- * chatbot at the endpoint and spend the quota on something that is not a demo.
+ * Fixed here rather than taken from the request body, or anyone could point a
+ * general-purpose chatbot at this endpoint and spend the quota on it.
+ *
+ * The sizes are spelled out because a model without them invents them: asked
+ * how big the download was, it answered "a few hundred kilobytes" — confident,
+ * and wrong by three orders of magnitude. It is the first question a developer
+ * asks, so getting it wrong in the avatar's own voice is worse than the local
+ * model's stumbling.
  */
 const SYSTEM_PROMPT =
   'You are Ananya, the demo avatar for react-ai-voice-avatar, an open-source React component. ' +
   'Facts you may use: it renders a lip-synced 3D avatar on the visitor\'s own GPU; speech ' +
   'recognition, the voice and the facial animation all run in the browser; the replies in this ' +
   'demo come from a hosted model, because developers connect their own model through an onSubmit ' +
-  'prop; it is MIT licensed and installs from npm. If you do not know something, say so. ' +
+  'prop; it is MIT licensed and installs from npm with "npm install react-ai-voice-avatar". ' +
+  'On sizes: the npm package is small, but the models are not. This page downloads about 590 MB ' +
+  'the first time — speech recognition and the voice — and running the language model in the ' +
+  'browser as well adds about 750 MB more. There is no video stream and no per-minute billing, ' +
+  'which is what sets it apart from avatar APIs like HeyGen and Tavus. ' +
+  'If you do not know something, say so rather than guessing. ' +
   'Answer in one or two short spoken sentences. Never use markdown, lists or emoji.';
 
 /**
@@ -118,6 +129,23 @@ const MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-o
 const REASONING_MODELS = new Set(['openai/gpt-oss-20b']);
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+/**
+ * The last model that actually answered, tried first next time.
+ *
+ * This account reaches only the third candidate, so every request was paying
+ * for two refusals before reaching a model that works — measured at 0.87s end
+ * to end, of which the two dead calls are most of the overhead that is not the
+ * model itself. A warm instance now skips them. It is only a hint: if the
+ * remembered one stops working, the list is walked as before.
+ */
+let lastWorkingModel: string | null = null;
+
+/** Candidates with the remembered one first, and no duplicates. */
+function candidateModels(): string[] {
+  if (!lastWorkingModel) return MODELS;
+  return [lastWorkingModel, ...MODELS.filter(m => m !== lastWorkingModel)];
+}
 
 /** Recent request times per address, pruned as it goes so the map cannot grow forever. */
 const hits = new Map<string, number[]>();
@@ -227,7 +255,7 @@ export default async function handler(req: any, res: any) {
     { role: 'user', content: text },
   ];
 
-  for (const model of MODELS) {
+  for (const model of candidateModels()) {
     try {
       const upstream = await fetch(GROQ_URL, {
         method: 'POST',
@@ -274,6 +302,7 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
+      lastWorkingModel = model;
       return res.status(200).json({ reply, model });
     } catch (err: any) {
       console.error('[api/chat] request failed', err?.message);

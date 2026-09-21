@@ -229,14 +229,34 @@ console.log('\nWhen the first model is rate-limited');
   const calls = stubUpstream(n => (n === 1 ? { ok: false, status: 429, json: async () => ({}) } : okReply('From the smaller one.')));
   const res = makeRes();
   await handler(makeReq({ ip: '10.0.2.1' }), res);
-  check('it falls back to the next candidate', res.statusCode === 200 && res.body.model === 'llama-3.1-8b-instant', JSON.stringify(res.body));
-  check('and only after trying the better one', calls.length === 2);
+  check('it falls back to the next candidate', res.statusCode === 200 && res.body.model === calls[1].body.model, JSON.stringify(res.body));
+  check('which is a different model from the busy one', calls[1].body.model !== calls[0].body.model, JSON.stringify(calls.map(c => c.body.model)));
+  check('and only after trying the preferred one', calls.length === 2);
 }
 {
   stubUpstream(() => ({ ok: false, status: 429, json: async () => ({}) }));
   const res = makeRes();
   await handler(makeReq({ ip: '10.0.2.2' }), res);
   check('both rate-limited gives a clean refusal the demo can fall back on', res.statusCode === 503, `got ${res.statusCode}`);
+}
+
+console.log('\nRemembering what worked');
+{
+  // This account reaches only the third candidate, so a cold instance pays for
+  // two refusals before every reply. The one that worked is tried first after.
+  const gone = { ok: false, status: 404, json: async () => ({ error: { code: 'model_not_found' } }) };
+  const fresh = (await import('../api/chat.ts?remember')).default;
+
+  const first = stubUpstream(n => (n < 3 ? gone : okReply()));
+  await fresh(makeReq({ ip: '10.0.7.1' }), makeRes());
+  check('the first request walks the list', first.length === 3, `${first.length} calls`);
+
+  const second = stubUpstream(() => okReply());
+  const res = makeRes();
+  await fresh(makeReq({ ip: '10.0.7.2' }), res);
+  check('the next one goes straight to what answered', second.length === 1, `${second.length} calls`);
+  check('which is the working model', second[0].body.model === 'openai/gpt-oss-20b', second[0]?.body?.model);
+  check('and the reply still says which model it was', res.body.model === 'openai/gpt-oss-20b');
 }
 
 console.log('\nPer-visitor limit');
