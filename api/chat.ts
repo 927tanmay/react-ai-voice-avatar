@@ -105,7 +105,17 @@ const SYSTEM_PROMPT =
  * a name that is gone is treated the same as one that is busy — move to the
  * next — and the reply says which one actually answered.
  */
-const MODELS = ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'];
+const MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-20b'];
+
+/**
+ * Models that think before answering, and bill that thinking to `max_tokens`.
+ *
+ * Measured in production: `openai/gpt-oss-20b` at `max_tokens: 80` returned a
+ * 200 with empty content, having spent the whole budget reasoning about a
+ * question a cafe receptionist answers in one line. They are kept as a last
+ * resort, asked to think as little as possible, and given room for both.
+ */
+const REASONING_MODELS = new Set(['openai/gpt-oss-20b']);
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -228,8 +238,9 @@ export default async function handler(req: any, res: any) {
         body: JSON.stringify({
           model,
           messages,
-          max_tokens: MAX_TOKENS,
+          max_tokens: REASONING_MODELS.has(model) ? MAX_TOKENS * 4 : MAX_TOKENS,
           temperature: 0.6,
+          ...(REASONING_MODELS.has(model) ? { reasoning_effort: 'low' } : {}),
         }),
       });
 
@@ -255,8 +266,13 @@ export default async function handler(req: any, res: any) {
         return res.status(502).json({ error: 'upstream', upstreamStatus: upstream.status, code });
       }
 
+      // `reasoning` is deliberately not read: it is the model thinking aloud,
+      // and this reply is going to be spoken by an avatar.
       const reply = data?.choices?.[0]?.message?.content?.trim();
-      if (!reply) return res.status(502).json({ error: 'empty-reply' });
+      if (!reply) {
+        console.warn(`[api/chat] ${model} returned nothing to say, trying the next one`);
+        continue;
+      }
 
       return res.status(200).json({ reply, model });
     } catch (err: any) {

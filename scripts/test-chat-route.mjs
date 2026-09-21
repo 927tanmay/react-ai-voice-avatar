@@ -184,7 +184,7 @@ console.log('\nWhen a model name is gone');
   const res = makeRes();
   await handler(makeReq({ ip: '10.0.5.1' }), res);
   check('it moves to the next candidate', res.statusCode === 200, JSON.stringify(res.body));
-  check('and says which one answered', res.body?.model === 'openai/gpt-oss-20b', JSON.stringify(res.body));
+  check('and says which one answered', res.body?.model === 'llama-3.1-8b-instant', JSON.stringify(res.body));
   check('rather than failing the request', calls.length === 2);
 }
 {
@@ -194,12 +194,42 @@ console.log('\nWhen a model name is gone');
   check('every candidate gone is a clean refusal', res.statusCode === 503, `got ${res.statusCode}`);
 }
 
+console.log('\nWhen a model answers with nothing');
+{
+  // What openai/gpt-oss-20b did in production: a 200, with the whole token
+  // budget spent on reasoning and no content to speak.
+  const emptyReply = {
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content: '', reasoning: 'The user is asking about drinks...' } }] }),
+  };
+  const calls = stubUpstream(n => (n === 1 ? emptyReply : okReply('An actual sentence.')));
+  const res = makeRes();
+  await handler(makeReq({ ip: '10.0.6.1' }), res);
+  check('it asks the next candidate instead', res.statusCode === 200 && res.body.reply === 'An actual sentence.', JSON.stringify(res.body));
+  check('and never speaks the reasoning aloud', !JSON.stringify(res.body).includes('The user is asking'));
+  check('having tried both', calls.length === 2);
+}
+{
+  // Drive the request down to the reasoning model to see what it is sent.
+  const gone = { ok: false, status: 404, json: async () => ({ error: { code: 'model_not_found' } }) };
+  const calls = stubUpstream(n => (n < 3 ? gone : okReply()));
+  const res = makeRes();
+  await handler(makeReq({ ip: '10.0.6.2' }), res);
+
+  const plain = calls[0].body;
+  const thinking = calls[2].body;
+  check('a plain model is asked for 80 tokens and no reasoning', plain.max_tokens === 80 && plain.reasoning_effort === undefined, JSON.stringify(plain));
+  check('a thinking model gets a low effort', thinking.reasoning_effort === 'low', JSON.stringify(thinking.reasoning_effort));
+  check('and room for the thinking as well as the answer', thinking.max_tokens === 320, JSON.stringify(thinking.max_tokens));
+}
+
 console.log('\nWhen the first model is rate-limited');
 {
   const calls = stubUpstream(n => (n === 1 ? { ok: false, status: 429, json: async () => ({}) } : okReply('From the smaller one.')));
   const res = makeRes();
   await handler(makeReq({ ip: '10.0.2.1' }), res);
-  check('it falls back to the next candidate', res.statusCode === 200 && res.body.model === 'openai/gpt-oss-20b', JSON.stringify(res.body));
+  check('it falls back to the next candidate', res.statusCode === 200 && res.body.model === 'llama-3.1-8b-instant', JSON.stringify(res.body));
   check('and only after trying the better one', calls.length === 2);
 }
 {
