@@ -171,12 +171,35 @@ console.log('\nWhat reaches the model');
   check('a caller cannot raise max_tokens', sent.max_tokens === 80, `got ${sent.max_tokens}`);
 }
 
+console.log('\nWhen a model name is gone');
+{
+  // Exactly what production returned: the docs list llama-3.3-70b-versatile as
+  // a production model, and this account has no such model.
+  const notFound = {
+    ok: false,
+    status: 404,
+    json: async () => ({ error: { code: 'model_not_found', message: 'The model does not exist' } }),
+  };
+  const calls = stubUpstream(n => (n === 1 ? notFound : okReply('From the next one.')));
+  const res = makeRes();
+  await handler(makeReq({ ip: '10.0.5.1' }), res);
+  check('it moves to the next candidate', res.statusCode === 200, JSON.stringify(res.body));
+  check('and says which one answered', res.body?.model === 'openai/gpt-oss-20b', JSON.stringify(res.body));
+  check('rather than failing the request', calls.length === 2);
+}
+{
+  stubUpstream(() => ({ ok: false, status: 404, json: async () => ({ error: { code: 'model_not_found' } }) }));
+  const res = makeRes();
+  await handler(makeReq({ ip: '10.0.5.2' }), res);
+  check('every candidate gone is a clean refusal', res.statusCode === 503, `got ${res.statusCode}`);
+}
+
 console.log('\nWhen the first model is rate-limited');
 {
   const calls = stubUpstream(n => (n === 1 ? { ok: false, status: 429, json: async () => ({}) } : okReply('From the smaller one.')));
   const res = makeRes();
   await handler(makeReq({ ip: '10.0.2.1' }), res);
-  check('it falls back to the faster model', res.statusCode === 200 && res.body.model === 'llama-3.1-8b-instant', JSON.stringify(res.body));
+  check('it falls back to the next candidate', res.statusCode === 200 && res.body.model === 'openai/gpt-oss-20b', JSON.stringify(res.body));
   check('and only after trying the better one', calls.length === 2);
 }
 {

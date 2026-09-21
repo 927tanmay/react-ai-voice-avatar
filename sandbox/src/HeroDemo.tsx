@@ -35,8 +35,22 @@ const SYSTEM_PROMPT =
  */
 const DOWNLOAD_SIZE = '~590 MB';
 
-/** Named in the label, so a visitor knows whose model answered them. */
-const HOSTED_MODEL = 'Llama 3.3 70B on Groq';
+/**
+ * Named in the label, so a visitor knows whose model answered them.
+ *
+ * Which one it is cannot be hardcoded here: the route tries several candidates
+ * and uses the first the account can reach, and the one it reached last week
+ * can return `model_not_found` today. So the reply carries its own model id and
+ * this only makes it readable.
+ */
+const HOSTED_MODEL_NAMES: Record<string, string> = {
+  'llama-3.3-70b-versatile': 'Llama 3.3 70B on Groq',
+  'openai/gpt-oss-20b': 'GPT-OSS 20B on Groq',
+  'llama-3.1-8b-instant': 'Llama 3.1 8B on Groq',
+};
+const hostedModelName = (id: string | null) =>
+  id ? HOSTED_MODEL_NAMES[id] || `${id} on Groq` : 'a hosted model on Groq';
+
 const LOCAL_MODEL = 'Qwen2.5-0.5B, in your browser';
 
 /**
@@ -95,6 +109,8 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
    * than asserted.
    */
   const [brain, setBrain] = useState<'hosted' | 'local'>('hosted');
+  /** Which hosted model replied, as the route reported it. Null until it does. */
+  const [hostedModel, setHostedModel] = useState<string | null>(null);
 
   /** Only a desktop with WebGPU is asked to fetch 750 MB in the background. */
   const canRunLocalLlm = !isMobile && hasWebGpu;
@@ -119,6 +135,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
       if (res.ok) {
         const data = await res.json();
         const reply: string = data.reply;
+        if (data.model) setHostedModel(data.model);
         historyRef.current = [
           ...historyRef.current,
           { role: 'user' as const, content: text },
@@ -274,7 +291,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
             <p style={{ ...noteStyle, marginTop: '10px', fontSize: '13px', color: '#64748B' }}>
               Hearing, voice and lip-sync: your browser. Replies:{' '}
               <span style={{ color: '#94A3B8' }}>
-                {brain === 'hosted' ? HOSTED_MODEL : LOCAL_MODEL}
+                {brain === 'hosted' ? hostedModelName(hostedModel) : LOCAL_MODEL}
               </span>
               {brain === 'hosted' && canRunLocalLlm && (
                 <span style={{ display: 'block', marginTop: '4px' }}>

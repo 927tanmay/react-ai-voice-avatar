@@ -96,13 +96,16 @@ const SYSTEM_PROMPT =
   'Answer in one or two short spoken sentences. Never use markdown, lists or emoji.';
 
 /**
- * Preferred model first, cheaper and faster one second.
+ * Candidates in order of preference, tried until one answers.
  *
- * The fallback is not about quality: it is what answers when the first model is
- * rate-limited, so a visitor gets a reply rather than the local model's
- * stumbling one.
+ * Not only a rate-limit fallback. Which models an account can reach is not
+ * something the docs settle: this account has no llama-3.3-70b-versatile at
+ * all, and asking for it returned `404 model_not_found` where the docs list it
+ * as a production model. Providers also retire names on their own schedule. So
+ * a name that is gone is treated the same as one that is busy — move to the
+ * next — and the reply says which one actually answered.
  */
-const MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+const MODELS = ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'];
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -230,15 +233,24 @@ export default async function handler(req: any, res: any) {
         }),
       });
 
-      if (upstream.status === 429 || upstream.status >= 500) continue; // try the next model
+      if (upstream.status === 429 || upstream.status >= 500) continue; // busy — try the next model
 
       const data: any = await upstream.json();
+
+      // A name this account cannot reach is worth exactly as much as a busy
+      // one: move on. Without this, one retired model id takes the whole demo
+      // down until someone redeploys.
+      const code = data?.error?.code || data?.error?.type || null;
+      if (!upstream.ok && (upstream.status === 404 || code === 'model_not_found' || code === 'model_decommissioned')) {
+        console.warn(`[api/chat] ${model} unavailable (${code}), trying the next one`);
+        continue;
+      }
+
       if (!upstream.ok) {
         // The provider's message can name the account, so only its status and
         // machine-readable code come back out. Those two are enough to tell an
         // expired key from a model that needs its terms accepted, which is
         // otherwise invisible: runtime logs need a login to read.
-        const code = data?.error?.code || data?.error?.type || null;
         console.error('[api/chat] upstream rejected', upstream.status, code);
         return res.status(502).json({ error: 'upstream', upstreamStatus: upstream.status, code });
       }
