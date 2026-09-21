@@ -221,7 +221,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
         </h1>
         <p style={{ fontSize: isMobile ? '16px' : '18px', lineHeight: 1.6, color: '#94A3B8', margin: '0 0 32px', maxWidth: '520px' }}>
           The open-source alternative to real-time avatar APIs. No video stream, no per-minute billing.
-          Bring your own model, or run one in the browser like this demo does.
+          Bring your own model, or run one in the browser. This demo does both.
         </p>
 
         {!engaged && (
