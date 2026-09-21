@@ -87,6 +87,18 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   asrLanguage?: string;
 
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
+  /**
+   * Download the in-browser language model in the background although
+   * `onSubmit` is answering.
+   *
+   * Only meaningful alongside `onSubmit`, which otherwise skips that download.
+   * Set it to have a hosted model answer while it can and a local one ready for
+   * when it cannot. Once `onLocalLlmReady` fires, drop `onSubmit` and the
+   * conversation continues in the browser, knowing what was already said.
+   */
+  preloadLocalLlm?: boolean;
+  /** Fires once the model requested by `preloadLocalLlm` is loaded and warm. */
+  onLocalLlmReady?: () => void;
   /** Cloud Adapter: Intercept the raw microphone Float32Array to use an external STT service (e.g. Sarvam, Whisper API) instead of the local ONNX model */
   onTranscribe?: (audio: Float32Array) => Promise<string>;
   /** Cloud Adapter: Intercept the text before synthesis to use an external TTS service (e.g. ElevenLabs, OpenAI) instead of the local Kokoro/MMS model. Supports Float32Array PCM or ArrayBuffer (MP3/WAV) */
@@ -585,6 +597,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     // nothing revealed the mismatch until you actually said something.
     asrLanguage: asrLanguage ?? ttsLanguage,
     onSubmit,
+    preloadLocalLlm: props.preloadLocalLlm,
+    onLocalLlmReady: props.onLocalLlmReady,
     onTranscriptUpdate: (text, speaker) => {
       if (speaker === 'user') {
         if (hiddenTranscriptRef.current === text) {

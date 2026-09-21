@@ -105,6 +105,19 @@ export interface UseAiVoiceAvatarConfig {
   asrLanguage?: string;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
   onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
+  /**
+   * Download the in-browser language model in the background even though
+   * `onSubmit` is supplying the replies.
+   *
+   * Only meaningful alongside `onSubmit`, which otherwise skips that download
+   * entirely. Set it when an application wants a hosted model to answer while
+   * it can, and a local one ready for when it cannot — an expired quota, a lost
+   * network, a rate limit. Drop `onSubmit` once `onLocalLlmReady` has fired and
+   * the conversation carries on in the browser, knowing what was already said.
+   */
+  preloadLocalLlm?: boolean;
+  /** Fires once the model requested by `preloadLocalLlm` is loaded and warm. */
+  onLocalLlmReady?: () => void;
   onTranscribe?: (audio: Float32Array) => Promise<string>;
   onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
   /**
@@ -646,8 +659,23 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
   }, [loadModels, activeTtsEngine, isKokoroReady, hasFallenBack]);
 
+  /**
+   * The turns the host answered through `onSubmit`.
+   *
+   * The worker never sees these — it is told to skip its own model — so if a
+   * local model is loaded later it would otherwise arrive with no idea what has
+   * already been said. Six turns is what the worker keeps for itself.
+   */
+  const hostedHistoryRef = useRef<Array<{ role: string; content: string }>>([]);
+  const rememberHostedTurn = (role: 'user' | 'assistant', content: string) => {
+    const text = content?.trim();
+    if (!text) return;
+    hostedHistoryRef.current.push({ role, content: text });
+    if (hostedHistoryRef.current.length > 6) hostedHistoryRef.current.shift();
+  };
+
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
-  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, interrupt: mlInterrupt } = useMLWorker({
+  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, loadLocalLlm, interrupt: mlInterrupt } = useMLWorker({
     enabled: loadModels,
     llmModel: config.llmModel,
     asrModel: config.asrModel,
@@ -661,6 +689,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     lowMemoryMode: config.lowMemoryMode,
     systemPrompt: config.systemPrompt,
     loadLlm: !config.onSubmit, // Don't load local LLM if onSubmit is provided
+    onLocalLlmReady: () => configRef.current.onLocalLlmReady?.(),
     onCapabilityDetected: config.onCapabilityDetected,
     loadingProgress: config.loadingProgress,
     // Route text to Kokoro if Kokoro is active, otherwise play MMS audio
@@ -689,16 +718,19 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (speaker === 'user' && configRef.current.onSubmit) {
         // We have a transcript and an onSubmit override.
         // We skip local LLM inside worker, and process either a string or a real-time stream here.
+        rememberHostedTurn('user', text);
         Promise.resolve(configRef.current.onSubmit(text))
           .then(async (result: any) => {
             if (!result) return;
-            
+
             // Check if result is an AsyncIterable or ReadableStream (e.g. OpenAI SDK / LangChain / Vercel AI)
             const isAsyncIterable = typeof result[Symbol.asyncIterator] === 'function';
             const isReadableStream = typeof result.getReader === 'function';
             
             if (isAsyncIterable || isReadableStream) {
               let sentenceBuffer = '';
+              /** The reply as spoken, kept so a local model can inherit the conversation. */
+              let spoken = '';
               const iterator = isAsyncIterable ? result[Symbol.asyncIterator]() : null;
               const reader = isReadableStream ? result.getReader() : null;
               
@@ -726,6 +758,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
                     sentenceBuffer = sentenceBuffer.substring(splitIdx);
                     if (phrase.length > 0) {
                       synthesizeText(phrase, false);
+                      spoken += (spoken ? ' ' : '') + phrase;
                     }
                   }
                 }
@@ -733,10 +766,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               
               if (sentenceBuffer.trim().length > 0) {
                 synthesizeText(sentenceBuffer.trim(), true);
+                spoken += sentenceBuffer.trim();
               }
+              rememberHostedTurn('assistant', spoken);
             } else {
               // Standard string resolution
-              synthesizeText(typeof result === 'string' ? result : String(result), true);
+              const reply = typeof result === 'string' ? result : String(result);
+              synthesizeText(reply, true);
+              rememberHostedTurn('assistant', reply);
             }
           })
           .catch((err) => {
@@ -754,6 +791,25 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       resumeVadIfAllowed();
     }
   });
+
+  /**
+   * Fetch a local language model in the background while a hosted one answers.
+   *
+   * For an application that wants both halves of the hybrid story: replies are
+   * good and instant from the first second, and the conversation survives the
+   * network, the quota or the wifi going away. Requested once — the worker
+   * answers immediately if it already holds a model.
+   */
+  const preloadRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!config.preloadLocalLlm || !isMLReady || !config.onSubmit) return;
+    if (preloadRequestedRef.current) return;
+    preloadRequestedRef.current = true;
+    loadLocalLlm(hostedHistoryRef.current);
+    // config.onSubmit is deliberately not a dependency: hosts commonly pass a
+    // new closure every render, and this must not fire again on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.preloadLocalLlm, isMLReady, loadLocalLlm]);
 
   /**
    * Stop both synthesis workers.

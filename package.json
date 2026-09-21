@@ -119,7 +119,8 @@
     "test:e2e": "playwright test",
     "test:turn-state": "node --experimental-strip-types scripts/test-turn-state.mjs",
     "test:speech-gate": "node scripts/test-speech-gate.mjs",
-    "test:download-progress": "node --experimental-strip-types scripts/test-download-progress.mjs"
+    "test:download-progress": "node --experimental-strip-types scripts/test-download-progress.mjs",
+    "test:chat-route": "node --experimental-strip-types scripts/test-chat-route.mjs"
   },
   "overrides": {
     "onnxruntime-web": "$onnxruntime-web",

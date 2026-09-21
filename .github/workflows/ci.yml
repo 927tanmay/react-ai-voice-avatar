@@ -49,6 +49,8 @@ jobs:
         run: npm run test:hindi
       - name: Download progress
         run: npm run test:download-progress
+      - name: Demo chat route limits
+        run: npm run test:chat-route
 
       - run: npm run build
       - name: Bundle integrity
