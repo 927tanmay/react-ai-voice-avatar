@@ -12,23 +12,41 @@ it says so.
 
 ### 1. Make the models actually cache
 
-**The problem.** The demo says the models are kept for next time. In Chromium
-they are not: `Cache.put` failed with `UnknownError: Unexpected internal error`
-for the Kokoro voice (310 MB) and the language model (750 MB), while a 199 MB
-Whisper file stored fine. transformers.js logs the refusal as a warning and
-carries on, so nothing appears broken — the visitor simply downloads a gigabyte
-again on their next visit.
+**Measured, not suspected.** The Cache API in Chrome 152 refuses any single
+entry of 256 MiB or more. Bisected with synthetic responses on a real origin:
+255 MiB stores, 256 MiB fails with `UnknownError: Unexpected internal error`.
+It is not a quota problem — that origin had 3.4 GB of quota and was using 543 MB.
+transformers.js logs the refusal as a warning and carries on, so nothing looks
+broken.
 
-**Unverified.** Whether stock Chrome on a normal profile behaves the same way.
-Everything above was seen in one Chromium environment. **Establishing this comes
-first**, because if real Chrome caches fine, the rest of this item disappears.
+What that means per model, confirmed by listing the caches after a full load:
 
-**If it is real, the options are:**
+| File | Size | Cached |
+| :--- | :--- | :--- |
+| Whisper encoder | 78.6 MB | yes |
+| Whisper decoder | 198.9 MB | yes |
+| Kokoro voice weights | ~310 MB | **no** |
+| Qwen2.5-0.5B q4 | ~750 MB | **no** |
 
-- Store weights ourselves in OPFS (Origin Private File System), which has no
-  per-entry limit of this kind, and serve them to ONNX Runtime from there.
-- Split large files into chunks small enough for the Cache API, and reassemble.
-- Avoid the limit entirely by shipping smaller models (see item 2).
+So speech recognition is kept and the voice is not: a returning visitor
+re-downloads ~310 MB of the ~590 MB first visit, and on a desktop the local
+language model is fetched again every time, which undercuts the hand-over in
+item 3.
+
+**The fix follows from the number.** Anything under 256 MiB caches, so shrinking
+the voice (item 2) solves it outright rather than working around it: Kokoro at
+`fp16` is 156 MB and at `q8f16` 82 MB, both comfortably inside the limit. That
+still needs the listening test.
+
+The language model cannot be fixed that way — no usable quantisation of it lands
+under 256 MiB, and `q4f16` is broken (item 2). For that one the options are:
+
+- Store weights in OPFS (Origin Private File System), which has no per-entry
+  limit of this kind, and serve them to ONNX Runtime from there.
+- Split the file into sub-256 MiB chunks and reassemble on load.
+
+**Also worth fixing regardless:** the demo page says the browser keeps these
+models. It keeps one of the three.
 
 **Also worth fixing regardless:** the engine cannot currently tell a host that
 caching failed. `onError` should report it as `degraded`, so an app can say

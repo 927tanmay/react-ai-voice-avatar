@@ -79,10 +79,12 @@ wrong.
 
 ### Known limits
 
-- Browsers may refuse to cache the largest model files. Chromium declined the
-  310 MB voice and 750 MB language model while caching a 199 MB file, and
-  transformers.js logs the refusal as a warning and carries on, so a returning
-  visitor downloads them again. Stock Chrome is untested.
+- Chrome will not cache a model file of 256 MiB or more. Bisected with
+  synthetic responses on Chrome 152: 255 MiB stores, 256 MiB fails with
+  `UnknownError`, and it is not a quota limit. Whisper is kept, since it arrives
+  as a 78.6 MB encoder and a 198.9 MB decoder; the ~310 MB Kokoro voice and the
+  ~750 MB language model are refused and downloaded again on every visit.
+  transformers.js logs the refusal as a warning and carries on.
 - `q4f16` is not used for the local language model despite being smaller and
   recommended for WebGPU. Measured on WebGPU with shader-f16, Qwen2.5-0.5B at
   q4f16 repeated prompts back verbatim instead of answering them; its
