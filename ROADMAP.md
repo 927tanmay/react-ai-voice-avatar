@@ -33,13 +33,14 @@ re-downloads ~310 MB of the ~590 MB first visit, and on a desktop the local
 language model is fetched again every time, which undercuts the hand-over in
 item 3.
 
-**The fix follows from the number.** Anything under 256 MiB caches, so shrinking
-the voice (item 2) solves it outright rather than working around it: Kokoro at
-`fp16` is 156 MB and at `q8f16` 82 MB, both comfortably inside the limit. That
-still needs the listening test.
+**The obvious fix is ruled out.** Anything under 256 MiB caches, so a quantised
+voice — Kokoro at `fp16` is 156 MB, at `q8f16` 82 MB — would store and never be
+fetched twice. It is not being taken: quantising changes how the voice sounds,
+and the voice is the part of this package that is genuinely good. Decided
+deliberately, quality over bandwidth, rather than left open.
 
-The language model cannot be fixed that way — no usable quantisation of it lands
-under 256 MiB, and `q4f16` is broken (item 2). For that one the options are:
+That leaves the same two options for the voice as for the language model, and
+neither is a quick change:
 
 - Store weights in OPFS (Origin Private File System), which has no per-entry
   limit of this kind, and serve them to ONNX Runtime from there.
@@ -73,8 +74,12 @@ instead of answering them, where q4 answered all five correctly. Activations
 overflow half precision. It loads and generates without error, so only reading
 the output reveals it. Recorded in a comment in `mlPipeline.worker.ts`.
 
-**Needs a human ear.** Quantising the voice changes how it sounds. Nobody should
-merge that without listening to the same sentence through both.
+**The voice stays at fp32.** Quantising it would save up to 228 MB and would
+also make it cacheable (item 1), and it is still not being done: it changes how
+the voice sounds, and the voice is the part of this package that is genuinely
+good. A decision, not an open question — do not reopen it on size grounds
+alone. Whisper is a different matter, since q4 there costs accuracy rather than
+character, and it is worth measuring on real speech.
 
 **Done for the demo:** the 750 MB language model is no longer part of the first
 visit at all. Replies come from the hosted route (item 3), so a visitor
