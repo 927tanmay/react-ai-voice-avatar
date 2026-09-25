@@ -51,6 +51,8 @@ jobs:
         run: npm run test:download-progress
       - name: Demo chat route limits
         run: npm run test:chat-route
+      - name: Worker message contract
+        run: npm run test:worker-contract
 
       - run: npm run build
       - name: Bundle integrity
