@@ -34,6 +34,11 @@ export type AiVoiceAvatarErrorStage =
   | 'audio-output'
   /** Starting or running a background worker. */
   | 'worker'
+  /**
+   * Keeping downloaded models for the next visit. Always `degraded`: the model
+   * loaded and works, it will just be downloaded again next time.
+   */
+  | 'model-storage'
   /** A turn failed without one stage owning it. */
   | 'conversation';
 

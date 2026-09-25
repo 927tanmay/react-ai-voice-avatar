@@ -19,6 +19,11 @@ export interface UseMLWorkerConfig {
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
   /** Fires when a local model requested after startup has finished loading. */
   onLocalLlmReady?: () => void;
+  /**
+   * A model file could not be kept for the next visit. Not routed through
+   * `onError`, which fails the turn: the model loaded and works regardless.
+   */
+  onModelStorageFailed?: (message: string) => void;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
   onSpeechOutput?: (audio: Float32Array | null, sampleRate: number, text: string, isLast?: boolean) => void;
@@ -172,6 +177,8 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
               configRef.current.onSpeechEnd?.();
             } else if (type === 'localLlmReady') {
               configRef.current.onLocalLlmReady?.();
+            } else if (type === 'modelStorage') {
+              configRef.current.onModelStorageFailed?.(payload.message);
             } else if (type === 'error') {
               console.error(`[ML Worker] Error in stage ${payload.stage}:`, payload.message);
               configRef.current.onError?.(payload.stage, payload.message);

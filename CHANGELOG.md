@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Models are kept between visits
+
+A returning visitor downloaded the voice again every time, and on a desktop the
+local language model too. The Cache API — where transformers.js stores models by
+default — refuses any single file of 256 MiB or more, and both are larger: the
+voice ~310 MB, the language model ~750 MB. transformers.js logs the refusal as a
+warning and carries on, so nothing looked broken; the visitor just waited through
+the download again.
+
+Models now go to the Origin Private File System, which has no per-file limit,
+through the custom cache hook transformers.js already provides. Nothing in the
+library is patched, and the voice stays at full fp32 quality — quantising it
+under the limit was considered and rejected.
+
+Measured in Chrome with the module itself and real OPFS: a 310 MB file stores in
+0.6 s and reads back in 0.2 s, a 750 MB one in 1.4 s and 0.4 s, both
+byte-identical after a reload. The same 310 MB file put into the Cache API in the
+same browser fails with `UnknownError`. Both workers were observed writing
+through it and, on the next load, serving every stored file from it without a
+download.
+
+A file is only served once complete: it is written first and a marker recording
+its size is written after, so a tab closed halfway through a 750 MB download
+leaves nothing that the next visit will trust. Files the Cache API already kept,
+Whisper's among them, are still read from there, so nobody downloads them twice.
+Where OPFS is unavailable the Cache API applies as before.
+
+- Added: `'model-storage'` to `AiVoiceAvatarErrorStage`. Always `degraded` — the
+  model loaded and works, and will be downloaded again next time. Usually a lack
+  of free space, which is the common case on a phone.
+
+**Not yet observed end to end:** a full-size model downloaded from Hugging Face,
+stored, and loaded from storage on the next visit. Every piece of that chain was
+verified separately, but the network during testing ran at 77 KB/s, measured with
+curl outside the browser, which put one full run hours away.
+
 ## 0.5.0
 
 ### A hosted model can answer while the local one downloads

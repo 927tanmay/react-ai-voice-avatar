@@ -121,7 +121,8 @@
     "test:speech-gate": "node scripts/test-speech-gate.mjs",
     "test:download-progress": "node --experimental-strip-types scripts/test-download-progress.mjs",
     "test:chat-route": "node --experimental-strip-types scripts/test-chat-route.mjs",
-    "test:worker-contract": "node scripts/test-worker-contract.mjs"
+    "test:worker-contract": "node scripts/test-worker-contract.mjs",
+    "test:model-cache": "node --experimental-strip-types scripts/test-model-cache.mjs"
   },
   "overrides": {
     "onnxruntime-web": "$onnxruntime-web",

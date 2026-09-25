@@ -34,6 +34,7 @@ const PUBLIC_ERROR_STAGE: Record<string, AiVoiceAvatarErrorStage> = {
   'ml-worker-construct': 'worker',
   'ml-worker-init': 'worker',
   'ml-worker-message': 'worker',
+  'model-storage': 'model-storage',
 };
 
 /**
@@ -631,6 +632,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     onSpeechEnd: activeTtsEngine === 'kokoro' ? handleSpeechEnd : undefined,
     loadingProgress: config.loadingProgress,
     workerBaseUrl: config.workerBaseUrl,
+    onModelStorageFailed: msg => reportError('model-storage', `Not kept for next visit — ${msg}`, 'degraded'),
     onError: (stage, msg) => {
       console.warn(`[AiVoiceAvatar] Kokoro engine failed (${msg}). Automatically falling back to MMS TTS for audio...`);
       setHasFallenBack(true);
@@ -690,6 +692,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     systemPrompt: config.systemPrompt,
     loadLlm: !config.onSubmit, // Don't load local LLM if onSubmit is provided
     onLocalLlmReady: () => configRef.current.onLocalLlmReady?.(),
+    onModelStorageFailed: msg => reportError('model-storage', `Not kept for next visit — ${msg}`, 'degraded'),
     onCapabilityDetected: config.onCapabilityDetected,
     loadingProgress: config.loadingProgress,
     // Route text to Kokoro if Kokoro is active, otherwise play MMS audio

@@ -10,7 +10,17 @@ it says so.
 
 ## Now — before the launch posts
 
-### 1. Make the models actually cache
+### ~~1. Make the models actually cache~~ — done, pending one end-to-end run
+
+Models are stored in OPFS through transformers.js's custom cache hook
+(`src/lib/modelCache.ts`), so neither the voice nor the language model is
+downloaded twice. Verified in Chrome at 310 MB and 750 MB against real OPFS,
+across a reload, with both workers observed writing and reading through it. What
+has not yet been watched is one full-size model going the whole way from Hugging
+Face to storage to the next visit; the network while this was built ran at 77
+KB/s. Run that before calling it finished.
+
+The analysis that led here, kept for the record:
 
 **Measured, not suspected.** The Cache API in Chrome 152 refuses any single
 entry of 256 MiB or more. Bisected with synthetic responses on a real origin:

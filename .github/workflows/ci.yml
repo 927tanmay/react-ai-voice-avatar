@@ -53,6 +53,8 @@ jobs:
         run: npm run test:chat-route
       - name: Worker message contract
         run: npm run test:worker-contract
+      - name: Model storage
+        run: npm run test:model-cache
 
       - run: npm run build
       - name: Bundle integrity

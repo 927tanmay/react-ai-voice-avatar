@@ -102,6 +102,31 @@ check(
   /preloadRequestedRef\.current = true/.test(engine)
 );
 
+console.log('\nA model that could not be kept is reported, not fatal');
+const kokoroWorker = read('src/workers/kokoroTts.worker.ts');
+const kokoroHook = read('src/hooks/useKokoroWorker.ts');
+check(
+  'both workers install the OPFS cache',
+  /env\.customCache = createModelCache/.test(worker) && /transformersEnv\.customCache = createModelCache/.test(kokoroWorker)
+);
+check(
+  'both workers report a failed save as modelStorage',
+  /type: 'modelStorage'/.test(worker) && /type: 'modelStorage'/.test(kokoroWorker)
+);
+check(
+  'both hooks listen for it',
+  /type === 'modelStorage'/.test(mlHook) && /type === 'modelStorage'/.test(kokoroHook)
+);
+check(
+  'and neither sends it down the error path, which abandons the voice or fails the turn',
+  !/type === 'modelStorage'[\s\S]{0,120}onError/.test(mlHook) &&
+    !/type === 'modelStorage'[\s\S]{0,120}onError/.test(kokoroHook)
+);
+check(
+  'the engine reports it as degraded',
+  (engine.match(/onModelStorageFailed: msg => reportError\('model-storage', [^)]*'degraded'\)/g) || []).length === 2
+);
+
 console.log('\nThe local model is still skipped when a host supplies replies');
 check(
   'loadLlm follows onSubmit',

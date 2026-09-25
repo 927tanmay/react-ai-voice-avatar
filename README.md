@@ -448,9 +448,28 @@ listening while typed input still works, which is a judgement only your app can
 make.
 
 `stage` is one of `microphone`, `speech-recognition`, `language-model`,
-`speech-synthesis`, `audio-output`, `worker` or `conversation`. There is also a
-`detail` string carrying the engine's internal stage name for bug reports; it is
-not stable across versions, so do not branch on it.
+`speech-synthesis`, `audio-output`, `worker`, `model-storage` or `conversation`.
+There is also a `detail` string carrying the engine's internal stage name for bug
+reports; it is not stable across versions, so do not branch on it.
+
+`model-storage` is always `degraded`: a model loaded and works, but could not be
+kept, so the next visit downloads it again. The message says why — usually not
+enough free space, which on a phone is the common case.
+
+### Models are kept between visits
+
+Downloaded models are stored in the browser's Origin Private File System, so a
+returning visitor skips the download. The browser's Cache API — what the model
+loader uses by default — refuses any single file of 256 MiB or more, and both
+the voice (~310 MB) and the local language model (~750 MB) are larger than that,
+so before this they were downloaded again on every visit. Where OPFS is
+unavailable the Cache API is used as before.
+
+Browsers can clear this storage when disk space runs low. If your app is one
+people return to, call `navigator.storage.persist()` from a user gesture to ask
+the browser to keep it; the engine does not, because Firefox can answer that
+call with a permission prompt, and a library should not put one in front of
+your visitors unasked.
 
 ---
 
@@ -651,13 +670,14 @@ measurements behind the open questions.
 
 The largest pieces currently open:
 
-1. **💾 Making the models cache reliably.** Chromium refused to store the two
-   largest model files while caching a smaller one, so a returning visitor can
-   download them again. transformers.js reports that as a warning and continues,
-   which makes it invisible.
-2. **📉 Shrinking the first visit.** English costs about 1.3 GB before anyone can
-   speak. Smaller voice and recognition builds exist; quantising the voice needs
-   someone to listen to both before it lands.
+1. **🙌 Gestures.** The avatar stands still while it speaks. Hand and arm
+   movement tied to speech would do more for how it comes across than anything
+   else here; the rig has the bones, and `avatarDynamics.ts` is where the idle
+   motion already lives.
+2. **🎤 Turn-taking in real rooms.** Turns are tuned against one speaker in a
+   quiet room. A short "yes" can be dropped, and a quiet speaker can go unheard.
+   Recordings from more voices and noisier rooms would let the defaults be set
+   against something other than one person.
 3. **🎭 Expanding regional 3D avatar personas.** Ananya and Aarav ship out of the
    box. Royalty-free character GLBs (~3MB) rigged with the standard 52 Apple
    ARKit facial blendshapes are welcome. Avatar meshes are served from a CDN
