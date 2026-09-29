@@ -124,7 +124,8 @@
     "test:worker-contract": "node scripts/test-worker-contract.mjs",
     "test:model-cache": "node --experimental-strip-types scripts/test-model-cache.mjs",
     "test:arm-rig": "node --experimental-strip-types scripts/test-arm-rig.mjs",
-    "test:gestures": "node --experimental-strip-types scripts/test-gestures.mjs"
+    "test:gestures": "node --experimental-strip-types scripts/test-gestures.mjs",
+    "test:speech-chunks": "node --experimental-strip-types scripts/test-speech-chunks.mjs"
   },
   "overrides": {
     "onnxruntime-web": "$onnxruntime-web",

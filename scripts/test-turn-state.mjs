@@ -131,6 +131,38 @@ const cases = [
     expect: 'thinking',
   },
   {
+    // speak() used to claim 'speaking' at once, and on a slow machine the
+    // avatar then sat silent for half a minute while its status said otherwise.
+    name: 'speak() is not speaking until its audio plays',
+    start: 'idle',
+    events: ['speak-requested'],
+    expect: 'thinking',
+  },
+  {
+    name: 'speak() is speaking once its first chunk plays',
+    start: 'idle',
+    events: ['speak-requested', 'reply-audio-started'],
+    expect: 'speaking',
+  },
+  {
+    name: 'speak() whose voice produced nothing settles back to idle',
+    start: 'idle',
+    events: ['speak-requested', 'reply-finished'],
+    expect: 'idle',
+  },
+  {
+    name: 'speak() during a reply stays speaking, queued behind it',
+    start: 'speaking',
+    events: ['speak-requested'],
+    expect: 'speaking',
+  },
+  {
+    name: 'the user can take the floor while speak() is being prepared',
+    start: 'idle',
+    events: ['speak-requested', 'user-started-speaking', 'reply-audio-started'],
+    expect: 'listening',
+  },
+  {
     name: 'an engine swap only unloads from idle',
     start: 'speaking',
     events: ['models-unready'],

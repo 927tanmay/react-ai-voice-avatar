@@ -73,13 +73,17 @@ const TRANSITIONS: Record<TurnStatus, Partial<Record<TurnEvent, TurnStatus>>> = 
     'models-ready': 'idle',
   },
 
+  // speak() leads to 'thinking', not 'speaking': the voice has text but no audio
+  // yet, and on a machine without WebGPU that lasted half a minute during which
+  // the avatar claimed to be speaking and said nothing. It speaks when a chunk
+  // plays, the same as every other reply.
   idle: {
     'models-unready': 'loading',
     'user-started-speaking': 'listening',
     'listen-requested': 'listening',
     'user-stopped-speaking': 'thinking',
     'text-submitted': 'thinking',
-    'speak-requested': 'speaking',
+    'speak-requested': 'thinking',
   },
 
   // The user holds the floor. Every event belonging to the abandoned reply is
@@ -91,7 +95,7 @@ const TRANSITIONS: Record<TurnStatus, Partial<Record<TurnEvent, TurnStatus>>> = 
     'stop-requested': 'idle',
     'pipeline-failed': 'idle',
     'text-submitted': 'thinking',
-    'speak-requested': 'speaking',
+    'speak-requested': 'thinking',
   },
 
   thinking: {
@@ -101,7 +105,7 @@ const TRANSITIONS: Record<TurnStatus, Partial<Record<TurnEvent, TurnStatus>>> = 
     'pipeline-failed': 'idle',
     'stop-requested': 'idle',
     'user-started-speaking': 'listening',
-    'speak-requested': 'speaking',
+    'speak-requested': 'thinking',
   },
 
   speaking: {
@@ -112,6 +116,7 @@ const TRANSITIONS: Record<TurnStatus, Partial<Record<TurnEvent, TurnStatus>>> = 
     'pipeline-failed': 'idle',
     'stop-requested': 'idle',
     'user-started-speaking': 'listening',
+    // Already audible, and the new text queues behind what is playing.
     'speak-requested': 'speaking',
     'text-submitted': 'thinking',
   },

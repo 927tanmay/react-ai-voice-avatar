@@ -4,6 +4,7 @@ import { useKokoroWorker } from './useKokoroWorker';
 import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
+import { splitForSpeech } from '../lib/speechChunks';
 
 const CRUMB = 'rava:kokoro-init-crashed';
 
@@ -773,9 +774,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               }
               rememberHostedTurn('assistant', spoken);
             } else {
-              // Standard string resolution
+              // A whole reply at once. Spoken a sentence at a time so the first
+              // is audible while the rest are still being synthesised.
               const reply = typeof result === 'string' ? result : String(result);
-              synthesizeText(reply, true);
+              speakInSentences(reply);
               rememberHostedTurn('assistant', reply);
             }
           })
@@ -833,9 +835,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const isReady = isMLReady && (activeTtsEngine !== 'kokoro' || isKokoroReady);
 
   // ─── Unified synthesizeText: routes to the correct TTS engine or cloud adapter ───
-  const synthesizeText = useCallback(async (text: string, isLast: boolean = true) => {
-    configRef.current.onTranscriptUpdate?.(text, 'avatar');
-    
+  /**
+   * Returns false when the cloud adapter failed, so a caller speaking several
+   * pieces in turn knows to stop. `announce` is false when the caller already
+   * reported the whole text as one transcript entry.
+   */
+  const synthesizeText = useCallback(async (text: string, isLast: boolean = true, announce: boolean = true): Promise<boolean> => {
+    if (announce) configRef.current.onTranscriptUpdate?.(text, 'avatar');
+
     // Cloud Adapter: Override local TTS
     if (configRef.current.onSynthesize) {
       try {
@@ -861,8 +868,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         advance('pipeline-failed');
         configRef.current.onInferenceEnd?.();
         resumeVadIfAllowed();
+        return false;
       }
-      return;
+      return true;
     }
 
     // Local fallback
@@ -871,7 +879,41 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     } else {
       mmsSynthesize(text, isLast);
     }
+    return true;
   }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize, handleSpeechOutput, resumeVadIfAllowed, ensureAudioContext]);
+
+  /** Which call to speakInSentences is current, so a superseded one stops. */
+  const sentenceTurnRef = useRef(0);
+
+  /**
+   * Say a whole piece of text, a sentence at a time.
+   *
+   * Handing the voice the text whole meant nothing was audible until all of it
+   * had been synthesised: the demo's greeting took 33 s to start without
+   * WebGPU. The local voices queue in order, so every sentence is posted at
+   * once and the first comes back alone. A cloud adapter is awaited sentence by
+   * sentence instead, because parallel requests can finish out of order; the
+   * next is still fetched while the previous one plays.
+   *
+   * The transcript gets the text once, whole, as it always did.
+   */
+  const speakInSentences = useCallback(async (text: string) => {
+    configRef.current.onTranscriptUpdate?.(text, 'avatar');
+    // Kokoro takes a sentence of any length. MMS and cloud voices keep the
+    // 35-character floor the streaming path has always given them.
+    const localKokoro = !configRef.current.onSynthesize && activeTtsEngine === 'kokoro';
+    const pieces = splitForSpeech(text, { minChars: localKokoro ? 0 : 35 });
+    // Nothing speakable, such as a lone "...". Still hand it over, so the voice
+    // reports the end of speech and the turn settles rather than hanging.
+    if (pieces.length === 0) pieces.push(text);
+
+    const turn = ++sentenceTurnRef.current;
+    for (let i = 0; i < pieces.length; i++) {
+      if (turn !== sentenceTurnRef.current || isInterruptedRef.current) return;
+      const ok = await synthesizeText(pieces[i], i === pieces.length - 1, false);
+      if (!ok) return;
+    }
+  }, [synthesizeText, activeTtsEngine]);
 
   // Imperative speech triggering for external alerts or scripted turns
   const speak = useCallback((text: string) => {
@@ -883,8 +925,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     isInterruptedRef.current = false;
     ensureAudioContext();
     advance('speak-requested');
-    synthesizeText(text.trim(), true);
-  }, [synthesizeText, isReady, ensureAudioContext]);
+    speakInSentences(text.trim());
+  }, [speakInSentences, isReady, ensureAudioContext]);
 
   // Imperative text submission skipping ASR, triggering normal pipeline/LLM
   const sendText = useCallback((text: string) => {
