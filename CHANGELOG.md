@@ -20,8 +20,9 @@ current one plays.
 What that machine still costs: its voice runs about 2.5× slower than real
 time, so on it the sentences have pauses between them, the longest about 5 s
 after the opening "Hi!". A pause appears only where the next sentence takes
-longer to make than the current one takes to say, so a faster voice has fewer
-and shorter ones. That has not yet been measured on a machine with WebGPU.
+longer to make than the current one takes to say. With WebGPU, on a Mac, none
+did: the greeting was audible after 0.75 s and each sentence started within
+2 ms of the previous one ending.
 
 - **`speak()` now reports `thinking` until its audio starts**, then `speaking`,
   like every other reply. A host showing `isSpeaking` no longer shows it over
