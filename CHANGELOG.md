@@ -1,5 +1,87 @@
 # Changelog
 
+## Unreleased
+
+### The avatar gestures while it talks
+
+It used to stand with its arms still for the whole of every reply. Now each
+phrase gets a position — one hand brought up in front of the chest, both hands,
+or now and then neither, because constant motion reads as nervous — and the
+raised hand strokes down on stressed syllables, landing 17 ms after the
+syllable, in step with the mouth. When the voice stops the arms go back to the
+model's own rest pose, but not during a short pause between words.
+
+```tsx
+<AiVoiceAvatar gestures />         // the default
+<AiVoiceAvatar gestures={0.6} />   // smaller
+<AiVoiceAvatar gestures={false} /> // arms still
+```
+
+**Built for any skeleton, which is where it went wrong before.** Arm bones'
+local axes differ between rigs and are mirrored between the sides; an earlier
+attempt to pose them with fixed angles sent one arm forward and the other behind
+the back. `armRig.ts` never reads a bone's own axes: it works out where the body
+faces from where its shoulders are, and moves each arm against that. Tested on
+rigs built to break it — mirrored, turned, Z-up, all three at once — and the old
+approach, swapped back in, fails those tests the way it failed in practice.
+
+**Hand height was decided by looking.** The first version kept the elbow near
+45°, on the theory that big gestures read as flailing. On the homepage's
+framing that left the hands below the frame, visible only as fingertips
+flickering in at the corners. They now come up in front of the chest, where
+conversational gesture happens and where a head-and-torso shot can see it.
+
+**Motion limits taken from how people move:** no joint above 300°/s, and none
+gaining more than 60°/s of speed in a single frame, which is what a visible
+snap is. Springs are integrated exactly rather than stepped, after a stepped one
+flung an arm 26 radians on a long frame.
+
+- Added: `gestures` (`boolean | number`, default `true`).
+
+**Found along the way — the shipped avatars' rest pose is lopsided.** The
+converter bends each elbow about the bone's own axis, which on a mirrored rig
+bends the two differently: the right hand hangs about 10 cm further out than the
+left. Gestures no longer amplify it — the first version did, folding one hand
+onto the stomach while the other stuck out sideways — but the rest pose itself
+needs the converter fixed and the avatars republished under a new tag.
+
+### Models are kept between visits
+
+A returning visitor downloaded the voice again every time, and on a desktop the
+local language model too. The Cache API — where transformers.js stores models by
+default — refuses any single file of 256 MiB or more, and both are larger: the
+voice ~310 MB, the language model ~750 MB. transformers.js logs the refusal as a
+warning and carries on, so nothing looked broken; the visitor just waited through
+the download again.
+
+Models now go to the Origin Private File System, which has no per-file limit,
+through the custom cache hook transformers.js already provides. Nothing in the
+library is patched, and the voice stays at full fp32 quality — quantising it
+under the limit was considered and rejected.
+
+Measured in Chrome with the module itself and real OPFS: a 310 MB file stores in
+0.6 s and reads back in 0.2 s, a 750 MB one in 1.4 s and 0.4 s, both
+byte-identical after a reload. The same 310 MB file put into the Cache API in the
+same browser fails with `UnknownError`. Both workers were observed writing
+through it and, on the next load, serving every stored file from it without a
+download.
+
+A file is only served once complete: it is written first and a marker recording
+its size is written after, so a tab closed halfway through a 750 MB download
+leaves nothing that the next visit will trust. Files the Cache API already kept,
+Whisper's among them, are still read from there, so nobody downloads them twice.
+Where OPFS is unavailable the Cache API applies as before.
+
+- Added: `'model-storage'` to `AiVoiceAvatarErrorStage`. Always `degraded` — the
+  model loaded and works, and will be downloaded again next time. Usually a lack
+  of free space, which is the common case on a phone.
+
+**Observed end to end** on the real homepage in Chrome, with a fresh profile: the
+first visit downloaded the models and was ready in 585 s on a slow connection;
+the next visit was ready in 15 s and requested no weights for the voice or for
+speech recognition. The 310 MB voice — the file the Cache API always refused —
+was among the files kept.
+
 ## 0.5.0
 
 ### A hosted model can answer while the local one downloads

@@ -1,10 +1,23 @@
 import { pipeline, AutomaticSpeechRecognitionPipeline, TextGenerationPipeline, TextToAudioPipeline, TextStreamer, env } from '@huggingface/transformers';
 import { normalizeToDevanagari } from '../lib/transliterate';
 import { createDownloadProgress } from '../lib/downloadProgress';
+import { createModelCache, isModelCacheSupported, modelFileLabel } from '../lib/modelCache';
 
 // Setup environment specifically for the worker
 env.allowLocalModels = false;
 env.useBrowserCache = true;
+
+// Keep model files in OPFS rather than the Cache API, which refuses any file
+// of 256 MiB or more — the 750 MB language model was downloaded again on every
+// visit. See modelCache.ts. Where OPFS is missing, the Cache API still applies.
+if (isModelCacheSupported()) {
+  env.useCustomCache = true;
+  env.customCache = createModelCache({
+    onStoreFailed: (key, reason) => {
+      self.postMessage({ type: 'modelStorage', payload: { message: `${modelFileLabel(key)}: ${reason}` } });
+    },
+  });
+}
 
 let asrPipeline: AutomaticSpeechRecognitionPipeline | null = null;
 let llmPipeline: TextGenerationPipeline | null = null;

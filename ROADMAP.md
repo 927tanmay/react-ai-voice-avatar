@@ -10,7 +10,16 @@ it says so.
 
 ## Now — before the launch posts
 
-### 1. Make the models actually cache
+### ~~1. Make the models actually cache~~ — done
+
+Models are stored in OPFS through transformers.js's custom cache hook
+(`src/lib/modelCache.ts`), so neither the voice nor the language model is
+downloaded twice. Observed end to end on the real homepage with a fresh browser
+profile: ready in 585 s on the first visit over a slow connection, 15 s on the
+second, with no weights requested for the voice or speech recognition. The
+310 MB voice the Cache API always refused was among the files kept.
+
+The analysis that led here, kept for the record:
 
 **Measured, not suspected.** The Cache API in Chrome 152 refuses any single
 entry of 256 MiB or more. Bisected with synthetic responses on a real origin:
@@ -117,13 +126,20 @@ Worth building a small corpus — quiet speaker, noisy room, single-word answers
 filler sounds — and tuning the defaults against it rather than against one
 person in one room. `speechDetection` already exposes every threshold.
 
-### 5. Gestures
+### ~~5. Gestures~~ — done; two follow-ups
 
-The avatar stands still while speaking. Hand and arm movement tied to speech
-would do more for a demo video than anything else on this list. The rig has the
-bones; `avatarDynamics.ts` is where the idle motion already lives.
+The avatar now gestures while it speaks (`src/lib/gestures.ts`, posed through
+`src/lib/armRig.ts`), with hand height chosen by looking at the homepage's
+framing rather than guessed. Two things are left:
 
-Purely visual. No effect on reliability.
+- **Palms.** Hands always face inward. The open, palm-up gesture needs the
+  forearm's roll, and which way is "up" for a palm has to be worked out from
+  the finger bones, not assumed — the same lesson as the rest of the rig.
+- **The avatars' lopsided rest pose.** `scripts/convert-rocketbox.py` bends
+  each elbow about the bone's own local axis, which on a mirrored rig bends the
+  two sides differently: on `ananya.glb` the right hand hangs about 10 cm further
+  out than the left. Fix it by bending about a world axis, as the script already
+  does for the upper arm, then republish the avatars under a new `ASSET_TAG`.
 
 ### 6. A mobile answer — half done
 

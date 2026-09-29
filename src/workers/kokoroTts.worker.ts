@@ -1,8 +1,22 @@
-import { pipeline } from '@huggingface/transformers';
+import { pipeline, env as transformersEnv } from '@huggingface/transformers';
 import { createDownloadProgress } from '../lib/downloadProgress';
+import { createModelCache, isModelCacheSupported, modelFileLabel } from '../lib/modelCache';
 // Prevent esbuild from tree-shaking the ONNX Runtime WASM backend registration side-effects
 if (typeof self !== 'undefined' && self.location && self.location.href && self.location.href.includes('prevent-tree-shaking')) {
   console.log(pipeline);
+}
+
+// The voice is a single ~310 MB file, over the 256 MiB the Cache API will store,
+// so without this it was downloaded again on every visit. kokoro-js loads it
+// through this same transformers.js instance — the package's `overrides` pin it
+// to one copy — so setting the cache here covers the voice. See modelCache.ts.
+if (isModelCacheSupported()) {
+  transformersEnv.useCustomCache = true;
+  transformersEnv.customCache = createModelCache({
+    onStoreFailed: (key, reason) => {
+      self.postMessage({ type: 'modelStorage', payload: { message: `${modelFileLabel(key)}: ${reason}` } });
+    },
+  });
 }
 
 // Silence benign ONNX Runtime optimization notices (e.g. shape node fallbacks to CPU EP) in DevTools console

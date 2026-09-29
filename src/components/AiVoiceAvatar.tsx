@@ -10,6 +10,8 @@ import { AudioLipSync } from '../lib/audioLipSync';
 const LazyLevaDebugPanel = React.lazy(() => import('./LevaDebugPanel'));
 import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
 import { AvatarDynamicsEngine } from '../lib/avatarDynamics';
+import { buildArmRigs, applyArmPose, type ArmRigs } from '../lib/armRig';
+import { GestureEngine } from '../lib/gestures';
 import type { VisemeWeights } from '../lib/visemeTable';
 
 // Re-exported from ../types so the headless entry never pulls in this module.
@@ -178,6 +180,15 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   };
   accentColor?: string;
 
+  /**
+   * Hand and arm gestures while the avatar speaks. On by default.
+   *
+   * `true` or `false`, or a number for their size: 0 is still, 1 is the
+   * default, up to 1.5. Needs a skeleton with `LeftArm`, `LeftForeArm`,
+   * `LeftHand` and the right-hand equivalents; without them the arms stay still.
+   */
+  gestures?: boolean | number;
+
   // Debug flag to show Leva panel
   debug?: boolean;
 
@@ -260,12 +271,14 @@ interface AvatarModelProps {
   playbackStartTimeRef: React.RefObject<number>;
   audioContextRef: React.RefObject<AudioContext | null>;
   onLoaded?: () => void;
+  /** 0 is still, 1 the default size. See `gestures` on the component. */
+  gestureIntensity: number;
 }
 
 function AvatarModel({
   url, status, debug, analyser,
   currentSpeechTextRef, currentSpeechPhonemesRef, currentAudioDurationRef,
-  playbackStartTimeRef, audioContextRef, onLoaded,
+  playbackStartTimeRef, audioContextRef, onLoaded, gestureIntensity,
 }: AvatarModelProps) {
   const { scene } = useGLTF(url);
 
@@ -288,6 +301,14 @@ function AvatarModel({
 
   // Skeletal armature tracking refs for interactive head posture and body IK
   const bonesRef = useRef<Record<string, THREE.Object3D>>({});
+
+  // Arms are posed through armRig.ts rather than bonesRef's Euler offsets: arm
+  // bone axes differ between rigs and are mirrored between sides. See armRig.ts.
+  const armRigsRef = useRef<ArmRigs>({});
+  const gestureEngineRef = useRef(new GestureEngine());
+  useEffect(() => {
+    gestureEngineRef.current.setIntensity(gestureIntensity);
+  }, [gestureIntensity]);
 
   // Find all meshes with morph targets and locate head armature bones
   useEffect(() => {
@@ -313,9 +334,16 @@ function AvatarModel({
         if (!b.userData.initialRotation) {
           b.userData.initialRotation = b.rotation.clone();
         }
+        // useGLTF caches the scene, so a remount can find it mid-gesture if the
+        // last one ended abruptly. The arm rig reads its geometry from the pose
+        // it is given, so it must be given the rest pose.
+        b.rotation.copy(b.userData.initialRotation);
         bonesRef.current[name] = b;
       }
     }
+
+    armRigsRef.current = buildArmRigs(scene, name => bonesRef.current[name]);
+    gestureEngineRef.current.reset();
 
     return () => {
       // On unmount, restore the bones to their true initial rotation
@@ -328,6 +356,7 @@ function AvatarModel({
 
       morphMeshesRef.current = [];
       bonesRef.current = {};
+      armRigsRef.current = {};
     };
   }, [scene]);
 
@@ -434,6 +463,20 @@ function AvatarModel({
           bone.rotation.z = initial.z + rot.z;
         }
       }
+    }
+
+    // Step 6b: Arm and hand gestures, from the voice. After the torso has moved,
+    // so the arms, which are posed relative to their parents, ride along with it.
+    const rigs = armRigsRef.current;
+    if (rigs.left || rigs.right) {
+      const pose = gestureEngineRef.current.update({
+        delta,
+        energy: audioState?.energy ?? 0,
+        isSpeaking: audioState?.isSpeaking ?? false,
+        status,
+      });
+      if (rigs.left) applyArmPose(rigs.left, pose.left);
+      if (rigs.right) applyArmPose(rigs.right, pose.right);
     }
 
     // Step 7: Root scene fallback presentation (for models without proper bones)
@@ -720,6 +763,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
           playbackStartTimeRef={playbackStartTimeRef}
           audioContextRef={audioContextRef}
           onLoaded={props.onModelLoaded}
+          gestureIntensity={props.gestures === false ? 0 : props.gestures === true || props.gestures === undefined ? 1 : props.gestures}
         />
       </group>
 

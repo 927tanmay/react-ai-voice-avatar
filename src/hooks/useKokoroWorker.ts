@@ -22,6 +22,12 @@ export interface UseKokoroWorkerConfig {
   onSpeechEnd?: () => void;
   onReady?: () => void;
   onError?: (stage: string, message: string) => void;
+  /**
+   * A model file could not be kept for the next visit. Separate from `onError`
+   * because that path abandons Kokoro for the plainer fallback voice, and a
+   * voice that loaded and works must not be thrown away over where it is saved.
+   */
+  onModelStorageFailed?: (message: string) => void;
   loadingProgress?: (pct: number, label: string) => void;
   workerBaseUrl?: string;
 }
@@ -183,6 +189,8 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
             );
           } else if (type === 'speechEnd') {
             configRef.current.onSpeechEnd?.();
+          } else if (type === 'modelStorage') {
+            configRef.current.onModelStorageFailed?.(payload.message);
           } else if (type === 'error') {
             console.error(`[Kokoro Worker] Error: ${payload.stage} — ${payload.message}`);
             if (payload.stage === 'kokoro-init') {

@@ -235,7 +235,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
               </button>
             </div>
             <p style={noteStyle}>
-              Hearing, voice and lip-sync run in your browser — {DOWNLOAD_SIZE} the first time, about half of which your browser keeps for next time.
+              Hearing, voice and lip-sync run in your browser — {DOWNLOAD_SIZE} the first time, which your browser keeps for next time.
               Replies come from a hosted model{canRunLocalLlm ? ', until the in-browser one finishes downloading behind the conversation.' : '.'}
               {!hasWebGpu && (
                 <span style={{ display: 'block', marginTop: '8px', color: '#F59E0B' }}>
@@ -267,15 +267,14 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
                 </div>
               );
             })}
-            {/* Measured rather than hoped: Chrome's Cache API refuses any single
-                entry of 256 MiB or more (255 MiB stores, 256 MiB fails), and it
-                is not a quota problem. Whisper arrives as a 78.6 MB encoder and a
-                198.9 MB decoder, so both are kept; the Kokoro voice is one ~310 MB
-                file, so it is refused and fetched again every visit.
-                transformers.js logs that as a warning and carries on. Shrinking
-                the voice is what fixes it — see ROADMAP item 1. */}
+            {/* True since the models moved to OPFS. The Cache API refused any
+                file of 256 MiB or more, so the ~310 MB voice used to be fetched
+                again on every visit; OPFS has no such limit. It can still be
+                refused — a full disk, a private window — and the engine reports
+                that through onError as 'model-storage', so this stays a plain
+                statement rather than a promise. See src/lib/modelCache.ts. */}
             <p style={{ ...noteStyle, marginTop: '4px' }}>
-              Your browser keeps the speech model for next time. The voice is too large for it to store, so that part downloads again.
+              Your browser keeps these, so your next visit skips the download.
             </p>
           </div>
         )}
