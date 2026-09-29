@@ -59,6 +59,8 @@ jobs:
         run: npm run test:arm-rig
       - name: Gestures
         run: npm run test:gestures
+      - name: Speech chunks
+        run: npm run test:speech-chunks
 
       - run: npm run build
       - name: Bundle integrity

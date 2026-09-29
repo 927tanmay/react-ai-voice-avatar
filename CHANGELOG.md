@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### `speak()` starts talking on its first sentence
+
+`speak()`, and a reply an `onSubmit` handler returns as a single string, went to
+the voice whole, and the voice produces audio for everything it is given before
+handing any back. So nothing was audible until the last sentence existed. On a
+machine without WebGPU, that was the demo's greeting: 30 to 33 seconds of
+silence straight after a long download, measured over four loads, while the
+status read `speaking` from the first millisecond.
+
+Text is now cut into sentences (`src/lib/speechChunks.ts`) and the voice returns
+each as it is ready, so the first plays while the rest are being made. Same
+greeting, same machine: audible after about 2 seconds, and finished after about
+24 rather than 46, because the voice works on the next sentence while the
+current one plays.
+
+What that machine still costs: its voice runs about 2.5× slower than real
+time, so on it the sentences have pauses between them, the longest about 5 s
+after the opening "Hi!". A pause appears only where the next sentence takes
+longer to make than the current one takes to say, so a faster voice has fewer
+and shorter ones. That has not yet been measured on a machine with WebGPU.
+
+- **`speak()` now reports `thinking` until its audio starts**, then `speaking`,
+  like every other reply. A host showing `isSpeaking` no longer shows it over
+  silence. Calling `speak()` while the avatar is already talking still stays
+  `speaking`.
+- **Transcripts are unchanged:** `onTranscriptUpdate` still receives the text
+  once, whole.
+- **An `onSynthesize` adapter now receives sentences** rather than the whole
+  text, as it already did for streamed replies. They are requested one after
+  another, so they cannot finish out of order, and each is fetched while the one
+  before it plays. MMS and cloud voices keep the 35-character minimum piece they
+  have always had on the streaming path.
+- **Splitting avoids the obvious traps:** it doesn't cut inside "0.5B",
+  "3.5 GB", "Dr." or a domain name, and it splits Hindi at the danda. A sentence
+  over 200 characters is cut at a clause break, since Kokoro silently drops
+  input past its limit. `scripts/test-speech-chunks.mjs` covers these cases;
+  breaking any of those rules on purpose fails it.
+
 ### The avatar gestures while it talks
 
 It used to stand with its arms still for the whole of every reply. Now each
