@@ -592,6 +592,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `allowInterruption` | `boolean` | `true` | Lets the user talk over the avatar and cut it off mid-sentence. Turn off for a kiosk or noisy room, where the avatar hearing itself through the speakers is worse than waiting. Ignored in `push-to-talk`. See [Taking turns](#-taking-turns). |
 | `speechDetection` | `{ positiveSpeechThreshold?, negativeSpeechThreshold?, minSpeechMs?, redemptionMs?, preSpeechPadMs? }` | see [Taking turns](#-taking-turns) | Tunes how the microphone decides someone is talking. Every field optional. The defaults suit a quiet room; a shop floor needs a higher threshold and a longer `minSpeechMs`. |
 | `onUserInterrupt` | `() => void` | `undefined` | Fires when the user talks over the avatar and takes the floor. Only fires if the avatar actually had audio playing. |
+| `gestures` | `boolean \| number` | `true` | Hand and arm gestures while the avatar speaks: one hand or both brought up in front of the chest for each phrase, with small beats on stressed syllables, and the arms back at rest when it stops. `false` keeps the arms still; a number sets the size, `0` to `1.5`. Needs a skeleton with `LeftArm`, `LeftForeArm` and `LeftHand` and the right-hand equivalents; custom avatars without them simply do not gesture. |
 | `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! Fires with `0` and `'idle'` between turns, so a meter falls to rest rather than freezing. |
 | `onSubmit` | `(text: string) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. |
 | `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
@@ -670,10 +671,11 @@ measurements behind the open questions.
 
 The largest pieces currently open:
 
-1. **🙌 Gestures.** The avatar stands still while it speaks. Hand and arm
-   movement tied to speech would do more for how it comes across than anything
-   else here; the rig has the bones, and `avatarDynamics.ts` is where the idle
-   motion already lives.
+1. **🖐️ Open-palm gestures.** Hands now gesture while the avatar speaks, but
+   always with the palms facing inward. Turning them up — the open, offering
+   gesture people use when explaining — needs the forearm's roll, which has to
+   be worked out from the finger bones rather than assumed, for the same reason
+   as everything else in `armRig.ts`.
 2. **🎤 Turn-taking in real rooms.** Turns are tuned against one speaker in a
    quiet room. A short "yes" can be dropped, and a quiet speaker can go unheard.
    Recordings from more voices and noisier rooms would let the defaults be set
