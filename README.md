@@ -14,7 +14,9 @@ You bring the model. Point it at OpenAI, Anthropic, your own fine-tune or your e
 
 It can also run with no backend at all. Speech recognition, generation and voice all have in-browser implementations, which makes for a convincing demo and a genuinely offline kiosk. Most production apps will use their own model and keep only speech and lip-sync on the device.
 
-### 🌐 [**Try the live demo ➔**](https://react-ai-voice-avatar.vercel.app/)
+**Don't need a face?** The same engine is a headless React hook for voice mode, the way ChatGPT and Gemini do it: `react-ai-voice-avatar/headless`, with no three.js in your bundle. [See it ➔](https://react-ai-voice-avatar.vercel.app/voice) · [How ➔](#-entry-1-the-headless-hook-voice-mode-for-your-app)
+
+### 🌐 [**Try the live demo ➔**](https://react-ai-voice-avatar.vercel.app/) · [**Voice only ➔**](https://react-ai-voice-avatar.vercel.app/voice)
 *Speech recognition, voice synthesis and lip-sync, all running in your browser tab.*
 
 ![React AI Voice Avatar Demo](./assets/gif/react-avatar-demo.gif)
@@ -26,7 +28,12 @@ It can also run with no backend at all. Speech recognition, generation and voice
 `react-ai-voice-avatar` provides two distinct ways to integrate into your app depending on your design needs. Both share the exact same underlying conversational state machine, Voice Activity Detection (VAD), and turn-taking logic.
 
 ### 🎧 Entry 1: The Headless Hook ("Voice Mode for your App")
-If you are building a ChatGPT-style voice interface or a custom audio visualizer and **don't want any 3D dependencies**, use the headless hook. It provides all the speech-recognition, text-to-speech, and audio-reactive hooks with zero UI overhead.
+Voice mode for your app: talk to it the way you talk to ChatGPT or Gemini, and interrupt it mid-sentence. The hook owns the microphone, knowing when someone has finished speaking, interruption, and streaming the reply into speech. You own the UI, and every frame it hands you a loudness level to animate.
+
+<!-- Voice-only GIF goes here. Record /voice: a question, the answer, then
+     talking over it. A GIF has no sound, so the captions carry it. -->
+
+**[Try it ➔](https://react-ai-voice-avatar.vercel.app/voice)**: a page built on this hook alone. [`examples/voice-only`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/voice-only) is the same page as an app to copy.
 
 Import it from `react-ai-voice-avatar/headless` and Three.js never enters your module graph. Measured on the same Next.js App Router build, one route rendering the 3D avatar and one rendering only the hook:
 
@@ -35,47 +42,87 @@ Import it from `react-ai-voice-avatar/headless` and Three.js never enters your m
 | 3D avatar | 389 kB |
 | Headless hook | 117 kB |
 
+```bash
+npm install react-ai-voice-avatar
+```
+
 ```tsx
+import { useRef, useState } from 'react';
 // The /headless subpath is what keeps Three.js out of your bundle.
 // Importing the hook from the package root pulls the 3D stack in with it.
 import { useAiVoiceAvatar } from 'react-ai-voice-avatar/headless';
 
-function MyChatGPTVoiceOrb() {
-  const { startListening, stopListening, isListening, status } = useAiVoiceAvatar({
-    // Standard integration: 100% Local TTS & STT
-    ttsEngine: 'kokoro',
-    ttsVoice: 'af_heart',
-    
-    // Connect your LLM
-    onSubmit: async (transcript) => fetch('/api/chat', { method: 'POST', body: transcript }).then(r => r.body),
-    
-    // Audio-reactive callback for building your own glowing orb UI!
-    onAudioLevelChange: (level, source) => updateOrbGlow(level, source)
+export function VoiceMode() {
+  const orb = useRef<HTMLDivElement>(null);
+  const [micOn, setMicOn] = useState(false);
+
+  const voice = useAiVoiceAvatar({
+    // Your model. Return a string, or a stream so speech starts sooner.
+    onSubmit: text => fetch('/api/chat', { method: 'POST', body: text }).then(r => r.body),
+
+    // 0 to 1 every frame, from whoever is talking. Written straight to the
+    // DOM: routing it through state would re-render sixty times a second.
+    onAudioLevelChange: level => {
+      if (orb.current) orb.current.style.transform = `scale(${1 + level * 0.3})`;
+    },
   });
 
-  return <button onClick={isListening ? stopListening : startListening}>Toggle Voice Mode</button>;
+  // The mic stays open across turns, so it is tracked apart from `status`,
+  // which moves through listening, thinking and speaking.
+  const toggle = () => {
+    if (micOn) {
+      voice.stopListening();
+      voice.interrupt();
+    } else {
+      voice.startListening(); // From a click: this is where the mic prompt appears.
+    }
+    setMicOn(!micOn);
+  };
+
+  return (
+    <>
+      <div ref={orb} className="orb" data-status={voice.status} />
+      <button onClick={toggle} disabled={!voice.isReady}>
+        {voice.isReady ? (micOn ? 'Stop' : 'Talk') : 'Loading…'}
+      </button>
+    </>
+  );
 }
 ```
 
-**See it running:** [react-ai-voice-avatar.vercel.app/voice](https://react-ai-voice-avatar.vercel.app/voice) is voice mode on a page of its own, built on this hook alone, and [`examples/voice-only`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/voice-only) is a complete app to copy: an orb that moves with whoever is speaking, live captions and one button, with no three.js in its bundle.
+For captions, `onTranscriptUpdate(text, 'user')` gives what the user said and `onSpeechStart(text)` each sentence of the reply as it starts playing. `speak(text)` says something without a model turn, such as a greeting, and `sendText(text)` takes typed input. Everything it returns is in the [hook reference](#useaivoiceavatar-headless).
 
-#### ☁️ Cloud Adapters (Per-Utterance Escape Hatches)
-By default, the hook runs Whisper and Kokoro **100% locally** in the browser. But you can instantly widen your audience by bypassing the local ML models and injecting your own cloud TTS/STT providers via the `onTranscribe` and `onSynthesize` adapters!
+#### 🚀 Voice mode in production
+
+Each stage runs in the browser or on your backend, and the choice is mostly about the download:
+
+| Setup | Options | Downloaded by each visitor | Audio leaves the device |
+| :--- | :--- | :--- | :--- |
+| **Cloud speech** | `onTranscribe` + `onSubmit` + `onSynthesize` | Nothing until the mic opens, then ~4 MB for the voice detector | Yes, to your providers |
+| **Local speech** (the demo) | `onSubmit` | ~590 MB once, kept for later visits (~320 MB on iPhone) | No |
+| **Fully local** | none | ~1.3 GB once | Nothing leaves at all |
+
+Cloud speech is the setup to reach for on phones and on pages people visit once: it is ready as soon as the page is. Local speech keeps what people say on their device and costs nothing per minute, and suits an app they come back to, since the models are stored after the first visit. Fully local is for kiosks and offline use. Use [`loadModels`](#show-the-avatar-before-anyone-commits-to-a-download) to hold any download until someone actually engages.
+
+#### ☁️ Cloud Adapters
+`onTranscribe` and `onSynthesize` replace the local speech models with your own providers. Each replaces its model entirely: supply one and that model is never downloaded. Drop it later and the local model loads, so a provider outage can fall back to the browser mid-session.
 
 ```tsx
-const { startListening } = useAiVoiceAvatar({
-  // Bypass local Whisper: Send mic audio to Sarvam or OpenAI Whisper
-  onTranscribe: async (audioFloat32Array) => {
-    return await mySarvamSTT(audioFloat32Array);
+const voice = useAiVoiceAvatar({
+  // Instead of Whisper: 16 kHz mono samples of one utterance, to any
+  // speech-to-text service. Encode them as WAV if the service wants a file.
+  onTranscribe: async (samples: Float32Array) => {
+    return await mySpeechToText(samples);
   },
-  
-  // Bypass local Kokoro: Use ElevenLabs or OpenAI TTS
-  onSynthesize: async (text) => {
-    const res = await fetch('/api/elevenlabs', { method: 'POST', body: text });
-    // Return an ArrayBuffer (MP3/WAV) - the hook automatically decodes it and plays it!
-    return await res.arrayBuffer(); 
+
+  // Instead of Kokoro: return an encoded MP3/WAV (ArrayBuffer), which the
+  // hook decodes, or raw 24 kHz PCM as a Float32Array. Called a sentence at
+  // a time, so the first plays while the rest are fetched.
+  onSynthesize: async (text: string) => {
+    const res = await fetch('/api/tts', { method: 'POST', body: text });
+    return await res.arrayBuffer();
   },
-  
+
   onSubmit: async (text) => fetch('/api/chat', { method: 'POST', body: text }).then(r => r.body),
 });
 ```
@@ -523,6 +570,11 @@ already run. That keeps the download to about 600 MB (Whisper base and the Kokor
 voice), keeps your keys on your server, and still gives you a conversation nobody
 else can read.
 
+Add `onTranscribe` and `onSynthesize` as well and nothing downloads at all, apart
+from the ~4 MB voice detector once the microphone opens. Each adapter replaces
+its model entirely, so the page is ready as soon as it loads. That is the shape
+for phones and for pages people visit once.
+
 Fully local is real, not a demo trick, and it is the right answer for a kiosk, a
 regulated environment, or anywhere without reliable connectivity. Be aware of the
 cost: in English the first visit downloads roughly 1.3 GB before anyone can speak
@@ -570,7 +622,7 @@ Explore the canonical patterns in the `examples/` directory:
 
 ---
 
-## 📖 Component API Reference
+## 📖 API Reference
 
 ### `<AiVoiceAvatar />` Props
 
@@ -600,8 +652,8 @@ Explore the canonical patterns in the `examples/` directory:
 | `onSubmit` | `(text: string) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. |
 | `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
 | `onLocalLlmReady` | `() => void` | `undefined` | Fires once the model requested by `preloadLocalLlm` has loaded. Drop `onSubmit` here to hand the conversation over; the turns your backend answered are carried across, so the local model knows what was already said. |
-| `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service. Receives raw microphone samples. |
-| `onSynthesize` | `(text: string) => Promise<Float32Array \| ArrayBuffer>` | `undefined` | Replaces local voice synthesis with your own service. Return raw PCM or an encoded MP3/WAV buffer. |
+| `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. Receives one utterance as 16 kHz mono samples. |
+| `onSynthesize` | `(text: string) => Promise<Float32Array \| ArrayBuffer>` | `undefined` | Replaces local voice synthesis with your own service, and Kokoro is then not downloaded. Return an encoded MP3/WAV buffer, or raw 24 kHz PCM. Called a sentence at a time. |
 | `onError` | `(e: AiVoiceAvatarError) => void` | `undefined` | Fires when a stage fails. Carries `stage`, `message` and a `severity` of `degraded` or `fatal`. See [Handling failures](#-handling-failures). |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | `undefined` | Callback delivering real-time microphone transcriptions and assistant spoken utterance strings. |
 | `onStatusChange`| `(status: string) => void` | `undefined` | Emits live state transitions (`loading`, `idle`, `listening`, `thinking`, `speaking`). |
@@ -653,6 +705,45 @@ const handleTextSubmit = (userInput: string) => {
 ```
 *When you use `sendText`, the avatar immediately enters the `thinking` state and processes the interaction exactly as if the user had spoken it aloud.*
 
+### `useAiVoiceAvatar()` (headless)
+
+```tsx
+import { useAiVoiceAvatar } from 'react-ai-voice-avatar/headless';
+```
+
+Takes the same options as the component's props, except the ones about the 3D
+scene and its overlays (`avatarPreset`, `avatarSize`, `modelSrc`,
+`lightingPreset`, `gestures`, `showCaptions`, `hideStatusPill`, `onModelLoaded`,
+`debug` and the styling props). `onStatusChange` is replaced by the returned
+`status`. A few options matter mostly without an avatar:
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | Loudness from 0 to 1, every frame, from whichever side is talking. What an orb or waveform animates from. Write it to the DOM through a ref rather than into state. |
+| `onSpeechStart` | `(text: string) => void` | Each sentence of the reply as it starts playing. Captions that keep pace with the voice. |
+| `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | What the user said, once transcribed, and the reply in full. |
+| `onInferenceStart` / `onInferenceEnd` | `() => void` | Around each turn, from the moment the user stops talking to the end of the reply. |
+| `loadingProgress` | `(pct: number, label: string) => void` | Download progress per model: `'asr'`, `'kokoro'` (or `'tts'` for MMS) and `'llm'`. They download in parallel, so keep one figure per label. |
+
+It returns:
+
+| Value | Type | Description |
+| :--- | :--- | :--- |
+| `status` | `'loading' \| 'idle' \| 'listening' \| 'thinking' \| 'speaking'` | Where the conversation is. `'loading'` until the models are up, and until `loadModels` is true. |
+| `isLoading`, `isIdle`, `isListening`, `isThinking`, `isSpeaking` | `boolean` | Shorthands for `status`. |
+| `isReady` | `boolean` | The models are loaded. `startListening` does nothing before this. |
+| `startListening` | `() => Promise<void>` | Opens the microphone and starts listening. Call it from a click: the first call is where the browser asks for permission. In `'continuous'` mode the microphone then stays open across turns. |
+| `stopListening` | `() => void` | Closes the microphone. |
+| `interrupt` | `() => void` | Stops the reply mid-sentence and clears what was queued. |
+| `speak` | `(text: string) => void` | Says the text without a model turn: a greeting, a notification. Plays a sentence at a time. |
+| `sendText` | `(text: string) => void` | Typed input, handled as if it had been spoken. |
+| `clearHistory` | `() => void` | Forgets the conversation so far. |
+| `micError` | `string \| null` | Why the microphone could not open, such as a denied permission. `null` otherwise. |
+| `analyser` | `AnalyserNode \| undefined` | The reply's audio, for a frequency visualiser. `onAudioLevelChange` is simpler if you only need loudness. |
+
+It also returns several refs (`currentSpeechTextRef`, `audioContextRef` and
+others) that the 3D component uses for lip-sync. A voice UI can ignore them.
+
 ---
 
 ## 🌐 Performance & Asset Caching
@@ -661,7 +752,7 @@ const handleTextSubmit = (userInput: string) => {
    - Modern Chromium browsers (Chrome, Edge, Opera, Arc) on desktop and mobile platforms benefit from hardware-accelerated WebGPU neural execution.
    - On systems without WebGPU, inference automatically falls back to multi-threaded WebAssembly (WASM) quantization without app crashes.
 2. **Persistent Local Caching**:
-   - AI models (Whisper ASR, Kokoro TTS, SmolLM2) are downloaded once on initial startup and persisted inside browser **CacheStorage / IndexedDB**. Subsequent page refreshes load offline almost instantaneously!
+   - AI models (Whisper, Kokoro, the local language model) are downloaded once and kept in the browser's origin private file system, so later visits skip the download. See [Models are kept between visits](#models-are-kept-between-visits).
 
 ---
 
