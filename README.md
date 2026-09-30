@@ -107,6 +107,8 @@ Cloud speech is the setup to reach for on phones and on pages people visit once:
 #### ☁️ Cloud Adapters
 `onTranscribe` and `onSynthesize` replace the local speech models with your own providers. Each replaces its model entirely: supply one and that model is never downloaded. Drop it later and the local model loads, so a provider outage can fall back to the browser mid-session.
 
+To have that fallback ready rather than downloading it at the moment you need it, pass `preloadLocalSpeech`: the local hearing and voice download behind the conversation, and `onLocalSpeechReady` fires when they could take over. [`examples/groq-voice`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/groq-voice) starts on Groq and offers the switch then.
+
 ```tsx
 const voice = useAiVoiceAvatar({
   // Instead of Whisper: 16 kHz mono samples of one utterance, to any
@@ -618,6 +620,7 @@ Explore the canonical patterns in the `examples/` directory:
 | **Local Kiosk** | [`examples/local-kiosk`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/local-kiosk) | 100% offline on-device retail & restaurant ordering kiosk with embedded menu reasoning. Demonstrates the **On-Device Brain**; operates without internet access once model weights are locally cached. |
 | **Connected App** | [`examples/hybrid-cloud`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/hybrid-cloud) | Illustrates the **Connected Brain** (`onSubmit`). Bypasses gigabyte-scale local LLM downloads by routing reasoning to OpenAI, Claude, or corporate APIs while keeping ASR, TTS, and 3D lip blending 100% on-device! |
 | **Voice Only** | [`examples/voice-only`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/voice-only) | Voice mode with **no avatar**, like ChatGPT or Gemini voice: the `react-ai-voice-avatar/headless` hook, an audio-reactive orb, live captions and interruption. No three.js in the bundle, and no backend needed to try it. |
+| **Groq Voice** | [`examples/groq-voice`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/groq-voice) | Voice mode on Groq's free tier with your own key: hearing, replies and voice start on Groq with nothing to download, the in-browser hearing and voice download behind the conversation (`preloadLocalSpeech`), and the page offers to switch when they are ready. Shows Groq's live limits. |
 | **Headless Custom UI**| [`examples/headless-custom-ui`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/headless-custom-ui)| Still renders the 3D avatar; for no avatar at all, see Voice Only above. Demonstrates hiding built-in DOM overlays (`hideStatusPill={true}`, `showCaptions={false}`), streaming transcripts into a custom enterprise UI, and controlling voice outputs imperatively via `ref.current?.speak(text)`. |
 
 ---
@@ -724,6 +727,8 @@ scene and its overlays (`avatarPreset`, `avatarSize`, `modelSrc`,
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | What the user said, once transcribed, and the reply in full. |
 | `onInferenceStart` / `onInferenceEnd` | `() => void` | Around each turn, from the moment the user stops talking to the end of the reply. |
 | `onTtsEngineChange` | `(engine: 'kokoro' \| 'mms' \| 'custom') => void` | Fires whenever `activeTtsEngine` changes. Also a prop on the component. |
+| `preloadLocalSpeech` | `boolean` | Download the in-browser hearing and voice behind `onTranscribe` and `onSynthesize`, without waiting for them. Drop the adapters once `onLocalSpeechReady` fires and the local models take over. Also a prop on the component. |
+| `onLocalSpeechReady` | `() => void` | Fires once, when the models requested by `preloadLocalSpeech` are loaded. |
 | `loadingProgress` | `(pct: number, label: string) => void` | Download progress per model: `'asr'`, `'kokoro'` (or `'tts'` for MMS) and `'llm'`. They download in parallel, so keep one figure per label. |
 
 It returns:
@@ -733,6 +738,7 @@ It returns:
 | `status` | `'loading' \| 'idle' \| 'listening' \| 'thinking' \| 'speaking'` | Where the conversation is. `'loading'` until the models are up, and until `loadModels` is true. |
 | `isLoading`, `isIdle`, `isListening`, `isThinking`, `isSpeaking` | `boolean` | Shorthands for `status`. |
 | `isReady` | `boolean` | The models are loaded. `startListening` does nothing before this. |
+| `isLocalSpeechReady` | `boolean` | The in-browser hearing and voice are loaded, whether or not they are in use. |
 | `activeTtsEngine` | `'kokoro' \| 'mms' \| 'custom'` | The voice actually speaking. iPhones and iPads get `'mms'`, a single plainer voice that ignores `ttsVoice`, because Kokoro runs Safari out of memory; so does any device where Kokoro fails to load. `'custom'` is your `onSynthesize`. Worth showing if your users will compare devices. |
 | `startListening` | `() => Promise<void>` | Opens the microphone and starts listening. Call it from a click: the first call is where the browser asks for permission. In `'continuous'` mode the microphone then stays open across turns. |
 | `stopListening` | `() => void` | Closes the microphone. |

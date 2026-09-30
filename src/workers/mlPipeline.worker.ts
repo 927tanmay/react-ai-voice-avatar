@@ -291,6 +291,8 @@ const loadAsrWithFallback = async (model: string, fallbackMode: string) => {
     currentDevice = 'wasm';
   }
   currentAsrModel = model;
+  // Said every time, so a host preloading speech learns when it can switch.
+  self.postMessage({ type: 'localAsrReady' });
 };
 
 /** The MMS voice for the current language, when the host wants it. */
@@ -301,6 +303,7 @@ const loadMmsVoice = async () => {
     progress_callback: reportProgress('tts'),
   });
   self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
+  self.postMessage({ type: 'localTtsReady' });
 };
 
 const processTtsQueue = async () => {

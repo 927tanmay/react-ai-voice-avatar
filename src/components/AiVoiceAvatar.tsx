@@ -110,6 +110,13 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * Kokoro cannot load, or `'custom'` for `onSynthesize`. Fires on every change.
    */
   onTtsEngineChange?: (engine: 'kokoro' | 'mms' | 'custom') => void;
+  /**
+   * Download the in-browser hearing and voice behind `onTranscribe` and
+   * `onSynthesize`, so they can take over. See the hook's option of that name.
+   */
+  preloadLocalSpeech?: boolean;
+  /** Fires once the models requested by `preloadLocalSpeech` are loaded. */
+  onLocalSpeechReady?: () => void;
 
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
@@ -695,6 +702,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onUserInterrupt: props.onUserInterrupt,
     onAudioLevelChange: props.onAudioLevelChange,
     onTtsEngineChange: props.onTtsEngineChange,
+    preloadLocalSpeech: props.preloadLocalSpeech,
+    onLocalSpeechReady: props.onLocalSpeechReady,
   });
 
   const handleStopOrPause = () => {

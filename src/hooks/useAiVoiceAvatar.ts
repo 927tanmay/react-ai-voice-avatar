@@ -123,6 +123,20 @@ export interface UseAiVoiceAvatarConfig {
   onTranscribe?: (audio: Float32Array) => Promise<string>;
   onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
   /**
+   * Download the in-browser hearing and voice in the background even though
+   * `onTranscribe` and `onSynthesize` are handling them.
+   *
+   * The speech counterpart of `preloadLocalLlm`. Nothing waits for it: the
+   * conversation starts on your providers at once, and `onLocalSpeechReady`
+   * fires when the local models could take over. Drop the adapters then —
+   * with the user's agreement, if the switch changes the voice they hear —
+   * and the conversation carries on with no limits and no audio leaving the
+   * device.
+   */
+  preloadLocalSpeech?: boolean;
+  /** Fires once the models requested by `preloadLocalSpeech` are loaded. */
+  onLocalSpeechReady?: () => void;
+  /**
    * Called when something in the pipeline fails.
    *
    * Check `severity` before reacting: most failures here are survivable because
@@ -205,6 +219,11 @@ export interface UseAiVoiceAvatarReturn {
   isReady: boolean;
   /** The voice actually speaking. See `TtsEngineInUse`. */
   activeTtsEngine: TtsEngineInUse;
+  /**
+   * The in-browser hearing and voice are loaded, whether or not they are in
+   * use. See `preloadLocalSpeech`.
+   */
+  isLocalSpeechReady: boolean;
   /**
    * Begin listening. Call this from a user gesture.
    *
@@ -651,6 +670,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    */
   const needsLocalAsr = !config.onTranscribe;
   const needsLocalVoice = !config.onSynthesize;
+  const preloadSpeech = !!config.preloadLocalSpeech;
 
   // ─── Kokoro TTS Worker (loaded lazily, only when engine === 'kokoro') ───
   /**
@@ -674,7 +694,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   };
 
   const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd, interrupt: kokoroInterrupt } = useKokoroWorker({
-    enabled: loadModels && activeTtsEngine === 'kokoro' && needsLocalVoice,
+    enabled: loadModels && activeTtsEngine === 'kokoro' && (needsLocalVoice || preloadSpeech),
     voice: config.ttsVoice,
     language: config.ttsLanguage,
     onSpeechOutput: activeTtsEngine === 'kokoro' ? handleSpeechOutput : undefined,
@@ -713,7 +733,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   };
 
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
-  const { isReady: isMLReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, loadLocalLlm, interrupt: mlInterrupt } = useMLWorker({
+  const { isReady: isMLReady, isAsrReady, isMmsReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, loadLocalLlm, interrupt: mlInterrupt } = useMLWorker({
     enabled: loadModels,
     llmModel: config.llmModel,
     asrModel: config.asrModel,
@@ -729,6 +749,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     loadLlm: !config.onSubmit, // Don't load local LLM if onSubmit is provided
     loadAsr: needsLocalAsr,
     loadTts: needsLocalVoice,
+    preloadSpeech,
     onLocalLlmReady: () => configRef.current.onLocalLlmReady?.(),
     onModelStorageFailed: msg => reportError('model-storage', `Not kept for next visit — ${msg}`, 'degraded'),
     onCapabilityDetected: config.onCapabilityDetected,
@@ -872,6 +893,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const isReady = isMLReady && (!needsLocalVoice || activeTtsEngine !== 'kokoro' || isKokoroReady);
 
   const ttsEngineInUse: TtsEngineInUse = needsLocalVoice ? activeTtsEngine : 'custom';
+
+  // Both halves of local speech, whichever voice engine this device uses.
+  const isLocalSpeechReady = isAsrReady && (activeTtsEngine === 'kokoro' ? isKokoroReady : isMmsReady);
+  const localSpeechAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!isLocalSpeechReady || !preloadSpeech || localSpeechAnnouncedRef.current) return;
+    localSpeechAnnouncedRef.current = true;
+    configRef.current.onLocalSpeechReady?.();
+  }, [isLocalSpeechReady, preloadSpeech]);
   useEffect(() => {
     configRef.current.onTtsEngineChange?.(ttsEngineInUse);
   }, [ttsEngineInUse]);
@@ -1417,6 +1447,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     analyser,
     isReady,
     activeTtsEngine: ttsEngineInUse,
+    isLocalSpeechReady,
     startListening,
     stopListening,
     interrupt,

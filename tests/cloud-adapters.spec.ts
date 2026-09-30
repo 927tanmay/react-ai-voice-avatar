@@ -58,3 +58,21 @@ test('cloud adapters: dropping them later loads the local models they stood in f
   await expect.poll(() => modelRequests.some(u => /whisper/i.test(u)), { timeout: 30_000 }).toBe(true);
   await expect.poll(() => modelRequests.some(u => /kokoro/i.test(u)), { timeout: 30_000 }).toBe(true);
 });
+
+test('cloud adapters with preloadLocalSpeech: ready at once, local speech downloading behind', async ({ page }) => {
+  const modelRequests: string[] = [];
+  page.on('request', r => { if (MODEL_REQUEST.test(r.url())) modelRequests.push(r.url()); });
+
+  await page.goto('/e2e/adapters.html?preload=1');
+
+  // The adapters answer, so nothing waits for the download...
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
+
+  // ...which is under way all the same.
+  await expect.poll(() => modelRequests.some(u => /whisper/i.test(u)), { timeout: 30_000 }).toBe(true);
+  await expect.poll(() => modelRequests.some(u => /kokoro/i.test(u)), { timeout: 30_000 }).toBe(true);
+
+  // And a turn still goes through the adapters meanwhile.
+  await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
+  await expect.poll(() => page.evaluate(() => (window as any).__e2e.synthesized.length), { timeout: 15_000 }).toBeGreaterThan(0);
+});

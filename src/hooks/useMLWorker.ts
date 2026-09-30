@@ -20,6 +20,12 @@ export interface UseMLWorkerConfig {
   loadAsr?: boolean;
   /** Load the local MMS voice, if that is the engine. False when the host synthesises. */
   loadTts?: boolean;
+  /**
+   * Load recognition and the MMS voice after startup even though the host
+   * supplies its own, so they are ready to take over. Startup is not held up
+   * for them.
+   */
+  preloadSpeech?: boolean;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
   /** Fires when a local model requested after startup has finished loading. */
   onLocalLlmReady?: () => void;
@@ -38,6 +44,10 @@ export interface UseMLWorkerConfig {
 
 export interface UseMLWorkerReturn {
   isReady: boolean;
+  /** The local recognition model is loaded. */
+  isAsrReady: boolean;
+  /** The local MMS voice is loaded. Only ever true when MMS is the engine. */
+  isMmsReady: boolean;
   processAudio: (audioBlob: Float32Array, language: string, skipLlm?: boolean) => void;
   processText: (text: string, skipLlm?: boolean) => void;
   synthesizeText: (text: string, isLast?: boolean) => void;
@@ -50,6 +60,8 @@ export interface UseMLWorkerReturn {
 export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
   const workerRef = useRef<Worker | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [isAsrReady, setIsAsrReady] = useState(false);
+  const [isMmsReady, setIsMmsReady] = useState(false);
   /**
    * Which attempt to spawn a worker is the current one.
    *
@@ -181,6 +193,10 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
               configRef.current.onStreamWord?.(payload.word, payload.fullText);
             } else if (type === 'speechEnd') {
               configRef.current.onSpeechEnd?.();
+            } else if (type === 'localAsrReady') {
+              setIsAsrReady(true);
+            } else if (type === 'localTtsReady') {
+              setIsMmsReady(true);
             } else if (type === 'localLlmReady') {
               configRef.current.onLocalLlmReady?.();
             } else if (type === 'modelStorage') {
@@ -207,6 +223,8 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
       }
       workerRef.current = null;
       setIsReady(false);
+      setIsAsrReady(false);
+      setIsMmsReady(false);
     };
     // Re-runs only when loading is switched on or off. Safe to re-run because a
     // spawn abandoned mid-import terminates itself; see spawnTokenRef.
@@ -243,9 +261,12 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     if (!workerRef.current || !isReady) return;
     workerRef.current.postMessage({
       type: 'localModels',
-      payload: { asr: config.loadAsr !== false, tts: config.loadTts !== false },
+      payload: {
+        asr: config.loadAsr !== false || !!config.preloadSpeech,
+        tts: config.loadTts !== false || !!config.preloadSpeech,
+      },
     });
-  }, [config.loadAsr, config.loadTts, isReady]);
+  }, [config.loadAsr, config.loadTts, config.preloadSpeech, isReady]);
 
   // Same for the language model, which is also chosen by language.
   useEffect(() => {
@@ -311,6 +332,8 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
 
   return {
     isReady,
+    isAsrReady,
+    isMmsReady,
     processAudio,
     processText,
     synthesizeText,

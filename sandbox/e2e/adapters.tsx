@@ -13,6 +13,7 @@ type Probe = {
   synthesized: string[];
   submitted: string[];
   ttsEngine?: string;
+  localSpeechReady?: boolean;
   sendText?: (text: string) => void;
   startListening?: () => Promise<void>;
   /** Stop supplying transcription and the voice, as a host falling back would. */
@@ -31,6 +32,9 @@ const tone = () => {
 const App: React.FC = () => {
   const [adapters, setAdapters] = useState(true);
   const { status, sendText, startListening, activeTtsEngine } = useAiVoiceAvatar({
+    // ?preload=1: fetch the local hearing and voice behind the adapters.
+    preloadLocalSpeech: new URLSearchParams(location.search).has('preload'),
+    onLocalSpeechReady: () => { probe.localSpeechReady = true; },
     onTranscribe: adapters ? async () => 'unused: the test types rather than speaks' : undefined,
     onSubmit: async text => {
       probe.submitted.push(text);

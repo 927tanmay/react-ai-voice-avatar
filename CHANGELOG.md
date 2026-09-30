@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Start on a provider, hand over to the browser
+
+- **`preloadLocalSpeech`** downloads the in-browser hearing and voice behind
+  `onTranscribe` and `onSynthesize` without holding anything up, and
+  **`onLocalSpeechReady`** fires when they could take over. Drop the adapters
+  then and the conversation carries on locally. `isLocalSpeechReady` is on the
+  hook's return value. Measured with stored models: ready on the adapters in
+  0.2 s, local speech ready at 6 s, and the next reply spoken by Kokoro with no
+  call to the host's voice.
+- **`examples/groq-voice`** does this on Groq's free tier with the developer's
+  own key, kept in a dev-server route: Whisper, GPT-OSS 20B and Orpheus to
+  start, then an offer to switch hearing and voice to the browser once they
+  have downloaded. It shows Groq's limits and what is left of them, and when
+  one runs out it says so and offers the in-browser models again.
+
 ### The voice a phone gets is named, and kept for the right reasons
 
 - **Kokoro's download progress was wrong.** It read 99% within two seconds

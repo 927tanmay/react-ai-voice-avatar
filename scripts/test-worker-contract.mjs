@@ -147,8 +147,8 @@ check(
   /needsLocalAsr = !config\.onTranscribe/.test(engine) && /needsLocalVoice = !config\.onSynthesize/.test(engine)
 );
 check(
-  'Kokoro is not loaded for a host that synthesises',
-  /enabled: loadModels && activeTtsEngine === 'kokoro' && needsLocalVoice/.test(engine)
+  'Kokoro is not loaded for a host that synthesises, unless asked to preload',
+  /enabled: loadModels && activeTtsEngine === 'kokoro' && \(needsLocalVoice \|\| preloadSpeech\)/.test(engine)
 );
 check(
   'the init message carries both flags',
@@ -164,8 +164,23 @@ check(
 );
 check(
   'with the field names the worker reads',
-  /payload: \{ asr: config\.loadAsr !== false, tts: config\.loadTts !== false \}/.test(mlHook) &&
+  /asr: config\.loadAsr !== false/.test(mlHook) && /tts: config\.loadTts !== false/.test(mlHook) &&
     /payload\.asr !== false/.test(worker) && /payload\.tts !== false/.test(worker)
+);
+
+console.log('\nLocal speech can be preloaded behind the adapters');
+check(
+  'the worker announces recognition and the MMS voice once loaded',
+  /type: 'localAsrReady'/.test(worker) && /type: 'localTtsReady'/.test(worker)
+);
+check(
+  'the hook listens for both',
+  /type === 'localAsrReady'/.test(mlHook) && /type === 'localTtsReady'/.test(mlHook)
+);
+check(
+  'a preload asks for both through localModels',
+  /asr: config\.loadAsr !== false \|\| !!config\.preloadSpeech/.test(mlHook) &&
+    /tts: config\.loadTts !== false \|\| !!config\.preloadSpeech/.test(mlHook)
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
