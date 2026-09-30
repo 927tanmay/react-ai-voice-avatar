@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### The avatars stand symmetrically
+
+Both bundled avatars stood with the right hand about 8 cm further from the body
+than the left, and the right fingertips about 13 cm off where the left ones
+were. `scripts/convert-rocketbox.py` bent every elbow and knuckle 10° about the
+bone's own X axis on both sides. On a mirrored skeleton that axis is reflected,
+so the same angle bent the two sides opposite ways: the left elbow in toward
+the body, the right one out. Measured on the files, every right bone from the
+forearm down sat exactly 20° off its mirror.
+
+- **Published avatars corrected in place.** `scripts/mirror-arm-rest-pose.mjs`
+  rewrites the 16 right-arm rotations (forearm and finger joints) as the mirror
+  of the left. Nothing else in either file changed: mesh, skin, morph targets
+  and textures are byte-identical.
+- **Why the left arm is the one kept:** a relaxed arm with the palm facing the
+  thigh brings the hand forward and slightly in, which is what the left does.
+- **Served from a new tag.** The avatars are served from a new tag,
+  `avatars-v2`. Installs pinned to `avatars-v1` keep the avatar they were built
+  against.
+- **The converter is fixed too.** It now turns the right side the opposite way.
+  That change was worked out from the measurements, not run: the Rocketbox
+  source files were not at hand.
+- **`scripts/test-avatar-symmetry.mjs` guards it.** It compares every left
+  bone with its right twin, checks both elbows bend in rather than out, and
+  refuses a rig whose upper arms are not mirrored rather than "fixing" it. It
+  fails on the old files, including when they are mirrored the wrong way round.
+
 ### `speak()` starts talking on its first sentence
 
 `speak()`, and a reply an `onSubmit` handler returns as a single string, went to

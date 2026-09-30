@@ -274,16 +274,24 @@ def apply_rest_pose(armature):
     moved += _rotate_bone_world(armature, "LeftArm", ARM_DROP_DEGREES, "Y")
     moved += _rotate_bone_world(armature, "RightArm", -ARM_DROP_DEGREES, "Y")
 
-    # Elbows and knuckles are hinges, so rotate about the bone's own axis.
-    moved += _rotate_bone_local(armature, "LeftForeArm", ELBOW_BEND_DEGREES)
-    moved += _rotate_bone_local(armature, "RightForeArm", ELBOW_BEND_DEGREES)
-
-    for side in ("Left", "Right"):
+    # Elbows and knuckles are hinges, so rotate about the bone's own axis. The
+    # skeleton is mirrored, which reflects that axis between the sides, so the
+    # right side turns the opposite way to bend the same way.
+    #
+    # One sign for both is what this used to do, and it shipped: the left elbow
+    # bent in toward the body and the right one out, leaving the right hand
+    # about 8 cm further out. Measured on the published avatars, every right
+    # bone from the forearm down sat exactly 20 degrees off its mirror, which is
+    # this 10 degrees applied once each way. scripts/mirror-arm-rest-pose.mjs
+    # corrected the avatars already converted, and
+    # scripts/test-avatar-symmetry.mjs fails if either comes back.
+    for side, sign in (("Left", 1.0), ("Right", -1.0)):
+        moved += _rotate_bone_local(armature, f"{side}ForeArm", sign * ELBOW_BEND_DEGREES)
         for finger in ("Index", "Middle", "Ring", "Pinky"):
             for joint, degrees in enumerate(FINGER_CURL_DEGREES, start=1):
-                moved += _rotate_bone_local(armature, f"{side}Hand{finger}{joint}", degrees)
+                moved += _rotate_bone_local(armature, f"{side}Hand{finger}{joint}", sign * degrees)
         for joint, degrees in enumerate(THUMB_CURL_DEGREES, start=1):
-            moved += _rotate_bone_local(armature, f"{side}HandThumb{joint}", degrees)
+            moved += _rotate_bone_local(armature, f"{side}HandThumb{joint}", sign * degrees)
 
     # Deliberately NOT bpy.ops.pose.armature_apply(). That rebinds the skeleton
     # without rebaking the mesh, and rebaking would mean applying the armature

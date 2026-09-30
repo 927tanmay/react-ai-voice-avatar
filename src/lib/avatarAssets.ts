@@ -3,7 +3,9 @@
  *
  * Immutable by design: see the CDN URL below for why a branch is not.
  */
-const ASSET_TAG = 'avatars-v1';
+// v2: the right arm's rest pose mirrored onto the left. In v1 the right elbow
+// bent outward and the hand hung about 8 cm further from the body.
+const ASSET_TAG = 'avatars-v2';
 
 export async function resolveAvatarUrl(
   preset: 'ananya' | 'aarav' | 'default' | 'kiosk' = 'ananya',

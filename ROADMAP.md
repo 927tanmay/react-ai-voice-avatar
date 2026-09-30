@@ -126,20 +126,16 @@ Worth building a small corpus — quiet speaker, noisy room, single-word answers
 filler sounds — and tuning the defaults against it rather than against one
 person in one room. `speechDetection` already exposes every threshold.
 
-### ~~5. Gestures~~ — done; two follow-ups
+### ~~5. Gestures~~ — done; one follow-up
 
 The avatar now gestures while it speaks (`src/lib/gestures.ts`, posed through
 `src/lib/armRig.ts`), with hand height chosen by looking at the homepage's
-framing rather than guessed. Two things are left:
+framing rather than guessed. The avatars' lopsided rest pose is fixed too (see
+the changelog). One thing is left:
 
 - **Palms.** Hands always face inward. The open, palm-up gesture needs the
   forearm's roll, and which way is "up" for a palm has to be worked out from
   the finger bones, not assumed — the same lesson as the rest of the rig.
-- **The avatars' lopsided rest pose.** `scripts/convert-rocketbox.py` bends
-  each elbow about the bone's own local axis, which on a mirrored rig bends the
-  two sides differently: on `ananya.glb` the right hand hangs about 10 cm further
-  out than the left. Fix it by bending about a world axis, as the script already
-  does for the upper arm, then republish the avatars under a new `ASSET_TAG`.
 
 ### 6. A mobile answer — half done
 
