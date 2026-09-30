@@ -98,9 +98,11 @@ saving is the voice and recognition models themselves, which is the table above.
 
 ### ~~3. Give the demo a real brain~~ — done
 
-Replies now come from Llama 3.3 70B on Groq's free tier through `api/chat.ts`,
-and the local model downloads behind the conversation on a desktop that can run
-it, taking over when it lands. The page names whichever one is answering.
+Replies now come from Groq's free tier through `api/chat.ts`, which tries a
+list of models and uses the first the account can reach; today that is GPT-OSS
+20B. On a desktop that can run it, the local model downloads behind the
+conversation and takes over when it lands. The page names whichever one is
+answering.
 
 The endpoint is public, so it is built to be worth nothing to a stranger: the
 system prompt is fixed server-side, replies are capped at 80 tokens, a visitor
