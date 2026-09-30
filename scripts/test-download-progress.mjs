@@ -69,6 +69,34 @@ check('a finished config does not pin the bar at 99 while the weights download',
   return null;
 });
 
+check('Kokoro: configs finishing before any total does not pin the bar at 99', () => {
+  // Captured from kokoro-js in Chrome. Its three config files report per-file
+  // progress and finish before the model file starts, and no running total
+  // arrives until the model does. Summing the configs read 3.6 KB as all of
+  // it, the bar showed 99% for the whole 325 MB download, and the totals that
+  // followed could not bring it back down.
+  const model = 325532232;
+  const reports = replay([
+    { status: 'initiate', file: 'config.json' },
+    progress('config.json', 44, 44),
+    { status: 'done', file: 'config.json' },
+    progress('tokenizer_config.json', 113, 113),
+    { status: 'done', file: 'tokenizer_config.json' },
+    progress('tokenizer.json', 3497, 3497),
+    { status: 'done', file: 'tokenizer.json' },
+    { status: 'initiate', file: 'onnx/model.onnx' },
+    { status: 'progress_total', progress: 0.005, loaded: 16419, total: model + 3654 },
+    progress('onnx/model.onnx', 16375, model),
+    { status: 'progress_total', progress: 50, loaded: model / 2, total: model + 3654 },
+    progress('onnx/model.onnx', model / 2, model),
+  ]);
+  if (reports.some(pct => pct > 51)) return `overshot: ${reports.join(' -> ')}`;
+  if ((reports[0] ?? 0) > 1) return `reported ${reports[0]}% before the model file had started`;
+  const last = reports.at(-1) ?? 0;
+  if (last < 49 || last > 51) return `expected ~50% halfway through the model, got ${reports.join(' -> ')}`;
+  return null;
+});
+
 check('per-file events are ignored once totals are arriving', () => {
   // A per-file event reading 100% for a small file must not jump the figure.
   const reports = replay([

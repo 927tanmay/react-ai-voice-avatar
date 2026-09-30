@@ -50,6 +50,10 @@ export function useDemoSession(engine: () => TalkHandle | null | undefined, logT
   // need different instructions, so the page tracks it.
   const [micOpen, setMicOpen] = useState(false);
   const [micBlocked, setMicBlocked] = useState(false);
+  // Which voice is speaking. Named on the page because it differs by device,
+  // and a visitor who hears a different voice on their phone deserves to
+  // know that is deliberate.
+  const [ttsEngine, setTtsEngine] = useState<'kokoro' | 'mms' | 'custom' | null>(null);
 
   const talk = () => {
     setInterrupted(false);
@@ -109,7 +113,15 @@ export function useDemoSession(engine: () => TalkHandle | null | undefined, logT
   return {
     status, setStatus, progress, recordProgress, micOpen, talk, stop, reset,
     handleError, hint, onUserInterrupt: () => setInterrupted(true),
+    setTtsEngine, voiceLabel: voiceLabel(ttsEngine),
   };
+}
+
+/** The voice in use, for a visitor. */
+function voiceLabel(engine: 'kokoro' | 'mms' | 'custom' | null) {
+  if (engine === 'mms') return 'MMS, a lighter voice, since Kokoro needs more memory than this device allows';
+  if (engine === 'custom') return 'a hosted voice';
+  return 'Kokoro, in your browser';
 }
 
 /**

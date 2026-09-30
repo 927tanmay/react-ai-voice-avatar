@@ -14,6 +14,7 @@ export type {
   UseAiVoiceAvatarConfig,
   UseAiVoiceAvatarReturn,
   UseAiVoiceAvatarReturn as UseAiVoiceAvatarStateReturn,
+  TtsEngineInUse,
 } from './hooks/useAiVoiceAvatar';
 
 /** Plain DOM status control. Renders no 3D and is safe to use headlessly. */

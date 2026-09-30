@@ -119,6 +119,7 @@ export const VoicePage: React.FC = () => {
             onStatusChange={session.setStatus}
             onUserInterrupt={session.onUserInterrupt}
             onError={session.handleError}
+            onTtsEngineChange={session.setTtsEngine}
             isMobile={isMobile}
             orbSize={orbSize}
             inFlow
@@ -159,6 +160,9 @@ export const VoicePage: React.FC = () => {
               <p style={noteStyle}>{session.hint}</p>
               <p style={{ ...noteStyle, marginTop: '10px', fontSize: '13px', color: '#64748B' }}>
                 Hearing and voice: your browser. Replies: <span style={{ color: '#94A3B8' }}>{hosted.answeredBy}</span>
+                <span style={{ display: 'block', marginTop: '4px' }}>
+                  Voice: <span style={{ color: '#94A3B8' }}>{session.voiceLabel}</span>
+                </span>
                 {hosted.brain === 'hosted' && canRunLocalLlm && (
                   <span style={{ display: 'block', marginTop: '4px' }}>
                     {localLlmProgress > 0

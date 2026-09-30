@@ -723,6 +723,7 @@ scene and its overlays (`avatarPreset`, `avatarSize`, `modelSrc`,
 | `onSpeechStart` | `(text: string) => void` | Each sentence of the reply as it starts playing. Captions that keep pace with the voice. |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | What the user said, once transcribed, and the reply in full. |
 | `onInferenceStart` / `onInferenceEnd` | `() => void` | Around each turn, from the moment the user stops talking to the end of the reply. |
+| `onTtsEngineChange` | `(engine: 'kokoro' \| 'mms' \| 'custom') => void` | Fires whenever `activeTtsEngine` changes. Also a prop on the component. |
 | `loadingProgress` | `(pct: number, label: string) => void` | Download progress per model: `'asr'`, `'kokoro'` (or `'tts'` for MMS) and `'llm'`. They download in parallel, so keep one figure per label. |
 
 It returns:
@@ -732,6 +733,7 @@ It returns:
 | `status` | `'loading' \| 'idle' \| 'listening' \| 'thinking' \| 'speaking'` | Where the conversation is. `'loading'` until the models are up, and until `loadModels` is true. |
 | `isLoading`, `isIdle`, `isListening`, `isThinking`, `isSpeaking` | `boolean` | Shorthands for `status`. |
 | `isReady` | `boolean` | The models are loaded. `startListening` does nothing before this. |
+| `activeTtsEngine` | `'kokoro' \| 'mms' \| 'custom'` | The voice actually speaking. iPhones and iPads get `'mms'`, a single plainer voice that ignores `ttsVoice`, because Kokoro runs Safari out of memory; so does any device where Kokoro fails to load. `'custom'` is your `onSynthesize`. Worth showing if your users will compare devices. |
 | `startListening` | `() => Promise<void>` | Opens the microphone and starts listening. Call it from a click: the first call is where the browser asks for permission. In `'continuous'` mode the microphone then stays open across turns. |
 | `stopListening` | `() => void` | Closes the microphone. |
 | `interrupt` | `() => void` | Stops the reply mid-sentence and clears what was queued. |

@@ -105,6 +105,11 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onTranscribe?: (audio: Float32Array) => Promise<string>;
   /** Cloud Adapter: Intercept the text before synthesis to use an external TTS service (e.g. ElevenLabs, OpenAI) instead of the local Kokoro/MMS model. Supports Float32Array PCM or ArrayBuffer (MP3/WAV) */
   onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
+  /**
+   * Which voice is speaking: `'kokoro'`, `'mms'` on iPhones and wherever
+   * Kokoro cannot load, or `'custom'` for `onSynthesize`. Fires on every change.
+   */
+  onTtsEngineChange?: (engine: 'kokoro' | 'mms' | 'custom') => void;
 
   onInferenceStart?: () => void;
   onInferenceEnd?: () => void;
@@ -688,7 +693,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
     onUserInterrupt: props.onUserInterrupt,
-    onAudioLevelChange: props.onAudioLevelChange
+    onAudioLevelChange: props.onAudioLevelChange,
+    onTtsEngineChange: props.onTtsEngineChange,
   });
 
   const handleStopOrPause = () => {

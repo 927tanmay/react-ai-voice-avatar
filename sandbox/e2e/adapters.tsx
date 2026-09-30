@@ -12,6 +12,7 @@ type Probe = {
   statuses: string[];
   synthesized: string[];
   submitted: string[];
+  ttsEngine?: string;
   sendText?: (text: string) => void;
   startListening?: () => Promise<void>;
   /** Stop supplying transcription and the voice, as a host falling back would. */
@@ -29,7 +30,7 @@ const tone = () => {
 
 const App: React.FC = () => {
   const [adapters, setAdapters] = useState(true);
-  const { status, sendText, startListening } = useAiVoiceAvatar({
+  const { status, sendText, startListening, activeTtsEngine } = useAiVoiceAvatar({
     onTranscribe: adapters ? async () => 'unused: the test types rather than speaks' : undefined,
     onSubmit: async text => {
       probe.submitted.push(text);
@@ -46,6 +47,7 @@ const App: React.FC = () => {
   useEffect(() => {
     probe.statuses.push(status);
   }, [status]);
+  probe.ttsEngine = activeTtsEngine;
   probe.sendText = sendText;
   probe.startListening = startListening;
   probe.dropSpeechAdapters = () => setAdapters(false);

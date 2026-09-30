@@ -33,6 +33,8 @@ test('cloud adapters: ready without downloading a model, and a turn completes', 
   expect(probe.submitted).toEqual(['Hello there']);
   expect(probe.synthesized.join(' ')).toContain('This is the reply.');
   expect(probe.statuses).toContain('speaking');
+  // And the engine says whose voice that was.
+  expect(probe.ttsEngine).toBe('custom');
 
   // Kokoro never started, so it must not be recorded as having crashed: two
   // such visits used to downgrade the browser to the MMS voice for good.

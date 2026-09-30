@@ -46,6 +46,9 @@ export interface ProgressEvent {
  * Build a `progress_callback` that reports through `onProgress`, once per
  * genuine advance, as a percentage between 0 and 99.
  */
+/** Model weights, as opposed to the configs and tokenizers loaded alongside them. */
+const WEIGHT_FILE = /\.(onnx|onnx_data|bin|safetensors)$/;
+
 export function createDownloadProgress(onProgress: (pct: number) => void) {
   const files = new Map<string, { loaded: number; total: number }>();
   let hasTotals = false;
@@ -72,6 +75,12 @@ export function createDownloadProgress(onProgress: (pct: number) => void) {
     // Once the loader has shown it sends totals, per-file events carry nothing
     // the total did not already account for.
     if (hasTotals || !event.file) return;
+
+    // Only weights count towards the per-file estimate. Configs and tokenizers
+    // come first, weigh a few kilobytes, and can all finish before the first
+    // weight file has even been requested; counted, they read as the whole
+    // download and pinned the bar at 99% for Kokoro's entire 325 MB.
+    if (!WEIGHT_FILE.test(event.file)) return;
 
     if (typeof event.total === 'number' && event.total > 0) {
       const loaded = typeof event.loaded === 'number' ? event.loaded : 0;

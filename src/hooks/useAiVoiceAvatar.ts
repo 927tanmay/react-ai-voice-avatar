@@ -176,7 +176,22 @@ export interface UseAiVoiceAvatarConfig {
    * rest rather than freeze — but the type used to claim otherwise.
    */
   onAudioLevelChange?: (level: number, source: 'mic' | 'tts' | 'idle') => void;
+  /**
+   * Which voice is speaking, whenever that changes. See `activeTtsEngine` on
+   * the return value.
+   */
+  onTtsEngineChange?: (engine: TtsEngineInUse) => void;
 }
+
+/**
+ * The voice actually in use, which is not always the one asked for.
+ *
+ * iPhones and iPads get `'mms'` in place of Kokoro, which runs Safari out of
+ * memory, and so does any device where Kokoro fails to load. MMS is a single,
+ * plainer English voice and ignores `ttsVoice`. `'custom'` means the host's
+ * `onSynthesize` is speaking.
+ */
+export type TtsEngineInUse = 'kokoro' | 'mms' | 'custom';
 
 export interface UseAiVoiceAvatarReturn {
   status: 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -188,6 +203,8 @@ export interface UseAiVoiceAvatarReturn {
   micError: string | null;
   analyser: AnalyserNode | undefined;
   isReady: boolean;
+  /** The voice actually speaking. See `TtsEngineInUse`. */
+  activeTtsEngine: TtsEngineInUse;
   /**
    * Begin listening. Call this from a user gesture.
    *
@@ -636,13 +653,33 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const needsLocalVoice = !config.onSynthesize;
 
   // ─── Kokoro TTS Worker (loaded lazily, only when engine === 'kokoro') ───
+  /**
+   * Count this load as a possible crash, once its download is complete.
+   *
+   * The breadcrumb stands for page loads that began building Kokoro and never
+   * finished, which is where running out of memory kills the tab. It used to be
+   * set as soon as loading began, so leaving during the 310 MB download — easy
+   * on a phone, and no crash at all — counted too, and two of those switched
+   * that browser to the MMS voice for good. Progress holds at 99 once every
+   * byte is in, and building starts after that.
+   */
+  const crumbSetRef = useRef(false);
+  const reportKokoroProgress = (pct: number, label: string) => {
+    if (pct >= 99 && !crumbSetRef.current && !hasFallenBack && typeof window !== 'undefined') {
+      const priorCrashes = Number(localStorage.getItem(CRUMB) || 0);
+      localStorage.setItem(CRUMB, String(priorCrashes + 1));
+      crumbSetRef.current = true;
+    }
+    configRef.current.loadingProgress?.(pct, label);
+  };
+
   const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd, interrupt: kokoroInterrupt } = useKokoroWorker({
     enabled: loadModels && activeTtsEngine === 'kokoro' && needsLocalVoice,
     voice: config.ttsVoice,
     language: config.ttsLanguage,
     onSpeechOutput: activeTtsEngine === 'kokoro' ? handleSpeechOutput : undefined,
     onSpeechEnd: activeTtsEngine === 'kokoro' ? handleSpeechEnd : undefined,
-    loadingProgress: config.loadingProgress,
+    loadingProgress: reportKokoroProgress,
     workerBaseUrl: config.workerBaseUrl,
     onModelStorageFailed: msg => reportError('model-storage', `Not kept for next visit — ${msg}`, 'degraded'),
     onError: (stage, msg) => {
@@ -654,26 +691,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     },
   });
 
-  const crumbSetRef = useRef(false);
   useEffect(() => {
-    // The breadcrumb counts page loads that began loading Kokoro and never
-    // finished, as evidence of a crash. A deferred avatar has not begun, so
-    // counting it would read two unengaged visits as two crashes and quietly
-    // downgrade the voice for good.
-    // Nor has one whose host synthesises: Kokoro never loads, and two visits
-    // would otherwise read as two crashes.
-    if (!loadModels || !needsLocalVoice) return;
-    if (activeTtsEngine !== 'kokoro' || typeof window === 'undefined') return;
-    
-    if (isKokoroReady) {
-      localStorage.removeItem(CRUMB);
-      crumbSetRef.current = false;
-    } else if (!hasFallenBack && !crumbSetRef.current) {
-      const priorCrashes = Number(localStorage.getItem(CRUMB) || 0);
-      localStorage.setItem(CRUMB, String(priorCrashes + 1));
-      crumbSetRef.current = true;
-    }
-  }, [loadModels, needsLocalVoice, activeTtsEngine, isKokoroReady, hasFallenBack]);
+    if (!isKokoroReady || typeof window === 'undefined') return;
+    localStorage.removeItem(CRUMB);
+    crumbSetRef.current = false;
+  }, [isKokoroReady]);
 
   /**
    * The turns the host answered through `onSubmit`.
@@ -848,6 +870,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
   // Combined readiness
   const isReady = isMLReady && (!needsLocalVoice || activeTtsEngine !== 'kokoro' || isKokoroReady);
+
+  const ttsEngineInUse: TtsEngineInUse = needsLocalVoice ? activeTtsEngine : 'custom';
+  useEffect(() => {
+    configRef.current.onTtsEngineChange?.(ttsEngineInUse);
+  }, [ttsEngineInUse]);
 
   // ─── Unified synthesizeText: routes to the correct TTS engine or cloud adapter ───
   /**
@@ -1389,6 +1416,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     micError,
     analyser,
     isReady,
+    activeTtsEngine: ttsEngineInUse,
     startListening,
     stopListening,
     interrupt,

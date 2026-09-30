@@ -16,6 +16,7 @@ interface VoiceOnlyDemoProps {
   onStatusChange: (status: Status) => void;
   onUserInterrupt: () => void;
   onError: (error: AiVoiceAvatarError) => void;
+  onTtsEngineChange: (engine: 'kokoro' | 'mms' | 'custom') => void;
   isMobile: boolean;
   /** Orb diameter in pixels. Defaults by screen width. */
   orbSize?: number;
@@ -62,6 +63,7 @@ export const VoiceOnlyDemo = forwardRef<VoiceOnlyHandle, VoiceOnlyDemoProps>((pr
     loadingProgress: props.loadingProgress,
     onUserInterrupt: props.onUserInterrupt,
     onError: props.onError,
+    onTtsEngineChange: props.onTtsEngineChange,
     // What the user said, once it is transcribed.
     onTranscriptUpdate: (text, speaker) => {
       if (speaker === 'user') setCaption({ speaker, text });

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### The voice a phone gets is named, and kept for the right reasons
+
+- **Kokoro's download progress was wrong.** It read 99% within two seconds
+  and stayed there for the whole 325 MB download: its three config files
+  finish before the model file starts, and the per-file estimate took those
+  3.6 KB for all of it. Only weight files count towards that estimate now.
+- **Leaving during the download no longer counts as a crash.** The
+  breadcrumb that switches a browser to the MMS voice after two failed Kokoro
+  loads was set as soon as loading began, so two abandoned downloads — easy on
+  a phone — downgraded the voice for good. It is now set once the download is
+  complete and the model is being built, which is where memory runs out.
+- **`activeTtsEngine` and `onTtsEngineChange`** say which voice is speaking:
+  `'kokoro'`, `'mms'` (every iPhone and iPad, and wherever Kokoro fails), or
+  `'custom'` for `onSynthesize`. MMS is a single plainer voice that ignores
+  `ttsVoice`, which is why a phone can sound like someone else. The demo now
+  names the voice under the button.
+
 ### Cloud speech adapters no longer download the local models
 
 `onTranscribe` and `onSynthesize` replaced Whisper and Kokoro at runtime, but

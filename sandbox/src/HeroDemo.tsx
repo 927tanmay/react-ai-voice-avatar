@@ -199,6 +199,9 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
               <span style={{ color: '#94A3B8' }}>
                 {hosted.answeredBy}
               </span>
+              <span style={{ display: 'block', marginTop: '4px' }}>
+                Voice: <span style={{ color: '#94A3B8' }}>{session.voiceLabel}</span>
+              </span>
               {hosted.brain === 'hosted' && canRunLocalLlm && (
                 <span style={{ display: 'block', marginTop: '4px' }}>
                   {localLlmProgress > 0
@@ -264,6 +267,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
               onUserInterrupt={session.onUserInterrupt}
               enableLocalAssetProbe={import.meta.env.DEV}
               onError={session.handleError}
+              onTtsEngineChange={session.setTtsEngine}
             />
           </Canvas>
         ) : (
@@ -277,6 +281,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
             onStatusChange={session.setStatus}
             onUserInterrupt={session.onUserInterrupt}
             onError={session.handleError}
+            onTtsEngineChange={session.setTtsEngine}
             isMobile={isMobile}
           />
         )}
