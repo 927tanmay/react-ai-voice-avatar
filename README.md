@@ -57,6 +57,8 @@ function MyChatGPTVoiceOrb() {
 }
 ```
 
+**See it running:** [react-ai-voice-avatar.vercel.app/voice](https://react-ai-voice-avatar.vercel.app/voice) is voice mode on a page of its own, built on this hook alone, and [`examples/voice-only`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/voice-only) is a complete app to copy: an orb that moves with whoever is speaking, live captions and one button, with no three.js in its bundle.
+
 #### ☁️ Cloud Adapters (Per-Utterance Escape Hatches)
 By default, the hook runs Whisper and Kokoro **100% locally** in the browser. But you can instantly widen your audience by bypassing the local ML models and injecting your own cloud TTS/STT providers via the `onTranscribe` and `onSynthesize` adapters!
 
@@ -563,7 +565,8 @@ Explore the canonical patterns in the `examples/` directory:
 | **Quickstart** | [`examples/quickstart`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/quickstart) | Minimal, zero-configuration plug-and-play AI voice avatar deployment with built-in studio lighting & sizing. |
 | **Local Kiosk** | [`examples/local-kiosk`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/local-kiosk) | 100% offline on-device retail & restaurant ordering kiosk with embedded menu reasoning. Demonstrates the **On-Device Brain**; operates without internet access once model weights are locally cached. |
 | **Connected App** | [`examples/hybrid-cloud`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/hybrid-cloud) | Illustrates the **Connected Brain** (`onSubmit`). Bypasses gigabyte-scale local LLM downloads by routing reasoning to OpenAI, Claude, or corporate APIs while keeping ASR, TTS, and 3D lip blending 100% on-device! |
-| **Headless Custom UI**| [`examples/headless-custom-ui`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/headless-custom-ui)| Demonstrates hiding built-in DOM overlays (`hideStatusPill={true}`, `showCaptions={false}`), streaming transcripts into a custom enterprise UI, and controlling voice outputs imperatively via `ref.current?.speak(text)`. |
+| **Voice Only** | [`examples/voice-only`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/voice-only) | Voice mode with **no avatar**, like ChatGPT or Gemini voice: the `react-ai-voice-avatar/headless` hook, an audio-reactive orb, live captions and interruption. No three.js in the bundle, and no backend needed to try it. |
+| **Headless Custom UI**| [`examples/headless-custom-ui`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/headless-custom-ui)| Still renders the 3D avatar; for no avatar at all, see Voice Only above. Demonstrates hiding built-in DOM overlays (`hideStatusPill={true}`, `showCaptions={false}`), streaming transcripts into a custom enterprise UI, and controlling voice outputs imperatively via `ref.current?.speak(text)`. |
 
 ---
 

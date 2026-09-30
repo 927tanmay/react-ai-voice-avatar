@@ -195,6 +195,89 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 // --- Landing Page Component ---
+/**
+ * Voice mode with no avatar, as a card beside the scenarios.
+ *
+ * Not a persona: every persona opens inside this page, which carries three.js
+ * and the avatars. This one goes to /voice, the page built without them.
+ */
+const VOICE_ONLY_CARD = {
+  href: '/voice',
+  avatarIcon: '🎙️',
+  name: 'Voice Only',
+  role: 'No Avatar',
+  description: 'Voice mode like ChatGPT or Gemini: one hook, no three.js. Opens in a page of its own.',
+  accentColor: '#22D3EE',
+  borderColor: 'rgba(34, 211, 238, 0.6)',
+};
+
+/** How many cards the grid shows, named in the hero's link to it. */
+const SCENARIO_COUNT = PERSONAS.length + 1;
+
+type CardProps = Pick<Persona, 'avatarIcon' | 'name' | 'role' | 'description' | 'accentColor' | 'borderColor'>
+  & ({ href: string; onClick?: never } | { onClick: () => void; href?: never });
+
+const ScenarioCard: React.FC<CardProps> = (card) => {
+  const style: React.CSSProperties = {
+    background: 'rgba(20, 22, 28, 0.6)',
+    backdropFilter: 'blur(20px)',
+    border: `1px solid rgba(255, 255, 255, 0.05)`,
+    borderRadius: '24px',
+    padding: '32px 24px',
+    cursor: 'pointer',
+    transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+    textDecoration: 'none',
+  };
+  const onMouseEnter = (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.transform = 'translateY(-6px)';
+    e.currentTarget.style.borderColor = card.borderColor;
+    e.currentTarget.style.boxShadow = `0 16px 40px ${card.accentColor}33`;
+  };
+  const onMouseLeave = (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.transform = 'translateY(0)';
+    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+    e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.2)';
+  };
+  const content = (
+    <>
+      {/* Accent Gradient Top */}
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: card.accentColor }} />
+
+      <div style={{
+        fontSize: '40px',
+        background: `${card.accentColor}15`,
+        width: '80px',
+        height: '80px',
+        borderRadius: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: '20px',
+        border: `1px solid ${card.accentColor}40`
+      }}>
+        {card.avatarIcon}
+      </div>
+      <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#FFF', margin: '0 0 8px 0' }}>{card.name}</h3>
+      <p style={{ fontSize: '13px', color: card.accentColor, fontWeight: 600, margin: '0 0 16px 0' }}>{card.role}</p>
+      <p style={{ fontSize: '14px', color: '#94A3B8', lineHeight: '1.5', margin: 0 }}>
+        {card.description}
+      </p>
+    </>
+  );
+  return card.href ? (
+    <a href={card.href} style={style} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>{content}</a>
+  ) : (
+    <div onClick={card.onClick} style={style} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>{content}</div>
+  );
+};
+
 const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSelect }) => {
   const isMobile = useMediaQuery('(max-width: 900px)');
   const scenariosRef = useRef<HTMLDivElement>(null);
@@ -231,7 +314,12 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
         </span>
         <nav style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '16px' : '28px' }}>
           <button onClick={showScenarios} style={navLinkStyle}>Scenarios</button>
-          <a href="https://github.com/927tanmay/react-ai-voice-avatar#readme" target="_blank" rel="noreferrer" style={navLinkStyle}>Docs</a>
+          {/* Its own page, so the voice-only demo has a link to share that opens
+              without three.js or the avatar. See src/voice/main.tsx. */}
+          <a href="/voice" style={navLinkStyle}>{isMobile ? 'Voice' : 'Voice only'}</a>
+          {/* Four links and the name do not fit a phone, and GitHub opens on
+              the README anyway. */}
+          {!isMobile && <a href="https://github.com/927tanmay/react-ai-voice-avatar#readme" target="_blank" rel="noreferrer" style={navLinkStyle}>Docs</a>}
           <a href="https://github.com/927tanmay/react-ai-voice-avatar" target="_blank" rel="noreferrer" style={navLinkStyle}>GitHub</a>
         </nav>
       </header>
@@ -239,7 +327,7 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
       {/* The product itself, before any choice has to be made. This page used to
           open on seven scenario cards, and the first one answered in canned
           placeholder text, so a visitor's first conversation was with a stub. */}
-      <HeroDemo isMobile={isMobile} scenarioCount={PERSONAS.length} onShowScenarios={showScenarios} headerHeight={LANDING_HEADER_HEIGHT} />
+      <HeroDemo isMobile={isMobile} scenarioCount={SCENARIO_COUNT} onShowScenarios={showScenarios} headerHeight={LANDING_HEADER_HEIGHT} />
 
       <div ref={scenariosRef} style={{
         scrollMarginTop: '16px',
@@ -256,7 +344,7 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
           More scenarios
         </h2>
         <p style={{ fontSize: '15px', color: '#94A3B8', margin: '0 0 28px' }}>
-          Kiosks, support, Hindi, two avatars debating, and a sandbox for every engine setting.
+          Voice with no avatar, kiosks, support, Hindi, two avatars debating, and a sandbox for every engine setting.
         </p>
         
         <div style={{ 
@@ -264,60 +352,9 @@ const LandingPage: React.FC<{ onSelect: (id: Persona['id']) => void }> = ({ onSe
           gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', 
           gap: '24px' 
         }}>
+          <ScenarioCard {...VOICE_ONLY_CARD} />
           {PERSONAS.map((persona) => (
-            <div
-              key={persona.id}
-              onClick={() => onSelect(persona.id)}
-              style={{
-                background: 'rgba(20, 22, 28, 0.6)',
-                backdropFilter: 'blur(20px)',
-                border: `1px solid rgba(255, 255, 255, 0.05)`,
-                borderRadius: '24px',
-                padding: '32px 24px',
-                cursor: 'pointer',
-                transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                textAlign: 'center',
-                position: 'relative',
-                overflow: 'hidden'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-6px)';
-                e.currentTarget.style.borderColor = persona.borderColor;
-                e.currentTarget.style.boxShadow = `0 16px 40px ${persona.accentColor}33`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
-                e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.2)';
-              }}
-            >
-              {/* Accent Gradient Top */}
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: persona.accentColor }} />
-              
-              <div style={{
-                fontSize: '40px',
-                background: `${persona.accentColor}15`,
-                width: '80px',
-                height: '80px',
-                borderRadius: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '20px',
-                border: `1px solid ${persona.accentColor}40`
-              }}>
-                {persona.avatarIcon}
-              </div>
-              <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#FFF', margin: '0 0 8px 0' }}>{persona.name}</h3>
-              <p style={{ fontSize: '13px', color: persona.accentColor, fontWeight: 600, margin: '0 0 16px 0' }}>{persona.role}</p>
-              <p style={{ fontSize: '14px', color: '#94A3B8', lineHeight: '1.5', margin: 0 }}>
-                {persona.description}
-              </p>
-            </div>
+            <ScenarioCard key={persona.id} {...persona} onClick={() => onSelect(persona.id)} />
           ))}
         </div>
 

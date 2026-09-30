@@ -6,10 +6,13 @@ import { resolve } from 'path'
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   resolve: {
-    alias: mode === 'development' ? {
-      // Resolve directly from source so Vite handles workers natively in dev
-      'react-ai-voice-avatar': resolve(import.meta.dirname, '../src/index.ts'),
-    } : {},
+    // Resolve directly from source so Vite handles workers natively in dev.
+    // Anchored, because a plain string alias also matches as a prefix, and
+    // would send `react-ai-voice-avatar/headless` to `src/index.ts/headless`.
+    alias: mode === 'development' ? [
+      { find: /^react-ai-voice-avatar\/headless$/, replacement: resolve(import.meta.dirname, '../src/headless.ts') },
+      { find: /^react-ai-voice-avatar$/, replacement: resolve(import.meta.dirname, '../src/index.ts') },
+    ] : [],
     dedupe: ['react', 'react-dom', 'three', '@react-three/fiber', '@react-three/drei']
   },
   optimizeDeps: {
@@ -18,6 +21,16 @@ export default defineConfig(({ mode }) => ({
   },
   worker: {
     format: 'es'
+  },
+  build: {
+    rollupOptions: {
+      // Two pages. The voice page is its own entry, not a route, so its bundle
+      // leaves out three.js and the avatar; see src/voice/main.tsx.
+      input: {
+        main: resolve(import.meta.dirname, 'index.html'),
+        voice: resolve(import.meta.dirname, 'voice.html'),
+      },
+    },
   },
   server: {
     fs: {

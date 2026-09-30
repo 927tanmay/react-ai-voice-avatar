@@ -1,8 +1,18 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
+import { VoiceOnlyDemo, type VoiceOnlyHandle } from './VoiceOnlyDemo';
+import { hasWebGpu, useHostedBrain } from './hostedBrain';
+import { DOWNLOAD_SIZE, ModelProgress, useDemoSession } from './demoSession';
 
-type Status = 'loading' | 'idle' | 'listening' | 'thinking' | 'speaking';
+/**
+ * With a face, or voice alone.
+ *
+ * Voice alone is the more common case: most apps want ChatGPT-style voice mode
+ * and have no use for a character. Both are on the first screen so neither
+ * kind of visitor has to go looking.
+ */
+type Mode = 'avatar' | 'voice';
 
 const ACCENT = '#38BDF8';
 
@@ -12,9 +22,26 @@ const ACCENT = '#38BDF8';
  * It exists to teach the one thing a visitor would not think to try: talking
  * over it. Everything else about a voice avatar is obvious from looking at one.
  */
-const GREETING =
-  "Hi! My voice, my face and my hearing all run in your browser. My answers come from a hosted model. " +
-  "Tap the button and ask me something. And if I ramble, just start talking. I'll stop and listen.";
+const GREETING: Record<Mode, string> = {
+  avatar:
+    "Hi! My voice, my face and my hearing all run in your browser. My answers come from a hosted model. " +
+    "Tap the button and ask me something. And if I ramble, just start talking. I'll stop and listen.",
+  voice:
+    "Hi! This is the same conversation with no avatar. My voice and my hearing run in your browser, " +
+    "and my answers come from a hosted model. Tap the button and ask me something. If I ramble, just start talking.",
+};
+
+/** The headline and the line under it, per mode. */
+const COPY: Record<Mode, { title: string; lede: string }> = {
+  avatar: {
+    title: "A talking avatar that runs on your visitor's GPU.",
+    lede: 'The open-source alternative to real-time avatar APIs. No video stream, no per-minute billing. Bring your own model, or run one in the browser. This demo does both.',
+  },
+  voice: {
+    title: "Voice mode for your app, running on your visitor's GPU.",
+    lede: 'Talk to your app the way you talk to ChatGPT or Gemini, with speech recognition and the voice running in the browser. No avatar and no three.js: one React hook, and your own UI.',
+  },
+};
 
 const SYSTEM_PROMPT =
   'You are Ananya, the demo avatar for react-ai-voice-avatar, an open-source React component. ' +
@@ -24,47 +51,6 @@ const SYSTEM_PROMPT =
   'it is MIT licensed and installs from npm. ' +
   'If you do not know something, say so. Answer in one or two short spoken sentences. ' +
   'Never use markdown, lists or emoji.';
-
-/**
- * The download a visitor commits to, stated before they commit to it.
- *
- * Summed from the files the engine actually requests, not the model cards:
- * Whisper base 278 MB and Kokoro at fp32 310 MB. The 750 MB language model is
- * no longer part of it, because replies come from the hosted route below —
- * which is what makes this demo usable on a phone at all.
- */
-const DOWNLOAD_SIZE = '~590 MB';
-
-/**
- * Named in the label, so a visitor knows whose model answered them.
- *
- * Which one it is cannot be hardcoded here: the route tries several candidates
- * and uses the first the account can reach, and the one it reached last week
- * can return `model_not_found` today. So the reply carries its own model id and
- * this only makes it readable.
- */
-const HOSTED_MODEL_NAMES: Record<string, string> = {
-  'llama-3.3-70b-versatile': 'Llama 3.3 70B on Groq',
-  'openai/gpt-oss-20b': 'GPT-OSS 20B on Groq',
-  'llama-3.1-8b-instant': 'Llama 3.1 8B on Groq',
-};
-const hostedModelName = (id: string | null) =>
-  id ? HOSTED_MODEL_NAMES[id] || `${id} on Groq` : 'a hosted model on Groq';
-
-const LOCAL_MODEL = 'Qwen2.5-0.5B, in your browser';
-
-/**
- * What the avatar says when the hosted route will not answer.
- *
- * It is a rate limit or a missing key, never a model reply, so it says so
- * plainly rather than inventing an apology in the avatar's voice.
- */
-const HOSTED_UNAVAILABLE_LOCAL_COMING =
-  "The hosted model isn't answering right now, and I'm still downloading the one that runs in your browser. Give me a minute and ask again.";
-const HOSTED_UNAVAILABLE =
-  "The hosted model isn't answering right now. On a desktop this runs a model in your browser instead, with no limit at all.";
-
-const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
 
 interface HeroDemoProps {
   isMobile: boolean;
@@ -77,82 +63,26 @@ interface HeroDemoProps {
 
 export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onShowScenarios, headerHeight }) => {
   const avatarRef = useRef<AiVoiceAvatarHandle>(null);
+  const voiceRef = useRef<VoiceOnlyHandle>(null);
+  const [mode, setMode] = useState<Mode>('avatar');
+  /** Whichever engine is on screen. Only one exists at a time. */
+  const engine = () => (mode === 'avatar' ? avatarRef.current : voiceRef.current);
 
   // Nothing downloads until this is true. The avatar still renders and idles,
   // which is the point: a visitor sees the product before deciding to spend
   // half a gigabyte on it.
   const [engaged, setEngaged] = useState(false);
-  const [status, setStatus] = useState<Status>('loading');
-  // One figure per model. The models download in parallel, so a single bar fed
-  // by whichever reported last would jump between them even though each one
-  // only moves forward.
-  const [progress, setProgress] = useState<Record<string, number>>({});
-  const [interrupted, setInterrupted] = useState(false);
-  // Status alone cannot say whether the microphone is open: in continuous mode
-  // a finished reply returns to 'idle' while the mic stays live, and the
-  // greeting plays as 'speaking' before the mic was ever opened. Both states
-  // need different instructions, so the page tracks it.
-  const [micOpen, setMicOpen] = useState(false);
-  const [micBlocked, setMicBlocked] = useState(false);
   // The mesh takes several seconds to parse, and an empty dark panel in that
   // time reads as a broken page rather than a loading one.
   const [meshReady, setMeshReady] = useState(false);
-  const greetedRef = useRef(false);
-
-  /**
-   * Which model is answering.
-   *
-   * Starts hosted, because a 0.5B model in a browser answers "what drinks do
-   * you have?" with a question and that is the first thing a visitor sees. On a
-   * machine that can run one, the local model downloads during the conversation
-   * and takes over — which is the package's actual claim, demonstrated rather
-   * than asserted.
-   */
-  const [brain, setBrain] = useState<'hosted' | 'local'>('hosted');
-  /** Which hosted model replied, as the route reported it. Null until it does. */
-  const [hostedModel, setHostedModel] = useState<string | null>(null);
+  const session = useDemoSession(engine, 'hero');
+  const { status, progress } = session;
+  /** Each mode greets once, the first time it is ready. */
+  const greetedRef = useRef<Record<Mode, boolean>>({ avatar: false, voice: false });
 
   /** Only a desktop with WebGPU is asked to fetch 750 MB in the background. */
   const canRunLocalLlm = !isMobile && hasWebGpu;
-
-  /**
-   * The conversation so far, sent back to the hosted route so it can follow up.
-   *
-   * Kept here rather than read from the engine because the hosted route is the
-   * thing that needs it, and the engine deliberately does not record turns it
-   * did not answer itself.
-   */
-  const historyRef = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
-
-  const askHosted = async (text: string): Promise<string> => {
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, history: historyRef.current }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const reply: string = data.reply;
-        if (data.model) setHostedModel(data.model);
-        historyRef.current = [
-          ...historyRef.current,
-          { role: 'user' as const, content: text },
-          { role: 'assistant' as const, content: reply },
-        ].slice(-4);
-        return reply;
-      }
-
-      // Every refusal — no key in local development, a rate limit, an outage —
-      // lands here, and the visitor gets the same honest sentence.
-      console.warn('[hero] hosted reply unavailable:', res.status);
-    } catch (err) {
-      console.warn('[hero] hosted reply failed:', err);
-    }
-
-    return canRunLocalLlm ? HOSTED_UNAVAILABLE_LOCAL_COMING : HOSTED_UNAVAILABLE;
-  };
+  const hosted = useHostedBrain(canRunLocalLlm);
 
   const ready = engaged && status !== 'loading';
   /** The background download of the local model, once it has started. */
@@ -161,41 +91,28 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
   // Greet once, the moment the models are up. The click that set `engaged` was
   // the user gesture, so the browser lets this play without another tap.
   useEffect(() => {
-    if (!ready || greetedRef.current) return;
-    greetedRef.current = true;
-    avatarRef.current?.speak(GREETING);
-  }, [ready]);
+    if (!ready || greetedRef.current[mode]) return;
+    greetedRef.current[mode] = true;
+    engine()?.speak(GREETING[mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, mode]);
 
-  const talk = () => {
-    setInterrupted(false);
-    setMicBlocked(false);
-    setMicOpen(true);
-    avatarRef.current?.startListening();
+  /**
+   * Swap views. The outgoing engine unmounts and releases its workers and
+   * microphone; the incoming one loads the same models from the browser's
+   * store, so nothing downloads twice. Running both at once would hold every
+   * model in memory twice over.
+   *
+   * The hosted conversation lives here rather than in either engine, so it
+   * carries across. The in-browser model starts over, and takes over again
+   * when it has loaded.
+   */
+  const switchMode = (next: Mode) => {
+    if (next === mode) return;
+    setMode(next);
+    session.reset();
+    hosted.reset();
   };
-
-  const stop = () => {
-    setMicOpen(false);
-    avatarRef.current?.stopListening();
-    avatarRef.current?.interrupt();
-  };
-
-  /** One line telling the visitor what they can do right now. */
-  const hint = (() => {
-    if (micBlocked) {
-      return 'The microphone is blocked. Allow it from the address bar, then tap again.';
-    }
-    if (!micOpen) {
-      return status === 'speaking'
-        ? 'Tap to talk. You can interrupt it mid-sentence.'
-        : 'Ask about the project, or anything else.';
-    }
-    if (status === 'listening') return 'Listening…';
-    if (status === 'thinking') return 'Thinking…';
-    if (status === 'speaking') return 'Try talking over it. It stops and listens.';
-    return interrupted
-      ? 'You interrupted it, and it listened. Go on, ask something else.'
-      : "Go ahead, it's listening.";
-  })();
 
   return (
     <section
@@ -217,11 +134,10 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
           Open source · MIT · React
         </p>
         <h1 style={{ fontSize: isMobile ? '34px' : '48px', lineHeight: 1.1, fontWeight: 800, letterSpacing: '-1px', color: '#FFF', margin: '0 0 20px' }}>
-          A talking avatar that runs on your visitor's GPU.
+          {COPY[mode].title}
         </h1>
         <p style={{ fontSize: isMobile ? '16px' : '18px', lineHeight: 1.6, color: '#94A3B8', margin: '0 0 32px', maxWidth: '520px' }}>
-          The open-source alternative to real-time avatar APIs. No video stream, no per-minute billing.
-          Bring your own model, or run one in the browser. This demo does both.
+          {COPY[mode].lede}
         </p>
 
         {!engaged && (
@@ -235,7 +151,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
               </button>
             </div>
             <p style={noteStyle}>
-              Hearing, voice and lip-sync run in your browser — {DOWNLOAD_SIZE} the first time, which your browser keeps for next time.
+              {mode === 'avatar' ? 'Hearing, voice and lip-sync run' : 'Hearing and voice run'} in your browser — {DOWNLOAD_SIZE} the first time, which your browser keeps for next time.
               Replies come from a hosted model{canRunLocalLlm ? ', until the in-browser one finishes downloading behind the conversation.' : '.'}
               {!hasWebGpu && (
                 <span style={{ display: 'block', marginTop: '8px', color: '#F59E0B' }}>
@@ -252,28 +168,15 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
         )}
 
         {engaged && !ready && (
-          <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '360px' }}>
-            {MODEL_ROWS.map(({ key, label }) => {
-              const pct = progress[key] ?? 0;
-              return (
-                <div key={key}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#CBD5E1', marginBottom: '6px' }}>
-                    <span>{label}</span>
-                    <span style={{ color: '#64748B', fontVariantNumeric: 'tabular-nums' }}>{Math.round(pct)}%</span>
-                  </div>
-                  <div style={{ height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: ACCENT, transition: 'width 0.3s ease' }} />
-                  </div>
-                </div>
-              );
-            })}
+          <div>
+            <ModelProgress progress={progress} accent={ACCENT} />
             {/* True since the models moved to OPFS. The Cache API refused any
                 file of 256 MiB or more, so the ~310 MB voice used to be fetched
                 again on every visit; OPFS has no such limit. It can still be
                 refused — a full disk, a private window — and the engine reports
                 that through onError as 'model-storage', so this stays a plain
                 statement rather than a promise. See src/lib/modelCache.ts. */}
-            <p style={{ ...noteStyle, marginTop: '4px' }}>
+            <p style={{ ...noteStyle, marginTop: '16px' }}>
               Your browser keeps these, so your next visit skips the download.
             </p>
           </div>
@@ -281,22 +184,22 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
 
         {ready && (
           <div aria-live="polite">
-            {micOpen ? (
-              <button onClick={stop} style={secondaryButton}>Stop</button>
+            {session.micOpen ? (
+              <button onClick={session.stop} style={secondaryButton}>Stop</button>
             ) : (
-              <button onClick={talk} style={primaryButton}>Tap to talk</button>
+              <button onClick={session.talk} style={primaryButton}>Tap to talk</button>
             )}
-            <p style={noteStyle}>{hint}</p>
+            <p style={noteStyle}>{session.hint}</p>
 
             {/* Which half runs where, stated plainly and kept accurate as it
                 changes. The page claims the browser does the work, so the one
                 part that does not has to be named rather than glossed over. */}
             <p style={{ ...noteStyle, marginTop: '10px', fontSize: '13px', color: '#64748B' }}>
-              Hearing, voice and lip-sync: your browser. Replies:{' '}
+              {mode === 'avatar' ? 'Hearing, voice and lip-sync' : 'Hearing and voice'}: your browser. Replies:{' '}
               <span style={{ color: '#94A3B8' }}>
-                {brain === 'hosted' ? hostedModelName(hostedModel) : LOCAL_MODEL}
+                {hosted.answeredBy}
               </span>
-              {brain === 'hosted' && canRunLocalLlm && (
+              {hosted.brain === 'hosted' && canRunLocalLlm && (
                 <span style={{ display: 'block', marginTop: '4px' }}>
                   {localLlmProgress > 0
                     ? `Fetching the in-browser model too — ${Math.round(localLlmProgress)}%. It takes over when it lands.`
@@ -329,67 +232,92 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
           background: '#101116',
         }}
       >
-        {/* Framed on the face rather than the whole figure: lip sync is the part
-            worth watching, and at full-body distance the mouth is a few pixels. */}
-        <Canvas camera={{ position: [0, 0.37, 0.93], fov: 30 }} style={{ width: '100%', height: '100%' }}>
-          <color attach="background" args={['#101116']} />
-          <AimCamera at={[0, 0.37, 0]} />
-          <AiVoiceAvatar
-            ref={avatarRef}
+        {mode === 'avatar' ? (
+          // Framed on the face rather than the whole figure: lip sync is the
+          // part worth watching, and at full-body distance the mouth is a few
+          // pixels.
+          <Canvas camera={{ position: [0, 0.37, 0.93], fov: 30 }} style={{ width: '100%', height: '100%' }}>
+            <color attach="background" args={['#101116']} />
+            <AimCamera at={[0, 0.37, 0]} />
+            <AiVoiceAvatar
+              ref={avatarRef}
+              loadModels={engaged}
+              avatarPreset="ananya"
+              ttsVoice="af_heart"
+              systemPrompt={SYSTEM_PROMPT}
+              // Hosted until the in-browser model is warm, then dropped, which
+              // is what hands the conversation over. The engine carries the
+              // turns across, so the local model knows what was already said.
+              onSubmit={hosted.onSubmit}
+              preloadLocalLlm={canRunLocalLlm}
+              onLocalLlmReady={hosted.switchToLocal}
+              showCaptions={true}
+              // This page owns the call to action until the visitor engages;
+              // the pill would otherwise announce a download that has not
+              // started.
+              hideStatusPill={true}
+              scale={isMobile ? 0.4 : 0.5}
+              position={[0, isMobile ? -0.26 : -0.36, 0]}
+              loadingProgress={session.recordProgress}
+              onStatusChange={session.setStatus}
+              onModelLoaded={() => setMeshReady(true)}
+              onUserInterrupt={session.onUserInterrupt}
+              enableLocalAssetProbe={import.meta.env.DEV}
+              onError={session.handleError}
+            />
+          </Canvas>
+        ) : (
+          <VoiceOnlyDemo
+            ref={voiceRef}
             loadModels={engaged}
-            avatarPreset="ananya"
-            ttsVoice="af_heart"
-            systemPrompt={SYSTEM_PROMPT}
-            // Hosted until the in-browser model is warm, then dropped, which is
-            // what hands the conversation over. The engine carries the turns
-            // across, so the local model knows what was already said.
-            onSubmit={brain === 'hosted' ? askHosted : undefined}
+            onSubmit={hosted.onSubmit}
             preloadLocalLlm={canRunLocalLlm}
-            onLocalLlmReady={() => setBrain('local')}
-            showCaptions={true}
-            // This page owns the call to action until the visitor engages; the
-            // pill would otherwise announce a download that has not started.
-            hideStatusPill={true}
-            scale={isMobile ? 0.4 : 0.5}
-            position={[0, isMobile ? -0.26 : -0.36, 0]}
-            loadingProgress={(pct, label) => {
-              const key = label === 'tts' ? 'kokoro' : label;
-              // Hold each model at its highest, so an out-of-order message
-              // can never move a row backwards.
-              setProgress(prev => (pct > (prev[key] ?? 0) ? { ...prev, [key]: pct } : prev));
-            }}
-            onStatusChange={setStatus}
-            onModelLoaded={() => setMeshReady(true)}
-            onUserInterrupt={() => setInterrupted(true)}
-            enableLocalAssetProbe={import.meta.env.DEV}
-            onError={(e) => {
-              console.warn(`[hero] ${e.severity} in ${e.stage}: ${e.message}`);
-              if (e.stage === 'microphone') {
-                setMicOpen(false);
-                setMicBlocked(true);
-              }
-            }}
+            onLocalLlmReady={hosted.switchToLocal}
+            loadingProgress={session.recordProgress}
+            onStatusChange={session.setStatus}
+            onUserInterrupt={session.onUserInterrupt}
+            onError={session.handleError}
+            isMobile={isMobile}
           />
-        </Canvas>
+        )}
 
         <div
-          aria-hidden={meshReady}
+          role="group"
+          aria-label="Demo mode"
+          className="mode-switch"
           style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            opacity: meshReady ? 0 : 1,
-            transition: 'opacity 0.6s ease',
+            position: 'absolute', top: '14px', left: '50%', transform: 'translateX(-50%)',
+            display: 'flex', gap: '2px', padding: '3px', borderRadius: '999px',
+            background: 'rgba(15, 17, 22, 0.8)', border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 5,
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
-            <div className="hero-pulse" style={{ width: '56px', height: '56px', borderRadius: '50%', border: `2px solid ${ACCENT}55`, borderTopColor: ACCENT }} />
-            <span style={{ fontSize: '13px', color: '#64748B' }}>Loading avatar…</span>
-          </div>
+          <button aria-pressed={mode === 'avatar'} onClick={() => switchMode('avatar')}>3D avatar</button>
+          <button aria-pressed={mode === 'voice'} onClick={() => switchMode('voice')}>Voice only</button>
         </div>
+
+        {/* Voice mode has no mesh to wait for, so no overlay at all: fading
+            one out left it visible over the orb for the length of the fade. */}
+        {mode === 'avatar' && (
+          <div
+            aria-hidden={meshReady}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              opacity: meshReady ? 0 : 1,
+              transition: 'opacity 0.6s ease',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+              <div className="hero-pulse" style={{ width: '56px', height: '56px', borderRadius: '50%', border: `2px solid ${ACCENT}55`, borderTopColor: ACCENT }} />
+              <span style={{ fontSize: '13px', color: '#64748B' }}>Loading avatar…</span>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -410,18 +338,6 @@ const AimCamera: React.FC<{ at: [number, number, number] }> = ({ at }) => {
   }, [camera, at[0], at[1], at[2]]);
   return null;
 };
-
-/**
- * The models this demo waits for, named for a visitor rather than an engineer.
- *
- * No language model row: replies start hosted, so nobody waits for one. On a
- * capable desktop it downloads later, behind the conversation, and is reported
- * in the line under the button instead.
- */
-const MODEL_ROWS: Array<{ key: string; label: string }> = [
-  { key: 'asr', label: 'Speech recognition' },
-  { key: 'kokoro', label: 'Voice' },
-];
 
 const primaryButton: React.CSSProperties = {
   background: ACCENT,

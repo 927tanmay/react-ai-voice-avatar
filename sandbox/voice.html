@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice mode for React — react-ai-voice-avatar</title>
+    <meta name="description" content="Voice mode like ChatGPT or Gemini, as one React hook. Speech recognition and the voice run in your visitor's browser, with interruptible replies from your own model. No avatar, no three.js." />
+
+    <!-- Open Graph / Social -->
+    <meta property="og:title" content="Voice mode for React" />
+    <meta property="og:description" content="Talk to your app the way you talk to ChatGPT or Gemini. Hearing and voice run in the browser; interrupt it mid-sentence." />
+    <meta property="og:type" content="website" />
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
+
+    <style>
+      body, html { margin: 0; padding: 0; background: #0B0D12; }
+      body { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+      @keyframes voice-orb-think { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
+      .voice-orb-thinking { animation: voice-orb-think 2.4s linear infinite; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/voice/main.tsx"></script>
+  </body>
+</html>

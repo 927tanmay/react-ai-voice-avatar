@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Voice only, on the demo and as an example
+
+Most apps want voice mode, not a character: talk to the app the way you talk to
+ChatGPT or Gemini. The package has supported that since the
+`react-ai-voice-avatar/headless` entry point, but nothing showed it. The one
+example named "headless" still rendered the 3D avatar.
+
+- **The demo has a "3D avatar | Voice only" switch.** Voice only is an orb that
+  moves with whoever is speaking, with live captions, running on
+  `useAiVoiceAvatar` from `/headless` and nothing else. It never requests the
+  avatar file. Switching reloads the engine from the models the browser already
+  keeps, so nothing downloads twice, and the hosted conversation carries across.
+- **It has a page of its own, at `/voice`**, linked from the demo's header: a
+  link to share for anyone who only wants voice mode. It is a separate entry
+  rather than a route, so it loads React and the hook and nothing else — 0.23
+  MB against the homepage's 10.3 MB with its two avatars. On a 10 Mbit/s line
+  it is usable in 0.2 s, where the homepage takes 8–9 s to show its avatar,
+  and with the models already stored it speaks 2–3 s sooner after the click.
+- **`examples/voice-only`** is the same thing as an app to copy, with no
+  backend: the in-browser language model answers unless you pass `onSubmit`.
+  Its production build contains no WebGL code.
+
 ### The avatars stand symmetrically
 
 Both bundled avatars stood with the right hand about 8 cm further from the body

@@ -305,3 +305,35 @@ code {
 @media (prefers-reduced-motion: reduce) {
   .hero-pulse { animation: none; }
 }
+
+/* The voice-only orb while a reply is being prepared: a slow turn of its
+   gradient, so waiting reads as working rather than frozen. */
+@keyframes voice-orb-think {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
+}
+.voice-orb-thinking {
+  animation: voice-orb-think 2.4s linear infinite;
+}
+
+.mode-switch button {
+  background: none;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #94A3B8;
+  cursor: pointer;
+  /* At phone width "3D avatar" otherwise breaks over two lines. */
+  white-space: nowrap;
+}
+.mode-switch button[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.12);
+  color: #F8FAFC;
+}
+.mode-switch button:focus-visible {
+  outline: 2px solid #38BDF8;
+  outline-offset: 2px;
+}
