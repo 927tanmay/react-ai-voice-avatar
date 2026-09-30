@@ -624,9 +624,20 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
   const loadModels = config.loadModels !== false;
 
+  /**
+   * Whether the local speech models are needed at all.
+   *
+   * A host that transcribes or synthesises through its own adapter would
+   * otherwise download Whisper and Kokoro, some 590 MB, and wait for them
+   * before the first turn, for models it never calls. Read on every render,
+   * so dropping an adapter later loads the model it was standing in for.
+   */
+  const needsLocalAsr = !config.onTranscribe;
+  const needsLocalVoice = !config.onSynthesize;
+
   // ─── Kokoro TTS Worker (loaded lazily, only when engine === 'kokoro') ───
   const { isReady: isKokoroReady, synthesize: kokoroSynthesize, speechEnd: kokoroSpeechEnd, interrupt: kokoroInterrupt } = useKokoroWorker({
-    enabled: loadModels && activeTtsEngine === 'kokoro',
+    enabled: loadModels && activeTtsEngine === 'kokoro' && needsLocalVoice,
     voice: config.ttsVoice,
     language: config.ttsLanguage,
     onSpeechOutput: activeTtsEngine === 'kokoro' ? handleSpeechOutput : undefined,
@@ -649,7 +660,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     // finished, as evidence of a crash. A deferred avatar has not begun, so
     // counting it would read two unengaged visits as two crashes and quietly
     // downgrade the voice for good.
-    if (!loadModels) return;
+    // Nor has one whose host synthesises: Kokoro never loads, and two visits
+    // would otherwise read as two crashes.
+    if (!loadModels || !needsLocalVoice) return;
     if (activeTtsEngine !== 'kokoro' || typeof window === 'undefined') return;
     
     if (isKokoroReady) {
@@ -660,7 +673,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       localStorage.setItem(CRUMB, String(priorCrashes + 1));
       crumbSetRef.current = true;
     }
-  }, [loadModels, activeTtsEngine, isKokoroReady, hasFallenBack]);
+  }, [loadModels, needsLocalVoice, activeTtsEngine, isKokoroReady, hasFallenBack]);
 
   /**
    * The turns the host answered through `onSubmit`.
@@ -692,6 +705,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     lowMemoryMode: config.lowMemoryMode,
     systemPrompt: config.systemPrompt,
     loadLlm: !config.onSubmit, // Don't load local LLM if onSubmit is provided
+    loadAsr: needsLocalAsr,
+    loadTts: needsLocalVoice,
     onLocalLlmReady: () => configRef.current.onLocalLlmReady?.(),
     onModelStorageFailed: msg => reportError('model-storage', `Not kept for next visit — ${msg}`, 'degraded'),
     onCapabilityDetected: config.onCapabilityDetected,
@@ -832,7 +847,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [mlInterrupt, kokoroInterrupt]);
 
   // Combined readiness
-  const isReady = isMLReady && (activeTtsEngine !== 'kokoro' || isKokoroReady);
+  const isReady = isMLReady && (!needsLocalVoice || activeTtsEngine !== 'kokoro' || isKokoroReady);
 
   // ─── Unified synthesizeText: routes to the correct TTS engine or cloud adapter ───
   /**

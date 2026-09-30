@@ -137,5 +137,36 @@ check(
   /payload\.loadLlm !== false/.test(worker)
 );
 
+console.log('\nLocal speech models are skipped when a host supplies its own');
+check(
+  'the engine tells the worker whether it needs recognition and the voice',
+  /loadAsr: needsLocalAsr/.test(engine) && /loadTts: needsLocalVoice/.test(engine)
+);
+check(
+  'and derives both from the adapters',
+  /needsLocalAsr = !config\.onTranscribe/.test(engine) && /needsLocalVoice = !config\.onSynthesize/.test(engine)
+);
+check(
+  'Kokoro is not loaded for a host that synthesises',
+  /enabled: loadModels && activeTtsEngine === 'kokoro' && needsLocalVoice/.test(engine)
+);
+check(
+  'the init message carries both flags',
+  /loadAsr: configRef\.current\.loadAsr/.test(mlHook) && /loadTts: configRef\.current\.loadTts/.test(mlHook)
+);
+check(
+  'the worker reads them',
+  /payload\.loadAsr !== false/.test(worker) && /payload\.loadTts !== false/.test(worker)
+);
+check(
+  'a later change is sent as localModels',
+  /type: 'localModels'/.test(mlHook) && /type === 'localModels'/.test(worker)
+);
+check(
+  'with the field names the worker reads',
+  /payload: \{ asr: config\.loadAsr !== false, tts: config\.loadTts !== false \}/.test(mlHook) &&
+    /payload\.asr !== false/.test(worker) && /payload\.tts !== false/.test(worker)
+);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

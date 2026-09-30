@@ -16,6 +16,10 @@ export interface UseMLWorkerConfig {
   lowMemoryMode?: boolean;
   systemPrompt?: string;
   loadLlm?: boolean;
+  /** Load the local recognition model. False when the host transcribes. */
+  loadAsr?: boolean;
+  /** Load the local MMS voice, if that is the engine. False when the host synthesises. */
+  loadTts?: boolean;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
   /** Fires when a local model requested after startup has finished loading. */
   onLocalLlmReady?: () => void;
@@ -149,6 +153,8 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
               lowMemoryMode: configRef.current.lowMemoryMode,
               systemPrompt: configRef.current.systemPrompt,
               loadLlm: configRef.current.loadLlm,
+              loadAsr: configRef.current.loadAsr,
+              loadTts: configRef.current.loadTts,
             }
           });
 
@@ -229,6 +235,17 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
       payload: { asrModel: config.asrModel },
     });
   }, [config.asrModel, isReady]);
+
+  // A host can stop supplying its own speech adapters after startup, and the
+  // local models it skipped are then needed after all. The worker loads what is
+  // missing and ignores the rest, so this is a no-op in the common case.
+  useEffect(() => {
+    if (!workerRef.current || !isReady) return;
+    workerRef.current.postMessage({
+      type: 'localModels',
+      payload: { asr: config.loadAsr !== false, tts: config.loadTts !== false },
+    });
+  }, [config.loadAsr, config.loadTts, isReady]);
 
   // Same for the language model, which is also chosen by language.
   useEffect(() => {

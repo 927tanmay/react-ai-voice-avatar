@@ -36,6 +36,21 @@ let currentLlmModel: string = '';
 let currentTtsVoice: string = 'af_heart';
 let currentTtsEngine: 'kokoro' | 'mms' = 'mms';
 
+/**
+ * Which local speech models the host wants, as opposed to supplying its own.
+ *
+ * A host passing `onTranscribe` or `onSynthesize` never uses the local
+ * recognition model or the MMS voice, so neither is downloaded. They load
+ * later, from `localModels`, if the host stops supplying one.
+ */
+let wantAsr = true;
+let wantTts = true;
+/** The recognition model to load if it is wanted after startup skipped it. */
+let deferredAsrModel = '';
+/** Resolves when a recognition model loaded after startup is ready. */
+let asrLoading: Promise<void> | null = null;
+let currentFallbackMode = 'wasm';
+
 const ttsQueue: Array<{ text: string; isLast: boolean }> = [];
 let isTtsProcessing = false;
 let isInterrupted = false;
@@ -259,6 +274,35 @@ const loadAsrPipeline = (model: string, device: 'webgpu' | 'wasm') =>
     progress_callback: reportProgress('asr'),
   });
 
+/**
+ * Load the recognition model on WebGPU, or on WASM if that fails.
+ *
+ * Throws when neither works, or when `fallbackMode` forbids WASM, so the caller
+ * decides how to report it.
+ */
+const loadAsrWithFallback = async (model: string, fallbackMode: string) => {
+  try {
+    asrPipeline = await loadAsrPipeline(model, 'webgpu');
+    currentDevice = 'webgpu';
+  } catch (err) {
+    console.warn('WebGPU ASR failed, falling back to WASM', err);
+    if (fallbackMode !== 'wasm') throw err;
+    asrPipeline = await loadAsrPipeline(model, 'wasm');
+    currentDevice = 'wasm';
+  }
+  currentAsrModel = model;
+};
+
+/** The MMS voice for the current language, when the host wants it. */
+const loadMmsVoice = async () => {
+  self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 0 } });
+  ttsPipeline = await pipeline('text-to-speech', resolveTtsRepo(currentTtsLanguage), {
+    device: 'wasm',
+    progress_callback: reportProgress('tts'),
+  });
+  self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
+};
+
 const processTtsQueue = async () => {
   if (isTtsProcessing) return;
   isTtsProcessing = true;
@@ -346,9 +390,15 @@ self.onmessage = async (e: MessageEvent) => {
     // Say which models this session will use. Several are chosen by language
     // rather than named by the caller, and without this the only way to find out
     // which one you got was to watch the network tab during a long download.
+    currentFallbackMode = fallbackMode;
+    wantAsr = payload.loadAsr !== false;
+    wantTts = payload.loadTts !== false;
+    deferredAsrModel = asrModel;
     console.log(
-      `[ML Worker] Language ${ttsLanguage} → speech recognition: ${asrModel}, ` +
-      `text generation: ${payload.loadLlm === false ? 'skipped (onSubmit supplied)' : llmModel}`
+      `[ML Worker] Language ${ttsLanguage} → ` +
+      `speech recognition: ${wantAsr ? asrModel : 'skipped (onTranscribe supplied)'}, ` +
+      `text generation: ${payload.loadLlm === false ? 'skipped (onSubmit supplied)' : llmModel}` +
+      (wantTts ? '' : ', voice: skipped (onSynthesize supplied)')
     );
 
     baseSystemPrompt = systemPrompt;
@@ -361,28 +411,31 @@ self.onmessage = async (e: MessageEvent) => {
 
     try {
       // 1. Check capabilities / ASR
-      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });
-      currentAsrModel = asrModel;
-      try {
-        asrPipeline = await loadAsrPipeline(asrModel, 'webgpu');
-        currentDevice = 'webgpu';
-      } catch (err) {
-        console.warn('WebGPU ASR failed, falling back to WASM', err);
-        if (fallbackMode === 'wasm') {
-          asrPipeline = await loadAsrPipeline(asrModel, 'wasm');
-          currentDevice = 'wasm';
-        } else if (fallbackMode === 'error') {
-          self.postMessage({ type: 'error', payload: { stage: 'asr', message: 'WebGPU failed' } });
-          return;
+      if (wantAsr) {
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });
+        try {
+          await loadAsrWithFallback(asrModel, fallbackMode);
+        } catch (err) {
+          if (fallbackMode === 'error') {
+            self.postMessage({ type: 'error', payload: { stage: 'asr', message: 'WebGPU failed' } });
+            return;
+          }
+          // WASM failing too is fatal, as it always was. 'disable' carries on
+          // without local recognition.
+          if (fallbackMode === 'wasm') throw err;
         }
-      }
 
-      // Download progress stops at 99 until loading is confirmed, so completion
-      // has to be announced. Without it the row for a finished model sat at
-      // 99% for the rest of the load and looked stalled.
-      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 100 } });
-      self.postMessage({ type: 'capabilities', payload: { webgpu: currentDevice === 'webgpu', estimatedVram: null } });
-      await new Promise(resolve => setTimeout(resolve, 200));
+        // Download progress stops at 99 until loading is confirmed, so completion
+        // has to be announced. Without it the row for a finished model sat at
+        // 99% for the rest of the load and looked stalled.
+        self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 100 } });
+        self.postMessage({ type: 'capabilities', payload: { webgpu: currentDevice === 'webgpu', estimatedVram: null } });
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } else {
+        // No model was loaded to prove WebGPU works, so report whether the
+        // browser offers it at all.
+        self.postMessage({ type: 'capabilities', payload: { webgpu: 'gpu' in navigator, estimatedVram: null } });
+      }
 
       // 2. Load LLM if not skipped
       if (payload.loadLlm !== false) {
@@ -393,20 +446,47 @@ self.onmessage = async (e: MessageEvent) => {
       }
 
       // 3. Load TTS Engine (Only load MMS if engine is not set to Kokoro)
-      if (currentTtsEngine !== 'kokoro') {
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 0 } });
-        const ttsRepo = resolveTtsRepo(currentTtsLanguage);
-        ttsPipeline = await pipeline('text-to-speech', ttsRepo, {
-          device: 'wasm',
-          progress_callback: reportProgress('tts'),
-        });
-        self.postMessage({ type: 'loadingProgress', payload: { model: 'tts', pct: 100 } });
+      if (wantTts && currentTtsEngine !== 'kokoro') {
+        await loadMmsVoice();
       }
 
       self.postMessage({ type: 'ready' });
     } catch (error: any) {
       self.postMessage({ type: 'error', payload: { stage: 'init', message: error.message } });
     }
+  }
+
+  /**
+   * The host started or stopped supplying its own speech adapters.
+   *
+   * Only ever loads: a model the host no longer needs stays in memory, since
+   * dropping it and fetching it again on the next change costs more than it
+   * saves.
+   */
+  if (type === 'localModels') {
+    wantAsr = payload.asr !== false;
+    wantTts = payload.tts !== false;
+
+    if (wantAsr && !asrPipeline && !asrLoading) {
+      self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });
+      asrLoading = loadAsrWithFallback(deferredAsrModel, currentFallbackMode)
+        .then(() => {
+          self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 100 } });
+        })
+        .catch((err: any) => {
+          self.postMessage({ type: 'error', payload: { stage: 'asr', message: `Could not load ${deferredAsrModel}: ${err?.message || err}` } });
+        })
+        .finally(() => { asrLoading = null; });
+    }
+    if (wantTts && currentTtsEngine !== 'kokoro' && !ttsPipeline) {
+      try {
+        await loadMmsVoice();
+        processTtsQueue();
+      } catch (err: any) {
+        self.postMessage({ type: 'error', payload: { stage: 'tts', message: `Could not load the voice: ${err?.message || err}` } });
+      }
+    }
+    return;
   }
 
   if (type === 'switchAsr') {
@@ -531,7 +611,7 @@ self.onmessage = async (e: MessageEvent) => {
     }
     
     // Load MMS pipeline only when running in MMS mode and either uninitialized or language changed
-    if (currentTtsEngine !== 'kokoro' && (!ttsPipeline || (ttsLanguage && ttsLanguage !== oldLanguage))) {
+    if (wantTts && currentTtsEngine !== 'kokoro' && (!ttsPipeline || (ttsLanguage && ttsLanguage !== oldLanguage))) {
       const ttsRepo = resolveTtsRepo(currentTtsLanguage);
       ttsPipeline = await pipeline('text-to-speech', ttsRepo, { device: 'wasm' });
       processTtsQueue();
@@ -653,7 +733,9 @@ const isNonSpeech = (transcript: string): boolean => {
 
   if (type === 'audioInput') {
     const { blob, language = 'en', skipLlm = false } = payload;
-    
+
+    // Recognition requested after startup skipped it may still be loading.
+    if (!asrPipeline && asrLoading) await asrLoading;
     if (!asrPipeline) {
       self.postMessage({ type: 'error', payload: { stage: 'asr', message: 'ASR not initialized' } });
       return;

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Cloud speech adapters no longer download the local models
+
+`onTranscribe` and `onSynthesize` replaced Whisper and Kokoro at runtime, but
+both were still downloaded — some 590 MB — and the engine stayed `'loading'`
+until they arrived, for models it never called. That is the configuration most
+production apps choose.
+
+- **A model the host replaces is not loaded.** With `onTranscribe`,
+  `onSubmit` and `onSynthesize` all supplied, the engine is ready in about two
+  seconds having requested no model at all. Each adapter skips only its own
+  model, so `onSynthesize` alone still loads Whisper.
+- **Dropping an adapter later loads what it stood in for**, so a host can fall
+  back from a cloud provider to the local model mid-session.
+- **Kokoro's crash detector ignores hosts that synthesise.** It counts loads
+  that started Kokoro and never finished it, and with Kokoro skipped, two
+  visits would have been read as two crashes and switched that browser to the
+  MMS voice for good.
+- `tests/cloud-adapters.spec.ts` runs a whole turn through all three adapters
+  and fails on any model request. It fails against the previous engine.
+
 ### Voice only, on the demo and as an example
 
 Most apps want voice mode, not a character: talk to the app the way you talk to
