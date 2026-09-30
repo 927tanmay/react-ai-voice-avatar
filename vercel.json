@@ -1,4 +1,5 @@
 {
   "buildCommand": "npm run build && cd sandbox && npm install && npm run build",
-  "outputDirectory": "sandbox/dist"
+  "outputDirectory": "sandbox/dist",
+  "cleanUrls": true
 }

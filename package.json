@@ -125,7 +125,8 @@
     "test:model-cache": "node --experimental-strip-types scripts/test-model-cache.mjs",
     "test:arm-rig": "node --experimental-strip-types scripts/test-arm-rig.mjs",
     "test:gestures": "node --experimental-strip-types scripts/test-gestures.mjs",
-    "test:speech-chunks": "node --experimental-strip-types scripts/test-speech-chunks.mjs"
+    "test:speech-chunks": "node --experimental-strip-types scripts/test-speech-chunks.mjs",
+    "test:avatar-symmetry": "node scripts/test-avatar-symmetry.mjs"
   },
   "overrides": {
     "onnxruntime-web": "$onnxruntime-web",

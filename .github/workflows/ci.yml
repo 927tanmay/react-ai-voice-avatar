@@ -61,6 +61,8 @@ jobs:
         run: npm run test:gestures
       - name: Speech chunks
         run: npm run test:speech-chunks
+      - name: Avatar symmetry
+        run: npm run test:avatar-symmetry
 
       - run: npm run build
       - name: Bundle integrity
