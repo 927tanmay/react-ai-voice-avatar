@@ -1116,7 +1116,7 @@ ${llmMode === 'cloud'
                 ) : (
                   <>
                     <span style={{ color: '#10B981', fontWeight: 600, display: 'block', marginBottom: '4px' }}>🔒 100% Airgapped Local Execution</span>
-                    Triggers a one-time download of <strong>Qwen2.5-0.5B (~350MB)</strong> into WebGPU cache. All speech recognition, LLM reasoning, and vocal synthesis execute offline with zero server data sharing.
+                    Triggers a one-time download of <strong>Qwen2.5-0.5B (~750 MB)</strong>, kept by your browser for later visits. All speech recognition, LLM reasoning, and vocal synthesis execute offline with zero server data sharing.
                   </>
                 )}
               </div>

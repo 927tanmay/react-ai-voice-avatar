@@ -27,7 +27,7 @@ hosted model on Groq's free tier, shared by everyone trying it, and start about
 [`examples/groq-voice`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/groq-voice)
 runs the same thing on your own free key.
 
-![React AI Voice Avatar Demo](./assets/gif/react-avatar-demo.gif)
+![Talking to the avatar: it answers with captions and gestures, is interrupted mid-answer, stops and answers the new question](./assets/gif/avatar-demo.gif)
 
 ---
 
