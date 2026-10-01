@@ -4,6 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import { AiVoiceAvatar, AiVoiceAvatarLazy, StatusPill, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import { AudioVisualizer } from './components/AudioVisualizer';
 import { HeroDemo } from './HeroDemo';
+import { TypeBox } from './TypeBox';
 import './style.css';
 
 const useMediaQuery = (query: string) => {
@@ -397,7 +398,6 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   const [_avatarStatus, setAvatarStatus] = useState<'loading' | 'idle' | 'listening' | 'thinking' | 'speaking'>('loading');
   const [loadingPct, setLoadingPct] = useState<number>(0);
   const [loadingLabel, setLoadingLabel] = useState<string>('asr');
-  const [textInput, setTextInput] = useState('');
   const [copied, setCopied] = useState(false);
   const isMobile = useMediaQuery('(max-width: 900px)');
 
@@ -432,13 +432,6 @@ const DemoPage: React.FC<{ personaId: Persona['id'], onBack: () => void }> = ({ 
   }, [currentPersona]);
 
 
-
-  const handleTextSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!textInput.trim() || !avatarRef.current) return;
-    avatarRef.current.sendText(textInput);
-    setTextInput('');
-  };
 
   /**
    * The Dev Sandbox's cloud route.
@@ -1497,35 +1490,13 @@ ${llmMode === 'cloud'
           position: 'absolute', bottom: isMobile ? '35px' : '40px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 1000, width: isMobile ? 'calc(100% - 40px)' : '100%', maxWidth: '400px',
         }}>
-          <form 
-            onSubmit={handleTextSubmit}
-            style={{
-              display: 'flex', background: 'rgba(20, 22, 28, 0.85)', backdropFilter: 'blur(20px)',
-              border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '9999px',
-              padding: '6px 6px 6px 20px', boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)'
-            }}
-          >
-            <input
-              type="text"
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              disabled={_avatarStatus === 'loading'}
-              placeholder={_avatarStatus === 'loading' ? 'Warming up AI engine...' : 'Type a message (skips mic)...'}
-              style={{ flex: 1, background: 'transparent', border: 'none', color: '#FFFFFF', fontSize: '14px', outline: 'none', opacity: _avatarStatus === 'loading' ? 0.5 : 1 }}
-            />
-            <button
-              type="submit"
-              disabled={!textInput.trim() || _avatarStatus === 'loading'}
-              style={{
-                background: textInput.trim() && _avatarStatus !== 'loading' ? currentPersona.accentColor : 'rgba(255, 255, 255, 0.1)',
-                color: textInput.trim() && _avatarStatus !== 'loading' ? '#FFFFFF' : '#64748B',
-                border: 'none', borderRadius: '9999px', padding: '8px 16px', fontSize: '13px',
-                fontWeight: 600, cursor: textInput.trim() && _avatarStatus !== 'loading' ? 'pointer' : 'not-allowed', transition: 'all 0.2s ease'
-              }}
-            >
-              Send
-            </button>
-          </form>
+          <TypeBox
+            onSend={text => avatarRef.current?.sendText(text)}
+            disabled={_avatarStatus === 'loading'}
+            accent={currentPersona.accentColor}
+            accentText="#FFFFFF"
+            placeholder="Type a message (skips mic)..."
+          />
         </div>
       )}
     </div>

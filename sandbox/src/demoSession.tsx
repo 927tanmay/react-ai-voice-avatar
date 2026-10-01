@@ -16,6 +16,7 @@ export interface TalkHandle {
   startListening: () => void;
   stopListening: () => void;
   interrupt: () => void;
+  sendText: (text: string) => void;
 }
 
 /**
@@ -68,6 +69,16 @@ export function useDemoSession(engine: () => TalkHandle | null | undefined, logT
     engine()?.interrupt();
   };
 
+  /**
+   * Typed input. Stops a reply that is playing first, so typing during the
+   * greeting behaves like talking over it.
+   */
+  const type = (text: string) => {
+    setInterrupted(false);
+    engine()?.interrupt();
+    engine()?.sendText(text);
+  };
+
   /** Back to the start, for a fresh engine. */
   const reset = () => {
     setStatus('loading');
@@ -111,7 +122,7 @@ export function useDemoSession(engine: () => TalkHandle | null | undefined, logT
   })();
 
   return {
-    status, setStatus, progress, recordProgress, micOpen, talk, stop, reset,
+    status, setStatus, progress, recordProgress, micOpen, talk, stop, type, reset,
     handleError, hint, onUserInterrupt: () => setInterrupted(true),
     setTtsEngine, voiceLabel: voiceLabel(ttsEngine),
   };

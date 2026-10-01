@@ -87,7 +87,8 @@ export const VoiceOnlyDemo = forwardRef<VoiceOnlyHandle, VoiceOnlyDemoProps>((pr
     startListening: () => { engine.startListening(); },
     stopListening: engine.stopListening,
     interrupt: engine.interrupt,
-  }), [engine.speak, engine.startListening, engine.stopListening, engine.interrupt]);
+    sendText: engine.sendText,
+  }), [engine.speak, engine.startListening, engine.stopListening, engine.interrupt, engine.sendText]);
 
   // Ease toward the latest level every frame. The raw figure jumps between
   // syllables; eased, the orb breathes with the voice instead of flickering.

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { VoiceOnlyDemo, type VoiceOnlyHandle } from '../VoiceOnlyDemo';
 import { hasWebGpu, useHostedBrain } from '../hostedBrain';
 import { DOWNLOAD_SIZE, ModelProgress, useDemoSession } from '../demoSession';
+import { TypeBox } from '../TypeBox';
 
 const ACCENT = '#38BDF8';
 const REPO = 'https://github.com/927tanmay/react-ai-voice-avatar';
@@ -158,6 +159,7 @@ export const VoicePage: React.FC = () => {
                 <button onClick={session.talk} style={primaryButton}>Tap to talk</button>
               )}
               <p style={noteStyle}>{session.hint}</p>
+              <TypeBox onSend={session.type} accent={ACCENT} style={{ margin: '18px auto 0' }} />
               <p style={{ ...noteStyle, marginTop: '10px', fontSize: '13px', color: '#64748B' }}>
                 Hearing and voice: your browser. Replies: <span style={{ color: '#94A3B8' }}>{hosted.answeredBy}</span>
                 <span style={{ display: 'block', marginTop: '4px' }}>

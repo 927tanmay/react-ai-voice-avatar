@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { AiVoiceAvatar, type AiVoiceAvatarHandle } from 'react-ai-voice-avatar';
 import { VoiceOnlyDemo, type VoiceOnlyHandle } from './VoiceOnlyDemo';
+import { TypeBox } from './TypeBox';
 import { hasWebGpu, useHostedBrain } from './hostedBrain';
 import { DOWNLOAD_SIZE, ModelProgress, useDemoSession } from './demoSession';
 
@@ -190,6 +191,7 @@ export const HeroDemo: React.FC<HeroDemoProps> = ({ isMobile, scenarioCount, onS
               <button onClick={session.talk} style={primaryButton}>Tap to talk</button>
             )}
             <p style={noteStyle}>{session.hint}</p>
+            <TypeBox onSend={session.type} accent={ACCENT} style={{ marginTop: '18px' }} />
 
             {/* Which half runs where, stated plainly and kept accurate as it
                 changes. The page claims the browser does the work, so the one

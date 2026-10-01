@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Typing works on every page, and cuts the avatar off cleanly
+
+- **The homepage and `/voice` have a type box**, as the scenario pages
+  already did. People who will not open a microphone for a page they just
+  found could watch the demo but never hear it answer. The reply is spoken
+  either way, and typing during a reply stops it first, like talking over it.
+- **A sentence already being synthesised no longer plays after an
+  interrupt.** Clearing a worker's queue does not stop the sentence it is
+  working on, and its audio arrived a second later. Talking over the avatar
+  hid this, because the late audio landed while the user was still speaking;
+  typed input starts the next turn at once, and the greeting's next sentence
+  played over the answer. Requests now carry a turn number that the workers
+  echo with their audio, `interrupt()` advances it, and audio from an older
+  turn is dropped. Both voices are covered: Kokoro, and MMS with the
+  in-browser model's replies.
+
 ### Start on a provider, hand over to the browser
 
 - **`preloadLocalSpeech`** downloads the in-browser hearing and voice behind
