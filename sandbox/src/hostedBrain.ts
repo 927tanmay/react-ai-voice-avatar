@@ -16,8 +16,9 @@ import { useRef, useState } from 'react';
  * this only makes it readable.
  */
 const HOSTED_MODEL_NAMES: Record<string, string> = {
-  'llama-3.3-70b-versatile': 'Llama 3.3 70B on Groq',
   'openai/gpt-oss-20b': 'GPT-OSS 20B on Groq',
+  'openai/gpt-oss-120b': 'GPT-OSS 120B on Groq',
+  'llama-3.3-70b-versatile': 'Llama 3.3 70B on Groq',
   'llama-3.1-8b-instant': 'Llama 3.1 8B on Groq',
 };
 const hostedModelName = (id: string | null) =>
@@ -25,16 +26,40 @@ const hostedModelName = (id: string | null) =>
 
 const LOCAL_MODEL = 'Qwen2.5-0.5B, in your browser';
 
+/** Where someone can run all of this on their own free key. */
+export const OWN_KEY_EXAMPLE = 'https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/groq-voice';
+
 /**
- * What the assistant says when the hosted route will not answer.
+ * Why the hosted route refused, as the visitor needs to hear it.
  *
- * It is a rate limit or a missing key, never a model reply, so it says so
- * plainly rather than inventing an apology in the assistant's voice.
+ * `visitor`: this person's hourly share. `site`: Groq's free tier, which the
+ * whole demo shares, is used up or busy. `down`: anything else, including no
+ * key in local development.
  */
-const HOSTED_UNAVAILABLE_LOCAL_COMING =
-  "The hosted model isn't answering right now, and I'm still downloading the one that runs in your browser. Give me a minute and ask again.";
-const HOSTED_UNAVAILABLE =
-  "The hosted model isn't answering right now. On a desktop this runs a model in your browser instead, with no limit at all.";
+export type HostedRefusal = 'visitor' | 'site' | 'down';
+
+function refusalOf(status: number, error: string | undefined): HostedRefusal {
+  if (status === 429 && error === 'per-visitor-limit') return 'visitor';
+  if (status === 429 || (status === 503 && error === 'unavailable')) return 'site';
+  return 'down';
+}
+
+/**
+ * What the assistant says instead of a reply.
+ *
+ * It is a limit or an outage, never a model reply, so it says which plainly
+ * rather than inventing an apology, and says what happens next.
+ */
+function refusalLine(refusal: HostedRefusal, localComing: boolean): string {
+  const why = {
+    visitor: "That's your twelve free hosted replies for this hour, so everyone else gets a turn.",
+    site: "The free hosted model this demo runs on is used up for now. It's shared by everyone trying the demo.",
+    down: "The hosted model isn't answering right now.",
+  }[refusal];
+  return localComing
+    ? `${why} I'm downloading a model that runs in your browser instead, with no limit. Give me a minute and ask again.`
+    : `${why} You can run all of this on your own free key; the link is on the page.`;
+}
 
 export const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
 
@@ -49,6 +74,8 @@ export function useHostedBrain(canRunLocalLlm: boolean) {
   const [brain, setBrain] = useState<'hosted' | 'local'>('hosted');
   /** Which hosted model replied, as the route reported it. Null until it does. */
   const [hostedModel, setHostedModel] = useState<string | null>(null);
+  /** Why the last hosted request was refused; cleared by the next reply. */
+  const [refusal, setRefusal] = useState<HostedRefusal | null>(null);
 
   /**
    * The conversation so far, sent back to the hosted route so it can follow up.
@@ -71,6 +98,7 @@ export function useHostedBrain(canRunLocalLlm: boolean) {
         const data = await res.json();
         const reply: string = data.reply;
         if (data.model) setHostedModel(data.model);
+        setRefusal(null);
         historyRef.current = [
           ...historyRef.current,
           { role: 'user' as const, content: text },
@@ -79,14 +107,17 @@ export function useHostedBrain(canRunLocalLlm: boolean) {
         return reply;
       }
 
-      // Every refusal — no key in local development, a rate limit, an outage —
-      // lands here, and the visitor gets the same honest sentence.
-      console.warn('[demo] hosted reply unavailable:', res.status);
+      const body = await res.json().catch(() => ({}));
+      console.warn('[demo] hosted reply unavailable:', res.status, body?.error);
+      const why = refusalOf(res.status, body?.error);
+      setRefusal(why);
+      return refusalLine(why, canRunLocalLlm);
     } catch (err) {
       console.warn('[demo] hosted reply failed:', err);
     }
 
-    return canRunLocalLlm ? HOSTED_UNAVAILABLE_LOCAL_COMING : HOSTED_UNAVAILABLE;
+    setRefusal('down');
+    return refusalLine('down', canRunLocalLlm);
   };
 
   return {
@@ -99,5 +130,7 @@ export function useHostedBrain(canRunLocalLlm: boolean) {
     reset: () => setBrain('hosted'),
     /** Who answered, for a visitor. */
     answeredBy: brain === 'hosted' ? hostedModelName(hostedModel) : LOCAL_MODEL,
+    /** Why hosted replies are not coming, while the demo is still on them. */
+    refusal: brain === 'hosted' ? refusal : null,
   };
 }

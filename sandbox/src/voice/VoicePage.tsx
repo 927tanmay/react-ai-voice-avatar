@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { VoiceOnlyDemo, type VoiceOnlyHandle } from '../VoiceOnlyDemo';
 import { hasWebGpu, useHostedBrain } from '../hostedBrain';
-import { DOWNLOAD_SIZE, ModelProgress, useDemoSession } from '../demoSession';
+import { DownloadNote, KEPT_NOTE, ModelProgress, RunsWhere, useDemoSession } from '../demoSession';
 import { TypeBox } from '../TypeBox';
 
 const ACCENT = '#38BDF8';
@@ -132,8 +132,7 @@ export const VoicePage: React.FC = () => {
             <>
               <button onClick={() => setEngaged(true)} style={primaryButton}>Talk to it</button>
               <p style={noteStyle}>
-                Hearing and voice download to your browser — {DOWNLOAD_SIZE} the first time, kept for next time.
-                Replies come from a hosted model{canRunLocalLlm ? ', until the in-browser one finishes downloading behind the conversation.' : '.'}
+                <DownloadNote local="Hearing and voice" canRunLocalLlm={canRunLocalLlm} />
                 {!hasWebGpu && (
                   <span style={warning}>Your browser doesn't expose WebGPU, so the voice will be slow. Chrome or Edge on a desktop is best.</span>
                 )}
@@ -147,7 +146,7 @@ export const VoicePage: React.FC = () => {
           {engaged && !ready && (
             <>
               <ModelProgress progress={progress} accent={ACCENT} />
-              <p style={noteStyle}>Your browser keeps these, so your next visit skips the download.</p>
+              <p style={noteStyle}>{KEPT_NOTE}</p>
             </>
           )}
 
@@ -160,19 +159,16 @@ export const VoicePage: React.FC = () => {
               )}
               <p style={noteStyle}>{session.hint}</p>
               <TypeBox onSend={session.type} accent={ACCENT} style={{ margin: '18px auto 0' }} />
-              <p style={{ ...noteStyle, marginTop: '10px', fontSize: '13px', color: '#64748B' }}>
-                Hearing and voice: your browser. Replies: <span style={{ color: '#94A3B8' }}>{hosted.answeredBy}</span>
-                <span style={{ display: 'block', marginTop: '4px' }}>
-                  Voice: <span style={{ color: '#94A3B8' }}>{session.voiceLabel}</span>
-                </span>
-                {hosted.brain === 'hosted' && canRunLocalLlm && (
-                  <span style={{ display: 'block', marginTop: '4px' }}>
-                    {localLlmProgress > 0
-                      ? `Fetching the in-browser model too — ${Math.round(localLlmProgress)}%. It takes over when it lands.`
-                      : 'Fetching the in-browser model too. It takes over when it lands.'}
-                  </span>
-                )}
-              </p>
+              <RunsWhere
+              local={'Hearing and voice'}
+              answeredBy={hosted.answeredBy}
+              hosted={hosted.brain === 'hosted'}
+              refusal={hosted.refusal}
+              canRunLocalLlm={canRunLocalLlm}
+              localLlmProgress={localLlmProgress}
+              voiceLabel={session.voiceLabel}
+              style={{ ...noteStyle, marginTop: '10px', fontSize: '13px', color: '#64748B' }}
+            />
             </div>
           )}
         </div>

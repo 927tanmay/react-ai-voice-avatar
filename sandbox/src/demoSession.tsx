@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { AiVoiceAvatarError } from 'react-ai-voice-avatar/headless';
+import { OWN_KEY_EXAMPLE, type HostedRefusal } from './hostedBrain';
 
 /**
  * What the homepage and the voice-only page share: the state of one
@@ -37,6 +38,29 @@ const onIos = typeof navigator !== 'undefined' && (
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 );
 export const DOWNLOAD_SIZE = onIos ? '~320 MB' : '~590 MB';
+
+/** That download at 50 Mbit/s: 590 MB is 94 s, 320 MB is 51 s. */
+export const DOWNLOAD_TIME = onIos ? 'under a minute' : 'about a minute and a half';
+
+/**
+ * How soon a return visit is talking, with the models already stored.
+ * Measured on an Apple M4 with WebGPU: ready in 1.8 to 2.5 s, the greeting
+ * audible by 3 s, and nothing downloaded.
+ */
+export const RETURN_VISIT = 'about 2 seconds';
+
+/** Both together, said the same way on every page. */
+export const DownloadNote: React.FC<{ local: string; canRunLocalLlm: boolean }> = ({ local, canRunLocalLlm }) => (
+  <>
+    {local} run in your browser. The first visit downloads {DOWNLOAD_SIZE} of models, {DOWNLOAD_TIME} on
+    a 50 Mbit/s connection. Your browser keeps them, so next time it's talking in {RETURN_VISIT}, with
+    nothing to download. Replies come from a hosted model on a free tier shared by everyone here
+    {canRunLocalLlm ? ', until the in-browser one finishes downloading behind the conversation.' : '.'}
+  </>
+);
+
+/** Under the progress bars, while the first download runs. */
+export const KEPT_NOTE = `Your browser keeps these. Next time it's talking in ${RETURN_VISIT}, with nothing to download.`;
 
 export function useDemoSession(engine: () => TalkHandle | null | undefined, logTag: string) {
   const [status, setStatus] = useState<Status>('loading');
@@ -165,3 +189,52 @@ export const ModelProgress: React.FC<{ progress: Record<string, number>; accent:
     })}
   </div>
 );
+
+/**
+ * Which half runs where, and what to expect from the half that is hosted.
+ *
+ * The page claims the browser does the work, so the one part that does not is
+ * named rather than glossed over: whose model replied, that it is a free tier
+ * shared by everyone on the page, how long replies take, and what happens when
+ * that tier runs out. The timings are the README's measurements (Apple M4,
+ * WebGPU); scripts/measure-latency.mjs reproduces them.
+ */
+export const RunsWhere: React.FC<{
+  local: string;
+  answeredBy: string;
+  hosted: boolean;
+  refusal: HostedRefusal | null;
+  canRunLocalLlm: boolean;
+  localLlmProgress: number;
+  voiceLabel: string;
+  style: React.CSSProperties;
+}> = p => {
+  const line = { display: 'block', marginTop: '4px' } as const;
+  const strong = { color: '#94A3B8' };
+  const pct = p.localLlmProgress > 0 ? ` (${Math.round(p.localLlmProgress)}%)` : '';
+  return (
+    <p style={p.style}>
+      {p.local}: your browser. Replies: <span style={strong}>{p.answeredBy}</span>
+      {p.hosted && ', on its free tier, shared by everyone here'}
+      <span style={line}>Voice: <span style={strong}>{p.voiceLabel}</span></span>
+      <span style={line}>
+        A reply starts about {p.hosted ? '3' : '2.5'} seconds after you stop talking.
+      </span>
+      {p.refusal && (
+        <span style={{ ...line, color: '#F59E0B' }}>
+          {p.refusal === 'visitor'
+            ? "You've had your twelve free hosted replies for this hour."
+            : p.refusal === 'site'
+              ? 'The free hosted replies are used up for now.'
+              : "The hosted model isn't answering right now."}{' '}
+          {p.canRunLocalLlm
+            ? `The in-browser model takes over when it finishes downloading${pct}.`
+            : <>Run it on your own free key: <a href={OWN_KEY_EXAMPLE} target="_blank" rel="noreferrer" style={{ color: '#F59E0B' }}>examples/groq-voice</a>.</>}
+        </span>
+      )}
+      {p.hosted && p.canRunLocalLlm && !p.refusal && (
+        <span style={line}>Fetching the in-browser model too{pct}. It takes over when it lands, with no limit.</span>
+      )}
+    </p>
+  );
+};

@@ -19,6 +19,14 @@ It can also run with no backend at all. Speech recognition, generation and voice
 ### 🌐 [**Try the live demo ➔**](https://react-ai-voice-avatar.vercel.app/) · [**Voice only ➔**](https://react-ai-voice-avatar.vercel.app/voice)
 *Speech recognition, voice synthesis and lip-sync, all running in your browser tab.*
 
+The first visit downloads about 590 MB of models, roughly a minute and a half on a
+50 Mbit/s connection. Your browser keeps them, so a return visit is talking in
+**about 2 seconds with nothing downloaded**. Replies on the demo come from a
+hosted model on Groq's free tier, shared by everyone trying it, and start about
+3 seconds after you stop talking; on a busy day that tier can run out, and
+[`examples/groq-voice`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/groq-voice)
+runs the same thing on your own free key.
+
 ![React AI Voice Avatar Demo](./assets/gif/react-avatar-demo.gif)
 
 ---
@@ -510,7 +518,8 @@ enough free space, which on a phone is the common case.
 ### Models are kept between visits
 
 Downloaded models are stored in the browser's Origin Private File System, so a
-returning visitor skips the download. The browser's Cache API — what the model
+returning visitor skips the download: on an Apple M4 with WebGPU, a return
+visit is ready to talk in about 2 seconds, with nothing fetched. The browser's Cache API — what the model
 loader uses by default — refuses any single file of 256 MiB or more, and both
 the voice (~310 MB) and the local language model (~750 MB) are larger than that,
 so before this they were downloaded again on every visit. Where OPFS is
@@ -610,6 +619,7 @@ callbacks.
 | Thinking, hosted: GPT-OSS 20B on Groq, the demo's route, one round trip | 670 ms |
 | Thinking and the first sentence of voice, all in the browser (Qwen 0.5B, Kokoro) | 740 ms |
 | Speaking: Kokoro's first sentence ready and playing, with an instant reply | 460 ms |
+| Starting up on a return visit, models already stored | about 2 s, nothing downloaded |
 
 So from the moment you stop talking to the first word of the reply:
 
