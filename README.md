@@ -556,7 +556,7 @@ which is why the demo needs no keys, but the interesting production setups are
 mixed.
 
 ```mermaid
-flowchart LR
+flowchart TD
   mic(["🎙️ You speak"]) --> vad["Voice detector<br/><i>in the browser</i>"]
   vad --> hear["Hearing<br/><i>Whisper in the browser</i><br/>or your onTranscribe"]
   hear --> think["Thinking<br/><i>a model in the browser</i><br/>or your onSubmit"]
