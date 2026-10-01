@@ -41,6 +41,7 @@ Pages worth knowing in the sandbox:
 | `/` | The homepage: the avatar, the voice-only switch, and every scenario |
 | `/voice` | Voice mode on its own, built on the headless hook alone |
 | `/e2e/adapters.html` | A test page for the cloud adapters, used by the e2e suite |
+| `/e2e/latency.html` | Times each stage of a turn, for `node scripts/measure-latency.mjs` |
 
 The first time you talk to it, the browser downloads about 590 MB of models and
 keeps them, so later runs start in seconds. Chrome or Edge on a desktop is the

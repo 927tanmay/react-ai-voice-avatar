@@ -555,6 +555,19 @@ Four stages, and you choose where each one happens. The defaults are all local,
 which is why the demo needs no keys, but the interesting production setups are
 mixed.
 
+```mermaid
+flowchart LR
+  mic(["🎙️ You speak"]) --> vad["Voice detector<br/><i>in the browser</i>"]
+  vad --> hear["Hearing<br/><i>Whisper in the browser</i><br/>or your onTranscribe"]
+  hear --> think["Thinking<br/><i>a model in the browser</i><br/>or your onSubmit"]
+  think --> speak["Speaking<br/><i>Kokoro in the browser</i><br/>or your onSynthesize"]
+  speak --> face["🔊 Voice, with a lip-synced<br/>3D face or your own UI"]
+  vad -. "talk over it and it stops" .-> speak
+```
+
+Each stage runs in the browser unless you pass the adapter beside it, which
+hands that stage to your own service.
+
 | Stage | On the device | Your backend instead |
 | :--- | :--- | :--- |
 | **Hearing** — speech to text | Whisper via ONNX | `onTranscribe` |
@@ -582,6 +595,36 @@ regulated environment, or anywhere without reliable connectivity. Be aware of th
 cost: in English the first visit downloads roughly 1.3 GB before anyone can speak
 (the language model alone is 750 MB), about 2.1 GB in Hindi, and the quality
 ceiling is whatever a model that size can do.
+
+### ⏱️ How fast it answers
+
+Measured with [`scripts/measure-latency.mjs`](scripts/measure-latency.mjs) on an
+Apple M4 with WebGPU in Chromium: a spoken question through a fake microphone,
+the median of five turns after a warm-up turn, timed by the hook's own
+callbacks.
+
+| Stage | Time |
+| :--- | :--- |
+| Waiting for silence, to be sure you've finished | 1,400 ms (`redemptionMs`, adjustable) |
+| Hearing: Whisper base transcribes the utterance | 330 ms |
+| Thinking, hosted: GPT-OSS 20B on Groq, the demo's route, one round trip | 670 ms |
+| Thinking and the first sentence of voice, all in the browser (Qwen 0.5B, Kokoro) | 740 ms |
+| Speaking: Kokoro's first sentence ready and playing, with an instant reply | 460 ms |
+
+So from the moment you stop talking to the first word of the reply:
+
+| Setup | First word after you stop |
+| :--- | :--- |
+| All in the browser | about 2.5 s |
+| Hosted replies, local hearing and voice (the demo) | about 2.9 s |
+| With an instant reply, the floor for speech alone | about 2.2 s |
+
+The hosted figure adds the route's round trip to the measured speech stages,
+since that route answers only the live site. Most of the wait is the pause for
+silence, which is what stops the avatar cutting people off while they think.
+Lower `redemptionMs` in `speechDetection` for a snappier feel, at the cost of
+answering half-finished sentences. Without WebGPU, recognition and the voice
+run on the CPU and are several times slower.
 
 ### 🔀 Hosted now, local when warm
 
