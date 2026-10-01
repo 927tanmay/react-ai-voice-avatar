@@ -183,5 +183,22 @@ check(
     /tts: config\.loadTts !== false \|\| !!config\.preloadSpeech/.test(mlHook)
 );
 
+console.log('\nAudio from an interrupted turn is dropped');
+check(
+  'both hooks send their turn with every request that produces speech',
+  /payload: \{ text, isLast, turn: turnRef\.current \}/.test(kokoroHook) &&
+    /payload: \{ text, skipLlm, turn: turnRef\.current \}/.test(mlHook) &&
+    /payload: \{ text, isLast, turn: turnRef\.current \}/.test(mlHook)
+);
+check(
+  'both workers echo it with the audio',
+  /turn: item\.turn/.test(kokoroWorker) && /turn: item\.turn/.test(worker)
+);
+check(
+  'both hooks advance it on interrupt and drop audio from an older turn',
+  /turnRef\.current \+= 1/.test(kokoroHook) && /turnRef\.current \+= 1/.test(mlHook) &&
+    /isStale\(payload\)/.test(kokoroHook) && /payload\.turn !== turnRef\.current/.test(mlHook)
+);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

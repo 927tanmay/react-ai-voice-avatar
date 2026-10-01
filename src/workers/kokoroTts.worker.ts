@@ -34,7 +34,8 @@ let kokoroTts: any = null;
 let currentVoice: string = 'af_heart';
 let currentLanguage: string = 'en-US';
 
-const ttsQueue: Array<{ text: string; isLast: boolean; isEndMarker?: boolean }> = [];
+/** `turn` is the engine's number for the request, echoed with its audio. */
+const ttsQueue: Array<{ text: string; isLast: boolean; isEndMarker?: boolean; turn?: number }> = [];
 let isTtsProcessing = false;
 
 const DEFAULT_VOICE = 'af_heart';
@@ -232,18 +233,18 @@ const processTtsQueue = async () => {
   while (ttsQueue.length > 0) {
     const item = ttsQueue.shift()!;
     if (item.isEndMarker) {
-      self.postMessage({ type: 'speechEnd' });
+      self.postMessage({ type: 'speechEnd', payload: { turn: item.turn } });
       continue;
     }
     const cleanText = sanitizeForSpeech(item.text);
     if (!cleanText || cleanText.length === 0) {
       if (item.isLast) {
-        self.postMessage({ type: 'speechEnd' });
+        self.postMessage({ type: 'speechEnd', payload: { turn: item.turn } });
       } else {
         // Emit an empty speechOutput chunk so the main thread doesn't stall waiting for a dropped non-last chunk
         self.postMessage({
           type: 'speechOutput',
-          payload: { audio: new Float32Array(0), sampleRate: 24000, text: '', phonemes: '', isLast: false }
+          payload: { audio: new Float32Array(0), sampleRate: 24000, text: '', phonemes: '', isLast: false, turn: item.turn }
         });
       }
       continue;
@@ -300,6 +301,7 @@ const processTtsQueue = async () => {
           // rather than dropping it to amplitude alone.
           phonemes: ttsResult.phonemes || phonemesUsed || '',
           isLast: item.isLast,
+          turn: item.turn,
         },
       };
       // @ts-ignore - TS mixes up Window.postMessage and DedicatedWorkerGlobalScope.postMessage
@@ -307,7 +309,7 @@ const processTtsQueue = async () => {
     } catch (e: any) {
       console.error('[Kokoro Worker] TTS chunk error:', e);
       if (item.isLast) {
-        self.postMessage({ type: 'speechEnd' });
+        self.postMessage({ type: 'speechEnd', payload: { turn: item.turn } });
       } else {
         // Guarantee main thread recovery: emit a zero-sample fallback chunk for EVERY failed non-last item
         self.postMessage({
@@ -318,6 +320,7 @@ const processTtsQueue = async () => {
             text: cleanText,
             phonemes: '',
             isLast: false,
+            turn: item.turn,
           },
         });
       }
@@ -438,8 +441,10 @@ self.onmessage = async (e: MessageEvent) => {
   }
 
   if (type === 'synthesize') {
-    const { text, isLast = true } = payload;
-    ttsQueue.push({ text, isLast });
+    // `turn` comes back with the audio, so the engine can drop a sentence that
+    // was already being generated when the user interrupted.
+    const { text, isLast = true, turn } = payload;
+    ttsQueue.push({ text, isLast, turn });
     processTtsQueue();
   }
 
@@ -452,7 +457,7 @@ self.onmessage = async (e: MessageEvent) => {
   }
 
   if (type === 'speechEnd') {
-    ttsQueue.push({ text: '', isLast: true, isEndMarker: true });
+    ttsQueue.push({ text: '', isLast: true, isEndMarker: true, turn: payload?.turn });
     processTtsQueue();
   }
 

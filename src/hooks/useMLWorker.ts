@@ -72,6 +72,13 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
    * late arrival finds out it is no longer wanted.
    */
   const spawnTokenRef = useRef(0);
+  /**
+   * Which turn the engine is on, sent with every request that produces speech
+   * and echoed with it. `interrupt` advances it, and audio from an older turn
+   * — a sentence the worker was already synthesising — is dropped instead of
+   * playing over the new one. See the same ref in useKokoroWorker.
+   */
+  const turnRef = useRef(0);
 
   // Keep latest config in ref for callbacks
   const configRef = useRef(config);
@@ -187,11 +194,13 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
             } else if (type === 'transcript') {
               configRef.current.onTranscriptUpdate?.(payload.text, 'user');
             } else if (type === 'speechOutput') {
+              if (typeof payload?.turn === 'number' && payload.turn !== turnRef.current) return;
               configRef.current.onTranscriptUpdate?.(payload.text, 'avatar');
               configRef.current.onSpeechOutput?.(payload.audio, payload.sampleRate, payload.text, payload.isLast);
             } else if (type === 'streamWord') {
               configRef.current.onStreamWord?.(payload.word, payload.fullText);
             } else if (type === 'speechEnd') {
+              if (typeof payload?.turn === 'number' && payload.turn !== turnRef.current) return;
               configRef.current.onSpeechEnd?.();
             } else if (type === 'localAsrReady') {
               setIsAsrReady(true);
@@ -281,7 +290,7 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
       type: 'audioInput',
-      payload: { blob: audioBlob, language, skipLlm }
+      payload: { blob: audioBlob, language, skipLlm, turn: turnRef.current }
     });
   }, []);
 
@@ -289,7 +298,7 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
       type: 'textInput',
-      payload: { text, skipLlm }
+      payload: { text, skipLlm, turn: turnRef.current }
     });
   }, []);
 
@@ -297,11 +306,12 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
       type: 'ttsOnly',
-      payload: { text, isLast }
+      payload: { text, isLast, turn: turnRef.current }
     });
   }, []);
 
   const interrupt = useCallback(() => {
+    turnRef.current += 1;
     if (!workerRef.current) return;
     workerRef.current.postMessage({ type: 'interrupt' });
   }, []);

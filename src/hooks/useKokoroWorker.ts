@@ -180,6 +180,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
               configRef.current.onError?.('kokoro-init', payload?.message || 'Initialization timed out after 10 worker re-creations.');
             }
           } else if (type === 'speechOutput') {
+            if (isStale(payload)) return;
             configRef.current.onSpeechOutput?.(
               payload.audio,
               payload.sampleRate,
@@ -188,6 +189,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
               payload.isLast
             );
           } else if (type === 'speechEnd') {
+            if (isStale(payload)) return;
             configRef.current.onSpeechEnd?.();
           } else if (type === 'modelStorage') {
             configRef.current.onModelStorageFailed?.(payload.message);
@@ -235,20 +237,34 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
     });
   }, [config.voice, config.language, isReady]);
 
+  /**
+   * Which turn the engine is on. Sent with every request, echoed with its
+   * audio, and advanced by `interrupt`.
+   *
+   * Clearing the worker's queue does not stop the sentence it is already
+   * generating, and that sentence's audio arrives a second or so later. If a
+   * new turn has started by then — typed input starts one at once — the late
+   * audio used to play over it. Anything stamped with an older turn is now
+   * dropped.
+   */
+  const turnRef = useRef(0);
+  const isStale = (payload: any) => typeof payload?.turn === 'number' && payload.turn !== turnRef.current;
+
   const synthesize = useCallback((text: string, isLast: boolean = true) => {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
       type: 'synthesize',
-      payload: { text, isLast },
+      payload: { text, isLast, turn: turnRef.current },
     });
   }, []);
 
   const speechEnd = useCallback(() => {
     if (!workerRef.current) return;
-    workerRef.current.postMessage({ type: 'speechEnd' });
+    workerRef.current.postMessage({ type: 'speechEnd', payload: { turn: turnRef.current } });
   }, []);
 
   const interrupt = useCallback(() => {
+    turnRef.current += 1;
     if (!workerRef.current) return;
     workerRef.current.postMessage({ type: 'interrupt' });
   }, []);

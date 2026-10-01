@@ -51,7 +51,14 @@ let deferredAsrModel = '';
 let asrLoading: Promise<void> | null = null;
 let currentFallbackMode = 'wasm';
 
-const ttsQueue: Array<{ text: string; isLast: boolean }> = [];
+const ttsQueue: Array<{ text: string; isLast: boolean; turn?: number }> = [];
+/**
+ * The engine's number for the turn being worked on, echoed with every
+ * sentence so the engine can drop one that finishes after an interrupt.
+ * Set by each message that starts work; sentences take the value current
+ * when they are queued.
+ */
+let currentTurn: number | undefined;
 let isTtsProcessing = false;
 let isInterrupted = false;
 
@@ -331,6 +338,7 @@ const processTtsQueue = async () => {
             sampleRate: 0,
             text: cleanText,
             isLast: item.isLast,
+            turn: item.turn,
           },
         });
         continue;
@@ -347,7 +355,8 @@ const processTtsQueue = async () => {
             audio: audioData, 
             sampleRate: ttsResult.sampling_rate, 
             text: cleanText,
-            isLast: item.isLast 
+            isLast: item.isLast,
+            turn: item.turn,
           } 
         };
         // @ts-ignore - TS mixes up Window.postMessage and DedicatedWorkerGlobalScope.postMessage
@@ -360,13 +369,14 @@ const processTtsQueue = async () => {
   isTtsProcessing = false;
 };
 
-const pushPhraseToTts = (phrase: string, isLast: boolean) => {
-  ttsQueue.push({ text: phrase, isLast });
+const pushPhraseToTts = (phrase: string, isLast: boolean, turn = currentTurn) => {
+  ttsQueue.push({ text: phrase, isLast, turn });
   processTtsQueue();
 };
 
 self.onmessage = async (e: MessageEvent) => {
   const { type, payload } = e.data;
+  if (typeof payload?.turn === 'number') currentTurn = payload.turn;
 
   if (type === 'init') {
     const { 
@@ -650,6 +660,9 @@ const isNonSpeech = (transcript: string): boolean => {
 };
 
   async function runLlmInference(transcript: string) {
+    // Fixed for the whole reply, which can still be generating when a newer
+    // message has moved currentTurn on.
+    const turn = currentTurn;
     if (!transcript || isNonSpeech(transcript)) {
       self.postMessage({
         type: 'error',
@@ -704,7 +717,7 @@ const isNonSpeech = (transcript: string): boolean => {
             sentenceBuffer = sentenceBuffer.substring(splitIdx);
             
             if (chunk.length > 0) {
-              pushPhraseToTts(chunk, false);
+              pushPhraseToTts(chunk, false, turn);
             }
           }
         }
@@ -716,11 +729,11 @@ const isNonSpeech = (transcript: string): boolean => {
       await llmPipeline(messagesForModel(chatHistory, llmPipeline.tokenizer), { max_new_tokens: 128, streamer });
       
       if (sentenceBuffer.trim().length > 0) {
-        pushPhraseToTts(sentenceBuffer.trim(), true);
+        pushPhraseToTts(sentenceBuffer.trim(), true, turn);
       } else if (ttsQueue.length > 0) {
         ttsQueue[ttsQueue.length - 1].isLast = true;
       } else {
-        self.postMessage({ type: 'speechEnd' });
+        self.postMessage({ type: 'speechEnd', payload: { turn } });
       }
 
       chatHistory.push({ role: 'assistant', content: fullReplyText || 'I did not catch that.' });
