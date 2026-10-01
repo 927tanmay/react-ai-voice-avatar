@@ -38,8 +38,7 @@ runs the same thing on your own free key.
 ### 🎧 Entry 1: The Headless Hook ("Voice Mode for your App")
 Voice mode for your app: talk to it the way you talk to ChatGPT or Gemini, and interrupt it mid-sentence. The hook owns the microphone, knowing when someone has finished speaking, interruption, and streaming the reply into speech. You own the UI, and every frame it hands you a loudness level to animate.
 
-<!-- Voice-only GIF goes here. Record /voice: a question, the answer, then
-     talking over it. A GIF has no sound, so the captions carry it. -->
+![Voice mode with no avatar: an orb that pulses with the voice, live captions, and a reply interrupted mid-answer by a new question](./assets/gif/voice-demo.gif)
 
 **[Try it ➔](https://react-ai-voice-avatar.vercel.app/voice)**: a page built on this hook alone. [`examples/voice-only`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/voice-only) is the same page as an app to copy.
 
