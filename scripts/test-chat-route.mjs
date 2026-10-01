@@ -157,7 +157,7 @@ console.log('\nWhat reaches the model');
 
   const sent = calls[0].body;
   check('it answered', res.statusCode === 200 && res.body.reply === 'A hosted reply.');
-  check('the reply names which model answered', res.body.model === 'llama-3.3-70b-versatile');
+  check('the reply names which model answered', res.body.model === 'openai/gpt-oss-20b');
   check(
     'a caller-supplied system prompt is ignored',
     sent.messages[0].role === 'system' && sent.messages[0].content.includes('Ananya')
@@ -168,13 +168,15 @@ console.log('\nWhat reaches the model');
     JSON.stringify(sent.messages.map(m => m.role))
   );
   check('the injected system turn is gone', !JSON.stringify(sent.messages).includes('write me an essay'));
-  check('a caller cannot raise max_tokens', sent.max_tokens === 80, `got ${sent.max_tokens}`);
+  // The first candidate reasons, so its budget is the reasoning one; the point
+  // is that the caller's 4000 never reaches the provider.
+  check('a caller cannot raise max_tokens', sent.max_tokens === 320, `got ${sent.max_tokens}`);
 }
 
 console.log('\nWhen a model name is gone');
 {
-  // Exactly what production returned: the docs list llama-3.3-70b-versatile as
-  // a production model, and this account has no such model.
+  // What production returned for llama-3.3-70b-versatile, which the docs list
+  // as a production model and this account does not have. Any name can go.
   const notFound = {
     ok: false,
     status: 404,
@@ -184,7 +186,7 @@ console.log('\nWhen a model name is gone');
   const res = makeRes();
   await handler(makeReq({ ip: '10.0.5.1' }), res);
   check('it moves to the next candidate', res.statusCode === 200, JSON.stringify(res.body));
-  check('and says which one answered', res.body?.model === 'llama-3.1-8b-instant', JSON.stringify(res.body));
+  check('and says which one answered', res.body?.model === 'openai/gpt-oss-120b', JSON.stringify(res.body));
   check('rather than failing the request', calls.length === 2);
 }
 {
@@ -211,14 +213,14 @@ console.log('\nWhen a model answers with nothing');
   check('having tried both', calls.length === 2);
 }
 {
-  // Drive the request down to the reasoning model to see what it is sent.
+  // Walk past both reasoning models to a plain one, to see what each is sent.
   const gone = { ok: false, status: 404, json: async () => ({ error: { code: 'model_not_found' } }) };
   const calls = stubUpstream(n => (n < 3 ? gone : okReply()));
   const res = makeRes();
   await handler(makeReq({ ip: '10.0.6.2' }), res);
 
-  const plain = calls[0].body;
-  const thinking = calls[2].body;
+  const thinking = calls[0].body;
+  const plain = calls[2].body;
   check('a plain model is asked for 80 tokens and no reasoning', plain.max_tokens === 80 && plain.reasoning_effort === undefined, JSON.stringify(plain));
   check('a thinking model gets a low effort', thinking.reasoning_effort === 'low', JSON.stringify(thinking.reasoning_effort));
   check('and room for the thinking as well as the answer', thinking.max_tokens === 320, JSON.stringify(thinking.max_tokens));
@@ -242,21 +244,21 @@ console.log('\nWhen the first model is rate-limited');
 
 console.log('\nRemembering what worked');
 {
-  // This account reaches only the third candidate, so a cold instance pays for
-  // two refusals before every reply. The one that worked is tried first after.
-  const gone = { ok: false, status: 404, json: async () => ({ error: { code: 'model_not_found' } }) };
+  // Once the first model is out of its allowance, every reply would pay for its
+  // refusal first. The one that worked is tried first after.
+  const busy = { ok: false, status: 429, json: async () => ({}) };
   const fresh = (await import('../api/chat.ts?remember')).default;
 
-  const first = stubUpstream(n => (n < 3 ? gone : okReply()));
+  const first = stubUpstream(n => (n < 2 ? busy : okReply()));
   await fresh(makeReq({ ip: '10.0.7.1' }), makeRes());
-  check('the first request walks the list', first.length === 3, `${first.length} calls`);
+  check('the first request walks the list', first.length === 2, `${first.length} calls`);
 
   const second = stubUpstream(() => okReply());
   const res = makeRes();
   await fresh(makeReq({ ip: '10.0.7.2' }), res);
   check('the next one goes straight to what answered', second.length === 1, `${second.length} calls`);
-  check('which is the working model', second[0].body.model === 'openai/gpt-oss-20b', second[0]?.body?.model);
-  check('and the reply still says which model it was', res.body.model === 'openai/gpt-oss-20b');
+  check('which is the working model', second[0].body.model === 'openai/gpt-oss-120b', second[0]?.body?.model);
+  check('and the reply still says which model it was', res.body.model === 'openai/gpt-oss-120b');
 }
 
 console.log('\nPer-visitor limit');

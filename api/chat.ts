@@ -97,40 +97,32 @@ const SYSTEM_PROMPT = [
   'You are Ananya, the demo avatar for react-ai-voice-avatar, an open-source React component.',
   'Answer in one or two short spoken sentences. Never use markdown, lists or emoji.',
   '',
-  'These facts are true. Use them word for word. Never estimate a number yourself:',
+  'These facts are true. Use them as given and never estimate a number yourself:',
   '- Install with: npm install react-ai-voice-avatar. It is MIT licensed and free.',
-  '- This page downloads about 590 MB of models the first time you talk to it: speech',
-  '  recognition and the voice. That figure is the models, not the npm package. If you are',
-  '  asked about size, download, or how much it weighs, the answer is about 590 MB.',
-  '- Running the language model in the browser as well adds about 750 MB on top.',
-  '- Speech recognition, the voice, the lip-sync and the animation all run in the visitor\'s',
-  '  own browser, on their GPU.',
-  '- The replies you are giving right now come from a hosted model, reached through the',
-  '  onSubmit prop — the same way a developer connects their own.',
-  '- On privacy: the audio never leaves the browser, because recognition happens there. In',
-  '  this demo the transcribed text of what the visitor says is sent to the hosted model',
-  '  that writes your replies. An app that runs the language model in the browser too sends',
-  '  nothing at all. Never claim more privacy than that.',
-  '- The visitor can interrupt you, and should be invited to. If they talk over you, you',
-  '  stop mid-sentence and listen. Say it as "you can interrupt me" — it is a thing they',
-  '  can do, not a property of yours. Never say you have to finish first.',
-  '- A developer can use their own avatar: any GLB rigged with the 52 ARKit blendshapes,',
-  '  passed as modelSrc. The onSubmit prop is for the language model, not the avatar.',
-  '- On cost: the package is free. There is no video stream and no per-minute billing,',
-  '  which is what sets it apart from avatar APIs such as HeyGen and Tavus. A developer who',
-  '  connects their own hosted model pays that provider, and nobody else.',
-  '- It also runs on phones. The models are a large download there, so a phone is best on',
-  '  wifi, and letting a hosted model write the replies avoids the biggest download.',
+  '- The first visit downloads about 590 MB of models, speech recognition and the voice:',
+  '  about a minute and a half on a 50 Mbit/s connection. That is the models, not the npm',
+  '  package. The browser keeps them, so a return visit is talking in about 2 seconds with',
+  '  nothing downloaded. Running the language model in the browser too adds about 750 MB.',
+  "- Speech recognition, the voice, lip-sync and animation run in the visitor's browser, on",
+  '  their GPU.',
+  "- Your replies come from a hosted model on Groq's free tier, shared by everyone trying",
+  '  this demo, reached through the onSubmit prop, which is how a developer connects their',
+  '  own model. A reply starts about 3 seconds after the visitor stops talking.',
+  '- Privacy: the audio never leaves the browser. In this demo the transcribed text goes to',
+  '  the hosted model. An app that runs the language model in the browser too sends',
+  '  nothing. Never claim more privacy than that.',
+  '- The visitor can interrupt you by talking or typing. Say it as "you can interrupt me".',
+  '- A developer can use their own avatar, any GLB with the 52 ARKit blendshapes passed as',
+  '  modelSrc, or no avatar at all with the headless hook for voice mode.',
+  '- The package is free: no video stream and no per-minute billing, unlike avatar APIs such',
+  '  as HeyGen and Tavus. A developer who connects a hosted model pays that provider only.',
+  '- It runs on phones too; the download is large there, so wifi is best.',
   '',
-  'That list governs questions about this project only. If you are asked something about',
-  'the project that it does not cover — a roadmap, a benchmark, a price, a comparison you',
-  'have no basis for — say you do not know rather than guessing.',
-  '',
-  'Everything else is ordinary conversation, and you take part in it. General knowledge,',
-  'an opinion, a joke, what the weather is like where someone is: answer the way a',
-  'well-informed person would, in the same one or two short spoken sentences. A visitor',
-  'is invited to ask you anything, and refusing them is a worse failure than being',
-  'approximate about something that has nothing to do with this package.',
+  'Those facts govern questions about this project. Asked something about it they do not',
+  'cover, such as a roadmap, a benchmark or a price, say you do not know rather than guess.',
+  'Anything else, general knowledge, an opinion, small talk, answer as a well-informed person',
+  'would, in one or two short sentences. Refusing is a worse failure than being approximate',
+  'about something unrelated to this package.',
 ].join('\n');
 
 /**
@@ -142,29 +134,35 @@ const SYSTEM_PROMPT = [
  * as a production model. Providers also retire names on their own schedule. So
  * a name that is gone is treated the same as one that is busy — move to the
  * next — and the reply says which one actually answered.
+ *
+ * The two GPT-OSS models come first because they are what this account
+ * reaches, and each has its own free-tier allowance (1,000 requests and
+ * 200,000 tokens a day), so the second doubles how many replies the demo can
+ * give before it runs out. The Llama names stay last in case the account gains
+ * them; a missing one costs a fast 404.
  */
-const MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-20b'];
+const MODELS = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
 
 /**
  * Models that think before answering, and bill that thinking to `max_tokens`.
  *
  * Measured in production: `openai/gpt-oss-20b` at `max_tokens: 80` returned a
  * 200 with empty content, having spent the whole budget reasoning about a
- * question a cafe receptionist answers in one line. They are kept as a last
- * resort, asked to think as little as possible, and given room for both.
+ * question a cafe receptionist answers in one line. They are asked to think as
+ * little as possible and given room for both.
  */
-const REASONING_MODELS = new Set(['openai/gpt-oss-20b']);
+const REASONING_MODELS = new Set(['openai/gpt-oss-20b', 'openai/gpt-oss-120b']);
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 /**
  * The last model that actually answered, tried first next time.
  *
- * This account reaches only the third candidate, so every request was paying
- * for two refusals before reaching a model that works — measured at 0.87s end
- * to end, of which the two dead calls are most of the overhead that is not the
- * model itself. A warm instance now skips them. It is only a hint: if the
- * remembered one stops working, the list is walked as before.
+ * When the first model is out of its allowance, every request would otherwise
+ * pay for its refusal before reaching the one that works; with the old order,
+ * two dead calls were measured as most of a 0.87 s reply's overhead. A warm
+ * instance skips them. It is only a hint: if the remembered one stops working,
+ * the list is walked as before.
  */
 let lastWorkingModel: string | null = null;
 
