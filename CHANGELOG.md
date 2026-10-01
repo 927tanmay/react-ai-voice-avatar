@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+Voice mode on its own becomes a first-class way to use the package: the
+`/headless` hook, a page and an example for it, and an engine that no longer
+charges a download for the setups production apps actually choose. Models are
+kept between visits, so a returning visitor starts in seconds. The avatar
+gestures while it talks and stands straight, `speak()` starts on its first
+sentence, and an interruption, spoken or typed, now stops the voice cleanly.
+
+No breaking changes. New: `preloadLocalSpeech`, `onLocalSpeechReady`,
+`isLocalSpeechReady`, `activeTtsEngine` and `onTtsEngineChange`. One
+behaviour change worth knowing: supplying `onTranscribe` or `onSynthesize` now
+skips the local model it replaces instead of downloading it anyway.
 
 ### Typing works on every page, and cuts the avatar off cleanly
 

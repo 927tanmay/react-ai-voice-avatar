@@ -12,7 +12,7 @@
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-ai-voice-avatar": "^0.5.0"
+    "react-ai-voice-avatar": "^0.6.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
