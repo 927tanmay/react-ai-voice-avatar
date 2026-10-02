@@ -691,19 +691,28 @@ const isNonSpeech = (transcript: string): boolean => {
 
     let fullReplyText = '';
     let sentenceBuffer = '';
+    // Tokens generated so far. The text callback fires only once a word is
+    // whole, so it undercounts tokens and runs a token behind the first one.
+    // scripts/measure-latency.mjs reads both of these for time to first token
+    // and tokens per second; the hook ignores firstToken.
+    let tokenCount = 0;
     isInterrupted = false;
 
     const streamer = new TextStreamer(llmPipeline.tokenizer, {
       skip_prompt: true,
       skip_special_tokens: true,
+      token_callback_function: () => {
+        tokenCount++;
+        if (tokenCount === 1) self.postMessage({ type: 'firstToken', payload: { turn } });
+      },
       callback_function: (text: string) => {
         if (isInterrupted) {
           throw new Error('INTERRUPTED');
         }
         fullReplyText += text;
         sentenceBuffer += text;
-        
-        self.postMessage({ type: 'streamWord', payload: { word: text, fullText: fullReplyText } });
+
+        self.postMessage({ type: 'streamWord', payload: { word: text, fullText: fullReplyText, tokens: tokenCount } });
 
         const sentenceMatch = sentenceBuffer.match(/([.!?\u0964]|\n\n+)/);
         const minLen = currentTtsEngine === 'kokoro' ? 5 : 35;
