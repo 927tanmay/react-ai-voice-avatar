@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+Fixes and additions from the first app built on the package by someone else:
+an interview practice app, where answers run long and one answer can span
+several pauses.
+
+No breaking changes. New: `onSubmit`'s second argument `{ speechMs }`, the
+`react-ai-voice-avatar/model-cache` entry point, and the
+`AiVoiceAvatarSubmitDetails` type.
+
+- **Speech over 30 seconds is no longer cut off.** Whisper hears 30 seconds at
+  a time, and without chunking transformers.js keeps only the first 30 of a
+  longer recording. A 48-second answer is now transcribed whole, all 160 words,
+  in 3.4 s on an Apple M4. Shorter speech is one chunk, exactly as before.
+- **An empty reply from `onSubmit` ends the turn.** Returning `''`, or a stream
+  that closes without text, left the status on 'thinking' for good, and
+  `onInferenceEnd` never fired. It now means "say nothing and keep listening",
+  so an app can collect one answer across pauses. If the user is already
+  talking again when the empty reply lands, they keep the floor.
+- **`onSubmit(text, { speechMs })`** says how long the user spoke, from the
+  first frame the voice detector called speech to the last. The padding before
+  speech and the silence after it are not counted, so it can be used for a
+  speaking rate: a 48.6-second answer reported 48,672 ms. Undefined for
+  `sendText`.
+- **`react-ai-voice-avatar/model-cache`** exports `createModelCache` and
+  `isModelCacheSupported`, the OPFS store the engine keeps its models in, for
+  models of your own over Chrome's 256 MiB Cache API limit. It imports nothing
+  else, so it can be used inside a worker.
+
 ## 0.6.0
 
 Voice mode on its own becomes a first-class way to use the package: the

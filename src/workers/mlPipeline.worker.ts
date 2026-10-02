@@ -757,7 +757,9 @@ const isNonSpeech = (transcript: string): boolean => {
   }
 
   if (type === 'audioInput') {
-    const { blob, language = 'en', skipLlm = false } = payload;
+    // speechMs is the host's, passed back untouched with the transcript so it
+    // stays with the turn it was measured on.
+    const { blob, language = 'en', skipLlm = false, speechMs } = payload;
 
     // Recognition requested after startup skipped it may still be loading.
     if (!asrPipeline && asrLoading) await asrLoading;
@@ -767,7 +769,15 @@ const isNonSpeech = (transcript: string): boolean => {
     }
 
     try {
-      const asrResult = await asrPipeline(blob, { language: language, task: 'transcribe' });
+      // Whisper hears 30 seconds at a time. Without chunking, anything said
+      // after that is silently dropped, and a long answer is easily that long.
+      // Under 30 seconds this is one chunk, the same as no chunking at all.
+      const asrResult = await asrPipeline(blob, {
+        language: language,
+        task: 'transcribe',
+        chunk_length_s: 30,
+        stride_length_s: 5,
+      });
       // @ts-ignore
       const rawTranscript = asrResult.text || (Array.isArray(asrResult) ? asrResult[0].text : '');
       
@@ -776,7 +786,7 @@ const isNonSpeech = (transcript: string): boolean => {
         ? normalizeToDevanagari(rawTranscript)
         : rawTranscript;
 
-      self.postMessage({ type: 'transcript', payload: { text: transcript } });
+      self.postMessage({ type: 'transcript', payload: { text: transcript, speechMs } });
 
       if (skipLlm) return;
       await runLlmInference(transcript);
@@ -786,8 +796,8 @@ const isNonSpeech = (transcript: string): boolean => {
   }
 
   if (type === 'textInput') {
-    const { text, skipLlm = false } = payload;
-    self.postMessage({ type: 'transcript', payload: { text } });
+    const { text, skipLlm = false, speechMs } = payload;
+    self.postMessage({ type: 'transcript', payload: { text, speechMs } });
     
     if (skipLlm) return;
     await runLlmInference(text);

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>E2E: the model cache inside a worker</title>
+  </head>
+  <body>
+    <!-- Served by the dev server for tests/model-cache.spec.ts only. -->
+    <p id="result">running</p>
+    <script type="module">
+      const worker = new Worker(new URL('./model-cache.worker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = e => { document.getElementById('result').textContent = JSON.stringify(e.data); };
+      worker.onerror = e => { document.getElementById('result').textContent = JSON.stringify({ error: e.message }); };
+    </script>
+  </body>
+</html>

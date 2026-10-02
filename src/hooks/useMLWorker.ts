@@ -26,7 +26,8 @@ export interface UseMLWorkerConfig {
    * for them.
    */
   preloadSpeech?: boolean;
-  onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
+  /** `speechMs` is whatever was passed with the audio or text, returned with its transcript. */
+  onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar', speechMs?: number) => void;
   /** Fires when a local model requested after startup has finished loading. */
   onLocalLlmReady?: () => void;
   /**
@@ -48,8 +49,8 @@ export interface UseMLWorkerReturn {
   isAsrReady: boolean;
   /** The local MMS voice is loaded. Only ever true when MMS is the engine. */
   isMmsReady: boolean;
-  processAudio: (audioBlob: Float32Array, language: string, skipLlm?: boolean) => void;
-  processText: (text: string, skipLlm?: boolean) => void;
+  processAudio: (audioBlob: Float32Array, language: string, skipLlm?: boolean, speechMs?: number) => void;
+  processText: (text: string, skipLlm?: boolean, speechMs?: number) => void;
   synthesizeText: (text: string, isLast?: boolean) => void;
   clearHistory: () => void;
   loadLocalLlm: (history?: Array<{ role: string; content: string }>) => void;
@@ -192,7 +193,7 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
             } else if (type === 'loadingProgress') {
               configRef.current.loadingProgress?.(payload.pct, payload.model);
             } else if (type === 'transcript') {
-              configRef.current.onTranscriptUpdate?.(payload.text, 'user');
+              configRef.current.onTranscriptUpdate?.(payload.text, 'user', payload.speechMs);
             } else if (type === 'speechOutput') {
               if (typeof payload?.turn === 'number' && payload.turn !== turnRef.current) return;
               configRef.current.onTranscriptUpdate?.(payload.text, 'avatar');
@@ -286,19 +287,19 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     });
   }, [config.llmModel, isReady]);
 
-  const processAudio = useCallback((audioBlob: Float32Array, language: string, skipLlm: boolean = false) => {
+  const processAudio = useCallback((audioBlob: Float32Array, language: string, skipLlm: boolean = false, speechMs?: number) => {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
       type: 'audioInput',
-      payload: { blob: audioBlob, language, skipLlm, turn: turnRef.current }
+      payload: { blob: audioBlob, language, skipLlm, speechMs, turn: turnRef.current }
     });
   }, []);
 
-  const processText = useCallback((text: string, skipLlm: boolean = false) => {
+  const processText = useCallback((text: string, skipLlm: boolean = false, speechMs?: number) => {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
       type: 'textInput',
-      payload: { text, skipLlm, turn: turnRef.current }
+      payload: { text, skipLlm, speechMs, turn: turnRef.current }
     });
   }, []);
 

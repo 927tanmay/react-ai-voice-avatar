@@ -16,7 +16,7 @@ import type { VisemeWeights } from '../lib/visemeTable';
 
 // Re-exported from ../types so the headless entry never pulls in this module.
 export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarSubmitDetails } from '../types';
 
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
@@ -88,7 +88,15 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    */
   asrLanguage?: string;
 
-  onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
+  /**
+   * Answer the user with your own language model. Return the reply as a string,
+   * an async iterable of text or a ReadableStream; a stream is spoken a sentence
+   * at a time while the rest is still arriving. Return an empty string, or a
+   * stream that ends without text, to say nothing and keep listening.
+   *
+   * `details.speechMs` is how long the user spoke for this turn.
+   */
+  onSubmit?: (transcript: string, details: AiVoiceAvatarSubmitDetails) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
   /**
    * Download the in-browser language model in the background although
    * `onSubmit` is answering.

@@ -56,6 +56,39 @@ if (fs.existsSync(esmPath)) {
   }
 }
 
+// 4. Every subpath in "exports" points at files the build produced
+for (const [subpath, targets] of Object.entries(pkg.exports ?? {})) {
+  for (const target of new Set(Object.values(targets))) {
+    if (!fs.existsSync(path.join(rootDir, target))) {
+      console.error(`[FAIL] exports "${subpath}" points at ${target}, which the build did not produce.`);
+      errors++;
+    }
+  }
+}
+console.log('[PASS] Checked every "exports" entry against dist.');
+
+// 5. The model cache is imported inside workers, so it may import nothing but
+// its own files: one bare import would pull a package, React say, into them.
+const seen = new Set();
+const walk = (file) => {
+  if (seen.has(file)) return;
+  seen.add(file);
+  const source = fs.readFileSync(file, 'utf8');
+  for (const [, spec] of source.matchAll(/(?:import|export)[^'"]*?from\s*['"]([^'"]+)['"]/g)) {
+    if (!spec.startsWith('.')) {
+      console.error(`[FAIL] ${path.relative(rootDir, file)} imports "${spec}"; the model cache must stand alone.`);
+      errors++;
+    } else {
+      walk(path.resolve(path.dirname(file), spec));
+    }
+  }
+};
+const modelCacheEntry = path.join(distDir, 'model-cache.js');
+if (fs.existsSync(modelCacheEntry)) {
+  walk(modelCacheEntry);
+  console.log(`[PASS] dist/model-cache.js stands alone (${seen.size} files).`);
+}
+
 if (errors > 0) {
   console.error(`\n[Smoke Test] FAILED with ${errors} error(s).`);
   process.exit(1);

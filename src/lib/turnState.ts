@@ -56,6 +56,15 @@ export type TurnEvent =
   | 'reply-finished'
   /** Promised audio never arrived. */
   | 'reply-stalled'
+  /**
+   * onSubmit answered with nothing: the host is choosing to stay quiet and keep
+   * listening, for instance to gather one answer across several pauses.
+   *
+   * Only 'thinking' accepts it. By the time it arrives the user may already be
+   * speaking again, and an empty answer to the last pause must not take the
+   * floor from them.
+   */
+  | 'reply-empty'
   /** Transcription, generation or synthesis failed. */
   | 'pipeline-failed';
 
@@ -102,6 +111,7 @@ const TRANSITIONS: Record<TurnStatus, Partial<Record<TurnEvent, TurnStatus>>> = 
     'reply-audio-started': 'speaking',
     'reply-finished': 'idle',
     'reply-stalled': 'idle',
+    'reply-empty': 'idle',
     'pipeline-failed': 'idle',
     'stop-requested': 'idle',
     'user-started-speaking': 'listening',

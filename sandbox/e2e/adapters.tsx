@@ -12,6 +12,8 @@ type Probe = {
   statuses: string[];
   synthesized: string[];
   submitted: string[];
+  /** How many turns onInferenceEnd has closed. */
+  inferenceEnded: number;
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -19,7 +21,10 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0 };
+const params = new URLSearchParams(location.search);
+/** ?reply=empty or ?reply=empty-stream: the host answers with nothing. */
+const replyMode = params.get('reply');
 (window as unknown as { __e2e: Probe }).__e2e = probe;
 
 /** Half a second of a quiet tone at 24 kHz, standing in for a cloud voice. */
@@ -33,13 +38,16 @@ const App: React.FC = () => {
   const [adapters, setAdapters] = useState(true);
   const { status, sendText, startListening, activeTtsEngine } = useAiVoiceAvatar({
     // ?preload=1: fetch the local hearing and voice behind the adapters.
-    preloadLocalSpeech: new URLSearchParams(location.search).has('preload'),
+    preloadLocalSpeech: params.has('preload'),
     onLocalSpeechReady: () => { probe.localSpeechReady = true; },
     onTranscribe: adapters ? async () => 'unused: the test types rather than speaks' : undefined,
     onSubmit: async text => {
       probe.submitted.push(text);
+      if (replyMode === 'empty') return '';
+      if (replyMode === 'empty-stream') return (async function* () {})();
       return 'This is the reply.';
     },
+    onInferenceEnd: () => { probe.inferenceEnded++; },
     onSynthesize: adapters
       ? async text => {
           probe.synthesized.push(text);

@@ -69,6 +69,11 @@
       "types": "./dist/headless.d.ts",
       "import": "./dist/headless.js",
       "default": "./dist/headless.js"
+    },
+    "./model-cache": {
+      "types": "./dist/model-cache.d.ts",
+      "import": "./dist/model-cache.js",
+      "default": "./dist/model-cache.js"
     }
   },
   "peerDependencies": {

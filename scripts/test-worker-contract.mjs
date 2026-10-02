@@ -187,7 +187,7 @@ console.log('\nAudio from an interrupted turn is dropped');
 check(
   'both hooks send their turn with every request that produces speech',
   /payload: \{ text, isLast, turn: turnRef\.current \}/.test(kokoroHook) &&
-    /payload: \{ text, skipLlm, turn: turnRef\.current \}/.test(mlHook) &&
+    /payload: \{ text, skipLlm, speechMs, turn: turnRef\.current \}/.test(mlHook) &&
     /payload: \{ text, isLast, turn: turnRef\.current \}/.test(mlHook)
 );
 check(
@@ -198,6 +198,22 @@ check(
   'both hooks advance it on interrupt and drop audio from an older turn',
   /turnRef\.current \+= 1/.test(kokoroHook) && /turnRef\.current \+= 1/.test(mlHook) &&
     /isStale\(payload\)/.test(kokoroHook) && /payload\.turn !== turnRef\.current/.test(mlHook)
+);
+
+console.log('\nHow long the user spoke reaches onSubmit with its own turn');
+check(
+  'the hook sends speechMs with the audio and with transcribed text',
+  /payload: \{ blob: audioBlob, language, skipLlm, speechMs,/.test(mlHook) &&
+    /payload: \{ text, skipLlm, speechMs,/.test(mlHook)
+);
+check(
+  'the worker returns it with the transcript, from both inputs',
+  (worker.match(/type: 'transcript', payload: \{ text(: transcript)?, speechMs \}/g) ?? []).length === 2
+);
+check(
+  'the hook hands it on, and the engine passes it to onSubmit',
+  /onTranscriptUpdate\?\.\(payload\.text, 'user', payload\.speechMs\)/.test(mlHook) &&
+    /onSubmit\(text, \{ speechMs \}\)/.test(engine)
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

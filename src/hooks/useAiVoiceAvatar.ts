@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails } from '../types';
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech } from '../lib/speechChunks';
@@ -106,7 +106,15 @@ export interface UseAiVoiceAvatarConfig {
   systemPrompt?: string;
   asrLanguage?: string;
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
-  onSubmit?: (transcript: string) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
+  /**
+   * Answer the user with your own language model. Return the reply as a string,
+   * an async iterable of text or a ReadableStream; a stream is spoken a sentence
+   * at a time while the rest is still arriving. Return an empty string, or a
+   * stream that ends without text, to say nothing and keep listening.
+   *
+   * `details.speechMs` is how long the user spoke for this turn.
+   */
+  onSubmit?: (transcript: string, details: AiVoiceAvatarSubmitDetails) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
   /**
    * Download the in-browser language model in the background even though
    * `onSubmit` is supplying the replies.
@@ -282,6 +290,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * callers share one permission prompt rather than racing to open the device.
    */
   const micSetupRef = useRef<Promise<boolean> | null>(null);
+  /**
+   * Frames counted by the voice detector, to measure how long the user spoke.
+   *
+   * The audio it hands over is no use for that: it carries up to
+   * `preSpeechPadMs` from before the first word and the whole `redemptionMs` of
+   * silence after the last, over two seconds with the defaults. Counting from
+   * the first frame called speech to the last leaves only the speaking.
+   */
+  const speechFramesRef = useRef({ index: 0, first: 0, last: 0, msPerFrame: 0 });
   // Every source currently scheduled on the audio thread, including ones that
   // have not started yet. Barge-in has to stop all of them, not just the audible
   // one, or interrupted speech keeps arriving after the user starts talking.
@@ -772,7 +789,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         handleSpeechEnd();
       }
     },
-    onTranscriptUpdate: (text, speaker) => {
+    onTranscriptUpdate: (text, speaker, speechMs) => {
       // Deliberately not logged: this is the content of the conversation, and it
       // used to be printed to the console on every turn. Consumers who want it
       // receive it through their own onTranscriptUpdate below.
@@ -781,9 +798,19 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         // We have a transcript and an onSubmit override.
         // We skip local LLM inside worker, and process either a string or a real-time stream here.
         rememberHostedTurn('user', text);
-        Promise.resolve(configRef.current.onSubmit(text))
+        // An empty answer means "say nothing and keep listening". The turn
+        // still has to end, or the status stays on 'thinking' for good.
+        const settleWithoutReply = () => {
+          advance('reply-empty');
+          configRef.current.onInferenceEnd?.();
+          resumeVadIfAllowed();
+        };
+        Promise.resolve(configRef.current.onSubmit(text, { speechMs }))
           .then(async (result: any) => {
-            if (!result) return;
+            if (!result || (typeof result === 'string' && !result.trim())) {
+              settleWithoutReply();
+              return;
+            }
 
             // Check if result is an AsyncIterable or ReadableStream (e.g. OpenAI SDK / LangChain / Vercel AI)
             const isAsyncIterable = typeof result[Symbol.asyncIterator] === 'function';
@@ -829,6 +856,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               if (sentenceBuffer.trim().length > 0) {
                 synthesizeText(sentenceBuffer.trim(), true);
                 spoken += sentenceBuffer.trim();
+              }
+              // A stream that closed without a word is an empty answer too.
+              if (!spoken) {
+                settleWithoutReply();
+                return;
               }
               rememberHostedTurn('assistant', spoken);
             } else {
@@ -1029,9 +1061,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * identity too, and re-running that would tear down the audio device and ask
    * the user for permission a second time in the middle of a conversation.
    */
-  const handleVadSpeechEndRef = useRef<(audio: Float32Array) => void>(() => {});
+  const handleVadSpeechEndRef = useRef<(audio: Float32Array, speechMs?: number) => void>(() => {});
   useEffect(() => {
-    handleVadSpeechEndRef.current = async (audio: Float32Array) => {
+    handleVadSpeechEndRef.current = async (audio: Float32Array, speechMs?: number) => {
       // The user has finished speaking, so a reply is wanted again. This
       // reopens the gate that barge-in closed; leaving it shut would silence
       // the answer to the very sentence that interrupted.
@@ -1067,7 +1099,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           if (text && text.trim()) {
             // Pipe the text into the standard LLM / onSubmit flow
             configRef.current.onTranscriptUpdate?.(text, 'user');
-            processText(text, !!configRef.current.onSubmit);
+            processText(text, !!configRef.current.onSubmit, speechMs);
           } else {
             advance('pipeline-failed');
             configRef.current.onInferenceEnd?.();
@@ -1085,7 +1117,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       const langCode = configRef.current.asrLanguage === 'hi-IN' ? 'hi' :
                        configRef.current.asrLanguage?.split('-')[0] || 'en';
 
-      processAudio(audio, langCode, !!configRef.current.onSubmit);
+      processAudio(audio, langCode, !!configRef.current.onSubmit, speechMs);
     };
   }, [processAudio, processText, resumeVadIfAllowed]);
 
@@ -1191,6 +1223,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         // namespace or be nested under `default`. Accept both.
         const vadModule: any = await import('@ricky0123/vad-web');
         const vad = vadModule?.MicVAD ? vadModule : (vadModule?.default ?? vadModule);
+        const detection = { ...SPEECH_DETECTION_DEFAULTS, ...(configRef.current.speechDetection ?? {}) };
         const myvad = await vad.MicVAD.new({
           getStream: acquireStream,
           resumeStream: acquireStream,
@@ -1204,8 +1237,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           // speaking, which is what they are.
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
           onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/",
-          ...SPEECH_DETECTION_DEFAULTS,
-          ...(configRef.current.speechDetection ?? {}),
+          ...detection,
+          /** Every frame, speech or not, about ten a second. Kept to counting. */
+          onFrameProcessed: (probs: { isSpeech: number }, frame: Float32Array) => {
+            const frames = speechFramesRef.current;
+            frames.index++;
+            frames.msPerFrame = frame.length / 16; // 16 kHz
+            if (probs.isSpeech >= detection.positiveSpeechThreshold) frames.last = frames.index;
+          },
           /**
            * A single frame crossed the threshold. That is all this means.
            *
@@ -1218,6 +1257,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           onSpeechStart: () => {
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
+
+            // Reported straight after the frame that set it off, so that frame
+            // is the first one of speech.
+            speechFramesRef.current.first = speechFramesRef.current.index;
 
             clearWatchdog();
             suspendPlayback();
@@ -1260,7 +1303,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           onSpeechEnd: (audio: Float32Array) => {
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return;
-            handleVadSpeechEndRef.current(audio);
+            const frames = speechFramesRef.current;
+            const speechMs = Math.max(1, frames.last - frames.first + 1) * frames.msPerFrame;
+            handleVadSpeechEndRef.current(audio, Math.round(speechMs));
           },
           /**
            * The sound stopped before it ever became speech. A cough, in short.

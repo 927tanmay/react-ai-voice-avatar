@@ -76,3 +76,32 @@ test('cloud adapters with preloadLocalSpeech: ready at once, local speech downlo
   await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
   await expect.poll(() => page.evaluate(() => (window as any).__e2e.synthesized.length), { timeout: 15_000 }).toBeGreaterThan(0);
 });
+
+/**
+ * An empty answer from onSubmit means "say nothing and keep listening", so a
+ * host can gather one answer across several pauses. It used to leave the
+ * status on 'thinking' for good, with onInferenceEnd never called.
+ */
+for (const reply of ['empty', 'empty-stream']) {
+  test(`cloud adapters: an ${reply} reply ends the turn quietly`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(String(e)));
+
+    await page.goto(`/e2e/adapters.html?reply=${reply}`);
+    await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
+
+    await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
+    await expect.poll(() => page.evaluate(() => (window as any).__e2e.inferenceEnded), { timeout: 15_000 }).toBe(1);
+    await expect(page.locator('#status')).toHaveText('idle');
+
+    // And the next turn is taken as normal.
+    await page.evaluate(() => (window as any).__e2e.sendText('And another thing'));
+    await expect.poll(() => page.evaluate(() => (window as any).__e2e.inferenceEnded), { timeout: 15_000 }).toBe(2);
+
+    const probe = await page.evaluate(() => (window as any).__e2e);
+    expect(probe.submitted).toEqual(['Hello there', 'And another thing']);
+    expect(probe.synthesized).toEqual([]);
+    expect(probe.statuses).toContain('thinking');
+    expect(errors).toEqual([]);
+  });
+}

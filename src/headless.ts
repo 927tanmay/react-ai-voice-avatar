@@ -21,4 +21,4 @@ export type {
 export { StatusPill } from './components/StatusPill';
 export type { StatusPillProps } from './components/StatusPill';
 
-export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from './types';
+export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails } from './types';

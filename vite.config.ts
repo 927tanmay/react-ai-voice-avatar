@@ -36,6 +36,9 @@ export default defineConfig({
         // Second entry so consumers who only want the voice loop never resolve
         // a module that imports three.js. See src/headless.ts.
         headless: resolve(import.meta.dirname, 'src/headless.ts'),
+        // Third, so a model of the host's own can use the engine's model storage
+        // from inside a worker. See src/model-cache.ts.
+        'model-cache': resolve(import.meta.dirname, 'src/model-cache.ts'),
       },
       name: 'ReactAiVoiceAvatar',
       formats: ['es'],

@@ -388,6 +388,26 @@ onSubmit={async function* (text) {
 }}
 ```
 
+### Staying quiet, and how long they spoke
+
+Return an empty string (or a stream that ends without text) and the avatar says
+nothing: the turn ends and it keeps listening. That lets you gather one answer
+across several pauses, replying only once the user has finished.
+
+The second argument says how long the user spoke, from their first word to their
+last. The padding kept from before speech and the silence waited out after it
+are left out, so it is the figure for a speaking rate. It is `undefined` for
+text sent with `sendText`.
+
+```tsx
+onSubmit={async (text, { speechMs }) => {
+  answer += ' ' + text;
+  if (!answerIsComplete(answer)) return ''; // say nothing, keep listening
+  const wpm = speechMs ? text.split(/\s+/).length / (speechMs / 60000) : undefined;
+  return askMyBackend(answer, { wpm });
+}}
+```
+
 ---
 
 ## 🗣️ Languages
@@ -529,6 +549,27 @@ people return to, call `navigator.storage.persist()` from a user gesture to ask
 the browser to keep it; the engine does not, because Firefox can answer that
 call with a permission prompt, and a library should not put one in front of
 your visitors unasked.
+
+#### Keeping your own models
+
+A model of your own that is over 256 MiB has the same problem. The store the
+engine uses is its own entry point, with no React and nothing else in it, so a
+worker that loads your model can import it:
+
+```ts
+import { env } from '@huggingface/transformers';
+import { createModelCache, isModelCacheSupported } from 'react-ai-voice-avatar/model-cache';
+
+if (isModelCacheSupported()) {
+  env.useCustomCache = true;
+  env.customCache = createModelCache();
+}
+```
+
+It is an ordinary `match` / `put` / `delete` cache, so anything that loads
+through one can use it. `onStoreFailed(url, reason)` reports a file that could
+not be kept, such as when the disk is full; the model still loads, and is
+downloaded again next visit.
 
 ---
 
@@ -704,7 +745,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `onUserInterrupt` | `() => void` | `undefined` | Fires when the user talks over the avatar and takes the floor. Only fires if the avatar actually had audio playing. |
 | `gestures` | `boolean \| number` | `true` | Hand and arm gestures while the avatar speaks: one hand or both brought up in front of the chest for each phrase, with small beats on stressed syllables, and the arms back at rest when it stops. `false` keeps the arms still; a number sets the size, `0` to `1.5`. Needs a skeleton with `LeftArm`, `LeftForeArm` and `LeftHand` and the right-hand equivalents; custom avatars without them simply do not gesture. |
 | `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! Fires with `0` and `'idle'` between turns, so a meter falls to rest rather than freezing. |
-| `onSubmit` | `(text: string) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. |
+| `onSubmit` | `(text: string, details: { speechMs?: number }) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. Return `''` to stay quiet and keep listening. `speechMs` is how long the user spoke. See [Staying quiet](#staying-quiet-and-how-long-they-spoke). |
 | `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
 | `onLocalLlmReady` | `() => void` | `undefined` | Fires once the model requested by `preloadLocalLlm` has loaded. Drop `onSubmit` here to hand the conversation over; the turns your backend answered are carried across, so the local model knows what was already said. |
 | `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. Receives one utterance as 16 kHz mono samples. |

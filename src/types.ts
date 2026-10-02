@@ -65,3 +65,16 @@ export interface AiVoiceAvatarError {
    */
   detail?: string;
 }
+
+/** What is known about the turn being handed to `onSubmit`, besides its text. */
+export interface AiVoiceAvatarSubmitDetails {
+  /**
+   * How long the user spoke, in milliseconds: from the first word the voice
+   * detector heard to the last, short pauses in between included. The padding
+   * kept before speech and the silence waited out after it are not counted, so
+   * this is the figure to divide words by for a speaking rate.
+   *
+   * Undefined for typed input from `sendText`, which was never spoken.
+   */
+  speechMs?: number;
+}

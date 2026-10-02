@@ -125,6 +125,21 @@ const cases = [
     expect: 'idle',
   },
   {
+    // onSubmit returned nothing: stay quiet and wait for more.
+    name: 'an empty reply ends the turn and the next one can begin',
+    start: 'idle',
+    events: ['user-started-speaking', 'user-stopped-speaking', 'reply-empty', 'user-started-speaking'],
+    expect: 'listening',
+  },
+  {
+    // The host gathers one answer across pauses, and the user carried on
+    // before the empty reply to the last pause came back.
+    name: 'a late empty reply cannot drop the user to idle',
+    start: 'thinking',
+    events: ['user-started-speaking', 'reply-empty'],
+    expect: 'listening',
+  },
+  {
     name: 'typed input interrupts a reply in progress',
     start: 'speaking',
     events: ['text-submitted'],

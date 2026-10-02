@@ -15,6 +15,8 @@ import { useAiVoiceAvatar } from 'react-ai-voice-avatar/headless';
  */
 type Turn = {
   end?: number; transcript?: number; reply?: number; audio?: number; text?: string;
+  /** How long the user spoke, as onSubmit is told. Only with ?reply=fixed. */
+  speechMs?: number;
   /** The language model, from the worker's own token stream. */
   firstToken?: number; firstText?: number; firstTokens?: number; firstSentence?: number;
   lastToken?: number; tokens?: number;
@@ -90,8 +92,11 @@ const App: React.FC = () => {
       }
     },
     onSubmit: replyMode === 'fixed'
-      ? async () => {
-          if (turnRef.current) turnRef.current.reply = performance.now();
+      ? async (_text, { speechMs }) => {
+          if (turnRef.current) {
+            turnRef.current.reply = performance.now();
+            turnRef.current.speechMs = speechMs;
+          }
           return 'The capital of France is Paris.';
         }
       : undefined,

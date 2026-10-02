@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => ({
     // would send `react-ai-voice-avatar/headless` to `src/index.ts/headless`.
     alias: mode === 'development' ? [
       { find: /^react-ai-voice-avatar\/headless$/, replacement: resolve(import.meta.dirname, '../src/headless.ts') },
+      { find: /^react-ai-voice-avatar\/model-cache$/, replacement: resolve(import.meta.dirname, '../src/model-cache.ts') },
       { find: /^react-ai-voice-avatar$/, replacement: resolve(import.meta.dirname, '../src/index.ts') },
     ] : [],
     dedupe: ['react', 'react-dom', 'three', '@react-three/fiber', '@react-three/drei']
