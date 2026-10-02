@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+## 0.7.0
 
 Fixes and additions from the first app built on the package by someone else:
 an interview practice app, where answers run long and one answer can span
