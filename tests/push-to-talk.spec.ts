@@ -59,12 +59,15 @@ test('push-to-talk: a held turn is handed over on release, once', async ({ page 
   const p = await probe(page);
   expect(p.submitted).toEqual(['What is the capital of France?']);
   expect(p.statuses).toEqual(expect.arrayContaining(['listening', 'thinking', 'speaking']));
-  // The sentence is under two seconds. Trimmed to it, with padding either
-  // side, the audio is well short of the nine-second hold.
+  // The loop repeats every 6.2 s, so a nine-second hold catches the sentence
+  // once or twice depending on where in the loop it began, and that differs
+  // between machines: once is about 3 s of audio after padding, twice about
+  // 8.5 s. Either way it is one turn, and the speech measured sits inside the
+  // audio sent. Exact trimming is checked in scripts/test-push-to-talk.mjs.
   expect(p.heard[0]).toBeGreaterThan(1);
-  expect(p.heard[0]).toBeLessThan(6);
+  expect(p.heard[0]).toBeLessThan(10);
   expect(p.speechMs[0]).toBeGreaterThan(500);
-  expect(p.speechMs[0]).toBeLessThan(4_000);
+  expect(p.speechMs[0]).toBeLessThanOrEqual(p.heard[0] * 1000);
 
   // Released means released: the microphone hears the loop again, and
   // nothing more is handed over.
@@ -77,13 +80,23 @@ test('push-to-talk: pressing during a reply stops it and takes the floor', async
   await page.goto('/e2e/adapters.html?listen=ptt&reply=long');
   await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
 
+  // Open the microphone first, and abandon that hold. The first press loads
+  // the voice detector from a CDN, which under parallel load can outlast the
+  // reply, leaving nothing to interrupt by the time the press lands.
+  await page.evaluate(() => (window as any).__e2e.startListening());
+  await expect(page.locator('#status')).toHaveText('listening', { timeout: 30_000 });
+  await page.evaluate(() => (window as any).__e2e.interrupt());
+  await expect(page.locator('#status')).toHaveText('idle');
+
   // An eight-second reply.
   await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
   await expect(page.locator('#status')).toHaveText('speaking', { timeout: 15_000 });
 
+  // interrupt() above reports itself too, so count from here.
+  const before = (await probe(page)).userInterrupts;
   await page.evaluate(() => (window as any).__e2e.startListening());
   await expect(page.locator('#status')).toHaveText('listening', { timeout: 15_000 });
-  expect((await probe(page)).userInterrupts).toBe(1);
+  expect((await probe(page)).userInterrupts).toBe(before + 1);
 
   // interrupt() abandons a hold: nothing is handed over.
   await page.evaluate(() => (window as any).__e2e.interrupt());
