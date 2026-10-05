@@ -714,9 +714,11 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onLocalSpeechReady: props.onLocalSpeechReady,
   });
 
+  // interrupt() first: in push-to-talk, stopListening() alone would hand over
+  // what was said during the hold, and Stop means abandon it.
   const handleStopOrPause = () => {
-    stopListening();
     interrupt();
+    stopListening();
   };
 
   useEffect(() => {

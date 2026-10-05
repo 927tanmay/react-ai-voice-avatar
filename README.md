@@ -471,6 +471,23 @@ Turn it off for a kiosk or a noisy room, where the avatar hearing its own voice
 through the speakers and stopping itself is worse than waiting. It is ignored in
 `push-to-talk`, which owns the floor explicitly.
 
+### Push-to-talk
+
+With `listenMode="push-to-talk"` the button decides when a turn ends, not a
+silence. Call `startListening()` when it goes down and `stopListening()` when it
+comes up: what was said in between is handed over as one turn, however long the
+pauses in it. Pressing during a reply stops the reply. `interrupt()` abandons a
+hold without sending it, and a hold with no speech in it sends nothing.
+
+```tsx
+<button
+  onPointerDown={() => voice.startListening()}
+  onPointerUp={() => voice.stopListening()}
+>
+  Hold to talk
+</button>
+```
+
 ### How a turn is decided
 
 Voice detection scores every 96ms frame for how much it sounds like speech. A
@@ -743,7 +760,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `asrLanguage`| `string` | `ttsLanguage` | Language to transcribe. Follows `ttsLanguage` by default, since a conversation is almost always held in one language. |
 | `showCaptions` | `boolean` | `true` | Renders a sleek glassmorphic subtitle overlay displaying spoken interaction dialog. |
 | `hideStatusPill`| `boolean` | `false` | When true, suppresses the default bottom-left microphone interactive control pill. |
-| `listenMode` | `'continuous' \| 'push-to-talk'` | `'continuous'` | `continuous` keeps the mic hot after the avatar finishes speaking naturally, but explicitly clicking Stop forces it off until tapped again. `push-to-talk` strictly requires manually tapping to start listening for every single turn. |
+| `listenMode` | `'continuous' \| 'push-to-talk'` | `'continuous'` | `continuous` keeps the mic hot after the avatar finishes speaking naturally, but explicitly clicking Stop forces it off until tapped again. `push-to-talk` listens only while held: `startListening()` on press, `stopListening()` on release sends the turn. See [Push-to-talk](#push-to-talk). |
 | `loadModels` | `boolean` | `true` | Set `false` to render the avatar without downloading any models, then flip it `true` when the visitor engages. For landing pages and widgets most visitors never talk to. Status stays `'loading'` until it is true and the models are up, so show your own call to action meanwhile. |
 | `onModelLoaded` | `() => void` | `undefined` | Fires once the 3D mesh is parsed and in the scene. Parsing a multi-megabyte GLB leaves the canvas empty for a few seconds; use this to hold a placeholder over it. |
 | `allowInterruption` | `boolean` | `true` | Lets the user talk over the avatar and cut it off mid-sentence. Turn off for a kiosk or noisy room, where the avatar hearing itself through the speakers is worse than waiting. Ignored in `push-to-talk`. See [Taking turns](#-taking-turns). |

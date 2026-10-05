@@ -61,6 +61,8 @@ jobs:
         run: npm run test:gestures
       - name: Speech chunks
         run: npm run test:speech-chunks
+      - name: Push-to-talk
+        run: npm run test:push-to-talk
       - name: Avatar symmetry
         run: npm run test:avatar-symmetry
 

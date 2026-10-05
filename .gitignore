@@ -20,6 +20,8 @@ yarn-error.log*
 pnpm-debug.log*
 .tempmediaStorage/
 *.wav
+# Spoken audio the browser tests play through a fake microphone.
+!tests/fixtures/*.wav
 *.bin
 
 # Environment & editor

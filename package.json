@@ -137,6 +137,7 @@
     "test:arm-rig": "node --experimental-strip-types scripts/test-arm-rig.mjs",
     "test:gestures": "node --experimental-strip-types scripts/test-gestures.mjs",
     "test:speech-chunks": "node --experimental-strip-types scripts/test-speech-chunks.mjs",
+    "test:push-to-talk": "node --experimental-strip-types scripts/test-push-to-talk.mjs",
     "test:avatar-symmetry": "node scripts/test-avatar-symmetry.mjs"
   },
   "overrides": {

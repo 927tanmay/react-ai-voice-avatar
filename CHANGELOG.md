@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Push-to-talk never sent anything.** Releasing the button only paused the
+  microphone, so the turn was dropped and the status stayed on `listening`.
+  `stopListening()` now hands over what was said while it was held, as one turn
+  however long the pauses in it, trimmed to the speech. A hold with no speech
+  sends nothing. Pressing during a reply now stops the reply and takes the
+  floor, and `interrupt()` abandons a hold. The component's Stop button
+  abandons rather than sends.
+
 ## 0.7.0
 
 Fixes and additions from the first app built on the package by someone else:

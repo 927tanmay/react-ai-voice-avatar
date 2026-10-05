@@ -5,6 +5,7 @@ import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorS
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech } from '../lib/speechChunks';
+import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
 
 const CRUMB = 'rava:kokoro-init-crashed';
 
@@ -299,6 +300,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * the first frame called speech to the last leaves only the speaking.
    */
   const speechFramesRef = useRef({ index: 0, first: 0, last: 0, msPerFrame: 0 });
+  /**
+   * Push-to-talk: every frame heard while the button is held, or null when it
+   * is not. stopListening hands the speech in it over; see lib/pushToTalk.ts.
+   */
+  const heldAudioRef = useRef<(HeldAudio & { msPerFrame: number }) | null>(null);
   // Every source currently scheduled on the audio thread, including ones that
   // have not started yet. Barge-in has to stop all of them, not just the audible
   // one, or interrupted speech keeps arriving after the user starts talking.
@@ -1243,7 +1249,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             const frames = speechFramesRef.current;
             frames.index++;
             frames.msPerFrame = frame.length / 16; // 16 kHz
-            if (probs.isSpeech >= detection.positiveSpeechThreshold) frames.last = frames.index;
+            const isSpeech = probs.isSpeech >= detection.positiveSpeechThreshold;
+            if (isSpeech) frames.last = frames.index;
+
+            // Push-to-talk keeps the lot. The detector's segments end on
+            // silence, and there the button ends the turn instead.
+            const held = heldAudioRef.current;
+            if (held) {
+              held.frames.push(frame);
+              held.speech.push(isSpeech);
+              held.msPerFrame = frames.msPerFrame;
+            }
           },
           /**
            * A single frame crossed the threshold. That is all this means.
@@ -1256,7 +1272,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
            */
           onSpeechStart: () => {
             if (isUnmountedRef.current) return;
-            if (configRef.current.listenMode === 'push-to-talk') return; // Should be paused anyway
+            // Push-to-talk took the floor when the button went down, and hands
+            // its audio over when it comes up, so none of these apply there.
+            if (configRef.current.listenMode === 'push-to-talk') return;
 
             // Reported straight after the frame that set it off, so that frame
             // is the first one of speech.
@@ -1407,17 +1425,60 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     const micReady = await ensureMicrophone();
     if (!micReady || !vadRef.current || isUnmountedRef.current) return;
 
+    if (configRef.current.listenMode === 'push-to-talk') {
+      // Pressing the button is taking the floor, as deliberately as anyone
+      // can, so a reply still under way stops now rather than being talked
+      // over. The gate is shut for the same reason barge-in shuts it: a chunk
+      // already in flight must not start playing while the button is down.
+      // Releasing reopens it.
+      if (statusRef.current === 'thinking' || statusRef.current === 'speaking') {
+        const wasSpeaking = scheduledSourcesRef.current.length > 0;
+        isInterruptedRef.current = true;
+        clearWatchdog();
+        stopAllScheduledAudio();
+        resetPlaybackState();
+        stopWorkerGenerationRef.current();
+        if (wasSpeaking) configRef.current.onUserInterrupt?.();
+      }
+      heldAudioRef.current = { frames: [], speech: [], msPerFrame: 0 };
+      vadRef.current.start();
+      advance('user-started-speaking');
+      return;
+    }
+
     vadRef.current.start();
     advance('listen-requested');
-  }, [isReady, ensureAudioContext, ensureMicrophone]);
+  }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance]);
 
   const stopListening = useCallback(() => {
+    // Push-to-talk: letting go of the button is the end of the turn, so what
+    // was said while it was held is handed over. This used to be dropped,
+    // leaving the status on 'listening' with nothing coming.
+    const held = heldAudioRef.current;
+    heldAudioRef.current = null;
+    if (held && configRef.current.listenMode === 'push-to-talk') {
+      vadRef.current?.pause();
+      const detection = { ...SPEECH_DETECTION_DEFAULTS, ...(configRef.current.speechDetection ?? {}) };
+      const speech = heldSpeech(held, {
+        msPerFrame: held.msPerFrame,
+        minSpeechMs: detection.minSpeechMs,
+        preSpeechPadMs: detection.preSpeechPadMs,
+      });
+      if (speech) {
+        handleVadSpeechEndRef.current(speech.audio, speech.speechMs);
+        return;
+      }
+      // Nothing said, or too little to be words. Fall through to a plain stop.
+    }
+
     isInterruptedRef.current = true;
     vadRef.current?.pause();
     advance('stop-requested');
   }, [advance]);
 
   const interrupt = useCallback(() => {
+    // Cancels a push-to-talk hold too: interrupt() is the way to abandon one.
+    heldAudioRef.current = null;
     isInterruptedRef.current = true;
     clearWatchdog();
     stopAllScheduledAudio();
