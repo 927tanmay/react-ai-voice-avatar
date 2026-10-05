@@ -29,6 +29,12 @@ runs the same thing on your own free key.
 
 ![Talking to the avatar: it answers with captions and gestures, is interrupted mid-answer, stops and answers the new question](./assets/gif/avatar-demo.gif)
 
+### 🧩 Built with it
+
+**[Interview Room](https://github.com/927tanmay/interview-room)**, a spoken mock interviewer I built on this package for the DEV Hacktoberfest challenge. Everything runs in the browser: Whisper, Gemma, Kokoro and the avatar. It uses the headless hook for its phone screen, the avatar for its video interview, `onSubmit` with its own Gemma worker, and `speechMs` for speaking pace. [Live demo ➔](https://interview-room-iooj.onrender.com)
+
+[![Interview Room: the home page, choosing a video interview with the avatar or a phone screen](./assets/showcase/interview-room.jpg)](https://github.com/927tanmay/interview-room)
+
 ---
 
 ## 🌟 Two Entry Points (How to use it)
