@@ -20,6 +20,8 @@ type Probe = {
   speechMs: (number | undefined)[];
   /** How many times onUserInterrupt fired. */
   userInterrupts: number;
+  /** Each piece of the reply as it began to play, from onSpeechStart. */
+  played: string[];
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -29,9 +31,13 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0 };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [] };
 const params = new URLSearchParams(location.search);
-/** ?reply=empty or ?reply=empty-stream: the host answers with nothing. */
+/**
+ * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
+ * ?reply=stream: three sentences streamed, the first of which the voice is
+ * slowest to synthesise. ?reply=stream-fail: the voice fails on the second.
+ */
 const replyMode = params.get('reply');
 /**
  * ?llm=<model>: no onSubmit, so the in-browser model answers and the host's
@@ -51,6 +57,13 @@ const tone = () => {
   for (let i = 0; i < pcm.length; i++) pcm[i] = 0.1 * Math.sin((2 * Math.PI * 440 * i) / 24000);
   return pcm;
 };
+
+/** Each longer than the 35 characters a cloud voice is given at minimum. */
+const STREAMED = [
+  'The first sentence is the longest of the three, and slow.',
+  'The second sentence is shorter and quick.',
+  'The third sentence closes the reply.',
+];
 
 const App: React.FC = () => {
   const [adapters, setAdapters] = useState(true);
@@ -73,13 +86,22 @@ const App: React.FC = () => {
       probe.speechMs.push(details.speechMs);
       if (replyMode === 'empty') return '';
       if (replyMode === 'empty-stream') return (async function* () {})();
+      if (replyMode?.startsWith('stream')) {
+        return (async function* () {
+          for (const sentence of STREAMED) yield sentence + ' ';
+        })();
+      }
       return 'This is the reply.';
     },
     onInferenceEnd: () => { probe.inferenceEnded++; },
+    onSpeechStart: text => { probe.played.push(text); },
     onUserInterrupt: () => { probe.userInterrupts++; },
     onSynthesize: adapters
       ? async text => {
           probe.synthesized.push(text);
+          // A long first sentence takes a cloud voice longer than a short second.
+          if (text.startsWith('The first')) await new Promise(r => setTimeout(r, 800));
+          if (replyMode === 'stream-fail' && text.startsWith('The second')) throw new Error('voice down');
           return tone();
         }
       : undefined,

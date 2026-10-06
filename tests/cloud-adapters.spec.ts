@@ -105,3 +105,43 @@ for (const reply of ['empty', 'empty-stream']) {
     expect(errors).toEqual([]);
   });
 }
+
+/**
+ * A streamed onSubmit reply sent each sentence to onSynthesize without waiting
+ * for the one before, and played the audio in the order it came back. A cloud
+ * voice answers a short sentence sooner than a long one, so the second
+ * sentence of a reply could be heard before the first.
+ */
+test('cloud adapters: a streamed reply is spoken in order, however long each sentence takes', async ({ page }) => {
+  // The stream ends on a full stop, so its last sentence went out promising
+  // more and the turn only closed when the stall watchdog gave up on it.
+  const stalls: string[] = [];
+  page.on('console', m => { if (/No further audio arrived/.test(m.text())) stalls.push(m.text()); });
+  await page.goto('/e2e/adapters.html?reply=stream');
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
+
+  await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
+  await expect.poll(async () => (await page.evaluate(() => (window as any).__e2e.played)).length, { timeout: 15_000 }).toBe(3);
+  // Three half-second sentences, then idle at once: well inside the watchdog's ten.
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 5_000 });
+
+  const probe = await page.evaluate(() => (window as any).__e2e);
+  expect(probe.played.map((t: string) => t.split(' ')[1])).toEqual(['first', 'second', 'third']);
+  expect(probe.inferenceEnded).toBe(1);
+  expect(stalls).toEqual([]);
+});
+
+test('cloud adapters: when the voice fails mid-reply, the rest of it is not spoken', async ({ page }) => {
+  await page.goto('/e2e/adapters.html?reply=stream-fail');
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
+
+  await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
+  await expect.poll(() => page.evaluate(() => (window as any).__e2e.inferenceEnded), { timeout: 15_000 }).toBe(1);
+  // Long enough for the third sentence to have played, had it been asked for.
+  await page.waitForTimeout(2_000);
+
+  const probe = await page.evaluate(() => (window as any).__e2e);
+  expect(probe.played.map((t: string) => t.split(' ')[1])).toEqual(['first']);
+  expect(probe.synthesized.map((t: string) => t.split(' ')[1])).toEqual(['first', 'second']);
+  await expect(page.locator('#status')).toHaveText('idle');
+});

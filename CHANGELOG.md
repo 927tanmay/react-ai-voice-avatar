@@ -17,6 +17,16 @@
   for an MMS voice that is never loaded. The status stayed on `thinking` for
   good. Sentences now go to `onSynthesize`, one at a time and in order, and
   any left over from an interrupted turn are dropped.
+- **A streamed `onSubmit` reply could be spoken out of order.** Each sentence
+  went to `onSynthesize` without waiting for the one before, and played in the
+  order the audio came back, so a quick short sentence could be heard before
+  the long one ahead of it. They now go one at a time, in order. If the voice
+  fails on one, the rest of the reply is dropped rather than spoken after the
+  turn has ended.
+- **A streamed reply ending on a full stop stayed on `speaking` for ten
+  seconds.** Its last sentence went out promising more, and only the stall
+  watchdog closed the turn. It now ends when the audio does, with your voice or
+  Kokoro. The MMS voice still waits for the watchdog.
 
 ## 0.7.0
 
