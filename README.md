@@ -29,6 +29,43 @@ runs the same thing on your own free key.
 
 ![Talking to the avatar: it answers with captions and gestures, is interrupted mid-answer, stops and answers the new question](./assets/gif/avatar-demo.gif)
 
+### 🧪 Status: beta
+
+The engine works and is tested on every push, but it has been checked on far
+fewer browsers and devices than it is meant for. Here is exactly where things
+stand, so you can decide what to verify yourself before shipping.
+
+**Tested**
+
+- Desktop Chrome on macOS (Apple M4, WebGPU), by hand: the live demo (local
+  speech, hosted replies) and the fully local setup.
+- Headless Chromium on Linux, in CI on every push: whole turns through your own
+  speech-to-text, model and voice, with stand-ins for the providers; real speech
+  through a fake microphone for push-to-talk; empty replies; sentences kept in
+  order; the in-browser model speaking in your voice; and that no model
+  downloads when you supply your own.
+
+**Not tested yet**
+
+- Safari on Mac, iPhone and iPad, and Firefox.
+- Real Android phones and iPhones: speed, memory, and the microphone.
+- Cloud speech against real providers, beyond the stand-ins in CI.
+- Long sessions. Nothing has yet held a conversation for 30 minutes and
+  checked memory and turn-taking along the way.
+
+The iPhone behaviour (the smaller MMS voice, and the guard that stops a tab
+reloading into the same crash) is built around Safari's known memory limits and has
+not been run on a device. The [compatibility](#-browser-compatibility-matrix) and
+[hardware](#-hardware-requirements) tables mark what is tested and what is
+expected.
+
+**Versions.** It is 0.x: a minor version can change behaviour. Since 0.6.0
+each [CHANGELOG](CHANGELOG.md) entry says at the top whether it breaks anything. Pin
+an exact version in production. If it fails on your device, an
+[issue](https://github.com/927tanmay/react-ai-voice-avatar/issues) with the
+browser, the device and the `onError` output is the most useful thing you can
+send.
+
 ### 🧩 Built with it
 
 **[Interview Room](https://github.com/927tanmay/interview-room)**, a spoken mock interviewer I built on this package for the DEV Hacktoberfest challenge. Everything runs in the browser: Whisper, Gemma, Kokoro and the avatar. It uses the headless hook for its phone screen, the avatar for its video interview, `onSubmit` with its own Gemma worker, and `speechMs` for speaking pace. [Live demo ➔](https://interview-room-iooj.onrender.com)
@@ -201,7 +238,7 @@ const [engaged, setEngaged] = useState(false);
 The live demo's landing page works this way.
 
 #### 📐 Architectural Best Practices
-- **Standard Import (`AiVoiceAvatar`)**: Recommended for full-screen applications where the avatar *is* the primary product (e.g., Kiosks, Digital Tutors). The browser aggressively downloads the 3D canvas and ML models immediately so the avatar is ready instantly.
+- **Standard Import (`AiVoiceAvatar`)**: Recommended for full-screen applications where the avatar *is* the primary product (e.g., Kiosks, Digital Tutors). The browser starts downloading the 3D canvas and ML models straight away, so the avatar is ready as early as it can be.
 - **Lazy Import (`AiVoiceAvatarLazy`)**: Recommended for widgets, modals, or sub-routes (e.g., a "Support Desk" chat bubble in a SaaS dashboard). Defers downloading the 1.5MB 3D engine and WebWorkers until the user actually opens the widget.
 
 ### ⚙️ Server Configuration (Optional Performance Boost)
@@ -273,7 +310,7 @@ export function App() {
         
         <OrbitControls target={[0, 0.05, 0]} />
         
-        {/* Connected Brain: Zero download, instant initialization! */}
+        {/* Connected Brain: your model answers, so no language model is downloaded */}
         <AiVoiceAvatar
           ref={avatarRef}
           avatarPreset="ananya"
@@ -733,8 +770,8 @@ Explore the canonical patterns in the `examples/` directory:
 | :--- | :--- | :--- |
 | **Live Interactive Demo** | [`sandbox`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/sandbox) | [**Deploy on Vercel ➔**](https://react-ai-voice-avatar.vercel.app/) — Our full-featured interactive testbed featuring live character switching (`ananya`, `aarav`), voice persona switching (`af_heart`, `am_michael`), real-time diagnostic probe metrics, and Leva 3D lighting controls. |
 | **Quickstart** | [`examples/quickstart`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/quickstart) | Minimal, zero-configuration plug-and-play AI voice avatar deployment with built-in studio lighting & sizing. |
-| **Local Kiosk** | [`examples/local-kiosk`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/local-kiosk) | 100% offline on-device retail & restaurant ordering kiosk with embedded menu reasoning. Demonstrates the **On-Device Brain**; operates without internet access once model weights are locally cached. |
-| **Connected App** | [`examples/hybrid-cloud`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/hybrid-cloud) | Illustrates the **Connected Brain** (`onSubmit`). Bypasses gigabyte-scale local LLM downloads by routing reasoning to OpenAI, Claude, or corporate APIs while keeping ASR, TTS, and 3D lip blending 100% on-device! |
+| **Local Kiosk** | [`examples/local-kiosk`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/local-kiosk) | Retail and restaurant ordering kiosk with the menu reasoning on the device. Demonstrates the **On-Device Brain**; works without internet once the models are stored. |
+| **Connected App** | [`examples/hybrid-cloud`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/hybrid-cloud) | Illustrates the **Connected Brain** (`onSubmit`). Bypasses gigabyte-scale local LLM downloads by routing reasoning to OpenAI, Claude, or corporate APIs while speech recognition, the voice and lip-sync stay on the device. |
 | **Voice Only** | [`examples/voice-only`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/voice-only) | Voice mode with **no avatar**, like ChatGPT or Gemini voice: the `react-ai-voice-avatar/headless` hook, an audio-reactive orb, live captions and interruption. No three.js in the bundle, and no backend needed to try it. |
 | **Groq Voice** | [`examples/groq-voice`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/groq-voice) | Voice mode on Groq's free tier with your own key: hearing, replies and voice start on Groq with nothing to download, the in-browser hearing and voice download behind the conversation (`preloadLocalSpeech`), and the page offers to switch when they are ready. Shows Groq's live limits. |
 | **Headless Custom UI**| [`examples/headless-custom-ui`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/headless-custom-ui)| Still renders the 3D avatar; for no avatar at all, see Voice Only above. Demonstrates hiding built-in DOM overlays (`hideStatusPill={true}`, `showCaptions={false}`), streaming transcripts into a custom enterprise UI, and controlling voice outputs imperatively via `ref.current?.speak(text)`. |
@@ -874,7 +911,7 @@ others) that the 3D component uses for lip-sync. A voice UI can ignore them.
 
 1. **Native WebGPU & WASM Degradation**:
    - Modern Chromium browsers (Chrome, Edge, Opera, Arc) on desktop and mobile platforms benefit from hardware-accelerated WebGPU neural execution.
-   - On systems without WebGPU, inference automatically falls back to multi-threaded WebAssembly (WASM) quantization without app crashes.
+   - On systems without WebGPU, inference falls back to WebAssembly (WASM), which is slower.
 2. **Persistent Local Caching**:
    - AI models (Whisper, Kokoro, the local language model) are downloaded once and kept in the browser's origin private file system, so later visits skip the download. See [Models are kept between visits](#models-are-kept-between-visits).
 
@@ -915,32 +952,38 @@ listed here and have both shipped.
 
 ## 🧭 Browser Compatibility Matrix
 
-This library heavily relies on modern Web APIs (WebGPU, WebGL, Web Audio, and Web Workers). It gracefully degrades when certain APIs are unavailable.
+The library relies on WebGL, Web Audio, Web Workers and, where available, WebGPU. Where WebGPU is missing the models run on WebAssembly instead, which is slower. **Only desktop Chrome has been tested.** The rest of this table is what the code is built to do, not what has been seen on that browser.
 
-| Browser | OS | 3D Rendering (WebGL) | Voice Synthesis (WebGPU/WASM) | Voice Recognition (Web Audio) | Status |
-|---|---|---|---|---|---|
-| **Chrome / Edge** | Windows, macOS, Android | ✅ Native | ✅ WebGPU (Ultra Fast) | ✅ Native | 🟢 Tier 1 (Recommended) |
-| **Safari / iOS** | macOS, iOS | ✅ Native | 🔄 Lightweight Models by Default | ✅ Native | 🟡 Supported |
-| **Firefox** | Windows, macOS | ✅ Native | ⚠️ WASM Fallback | ✅ Native | 🟡 Tier 2 (Slower TTS) |
+| Browser | Tested | What to expect |
+|---|---|---|
+| **Chrome, desktop** | ✅ macOS (Apple M4) by hand; Linux in CI | WebGPU for the models. The reference setup. |
+| **Edge, desktop** | Not yet | The same engine as Chrome, so expected to behave the same. |
+| **Chrome, Android** | Not yet | WebGPU on devices that have it, WebAssembly otherwise. Speed and memory not measured. |
+| **Safari, iPhone and iPad** | Not yet | Uses the smaller MMS voice to stay inside Safari's memory limit. Not run on a device. |
+| **Safari, macOS** | Not yet | Expected to work. Not checked. |
+| **Firefox** | Not yet | Expected to work, more slowly where WebGPU is unavailable. Not checked. |
+
+Tried it on one of these? An [issue](https://github.com/927tanmay/react-ai-voice-avatar/issues) saying what worked and what didn't fills in this table.
 
 > [!NOTE]
 > - **WebGPU** is currently enabled by default in Chrome/Edge. On browsers without WebGPU, the library automatically falls back to WASM execution. 
-> - **iOS/Safari Preemptive Fallback**: Safari and iOS impose strict memory limits that cause 80MB+ models (like Kokoro) to crash the tab. The engine automatically preempts this by forcing the lightweight MMS TTS model (~30MB) on iOS devices, and tracks crash breadcrumbs to prevent OOM reload loops.
+> - **iPhone and iPad**: Safari gives a tab far less memory than desktop browsers, and the Kokoro voice (~310 MB) is expected to exceed it, so the engine uses the smaller MMS voice on iOS. Elsewhere, if two page loads in a row start building Kokoro and never finish, that browser switches to the MMS voice rather than crash a third time. Neither has been seen on a real device yet.
 > - **Strict CSP Environments**: Safari and Firefox may block `blob:` worker execution depending on your Content-Security-Policy headers. If this occurs, host the `.worker.js` files statically and pass their base path via the `workerBaseUrl` prop.
 
 ---
 
 ## 💻 Hardware Requirements
 
-Running Neural Networks in the browser requires capable hardware. 
+Running neural networks in the browser needs capable hardware. The figures below are **estimates**: only an Apple M4 MacBook has been measured, and no phone has been tried yet.
 
-| Deployment Mode | Min RAM | GPU Requirement | Recommended Devices |
+| Deployment Mode | Estimated RAM | GPU | Tested on |
 |---|---|---|---|
-| **Connected Brain** (ASR + TTS only) | 4GB | None (WASM Fallback ok) | iPhone 11+, Mid-range Android (2021+), Any Laptop |
-| **Full Local AI** (ASR + 500M LLM + TTS) | 8GB | WebGPU Support Preferred | iPhone 13 Pro+, High-end Android (Snapdragon 8 Gen 1+), M1/M2 Macs, Modern PCs |
+| **Cloud speech** (your STT, model and voice) | Little beyond the page | None | Headless Chromium in CI, with stand-in providers |
+| **Connected Brain** (local speech, your model) | 4 GB | None; WebAssembly works, more slowly | Apple M4 MacBook, Chrome |
+| **Full Local AI** (local speech + 500M model) | 8 GB | WebGPU preferred | Apple M4 MacBook, Chrome |
 
 > [!TIP]
-> **Mobile Memory Limits**: Mobile browsers rigidly enforce memory limits per tab (often terminating tabs exceeding ~1GB). If your mobile app crashes "after some time", ensure you are utilizing the `Connected Brain` mode (`onSubmit` API) which offloads the heavy LLM memory footprint to your server while keeping ultra-fast lip-sync and TTS local.
+> **Mobile Memory Limits**: Mobile browsers rigidly enforce memory limits per tab (often terminating tabs exceeding ~1GB). If your mobile app crashes "after some time", ensure you are utilizing the `Connected Brain` mode (`onSubmit` API) which moves the language model's memory to your server while lip-sync and the voice stay local. On a phone, cloud speech uses the least memory of all.
 
 ---
 

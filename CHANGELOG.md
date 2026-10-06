@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Docs
+
+- **A "Status: beta" section** near the top of the README says what has been
+  tested (desktop Chrome, and headless Chromium in CI) and what has not
+  (Safari, Firefox, real phones, long sessions).
+- **The compatibility and hardware tables say what was tested.** They used to
+  list Safari, Firefox, iPhone 11+ and mid-range Android as supported without
+  any of them having been tried. "Ultra Fast" and "100% on-device" are gone,
+  and a code comment that promised "zero download" for a setup that downloads
+  the speech models now says what it actually skips.
+
 ### Fixed
 
 - **Push-to-talk never sent anything.** Releasing the button only paused the
