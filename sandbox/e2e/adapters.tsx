@@ -33,6 +33,11 @@ const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEn
 const params = new URLSearchParams(location.search);
 /** ?reply=empty or ?reply=empty-stream: the host answers with nothing. */
 const replyMode = params.get('reply');
+/**
+ * ?llm=<model>: no onSubmit, so the in-browser model answers and the host's
+ * onSynthesize speaks. tests/local-llm-host-voice.spec.ts serves a tiny one.
+ */
+const localLlm = params.get('llm');
 /** ?listen=ptt: push-to-talk, driven by startListening and stopListening. */
 const listenMode = params.get('listen') === 'ptt' ? 'push-to-talk' : 'continuous';
 (window as unknown as { __e2e: Probe }).__e2e = probe;
@@ -60,7 +65,10 @@ const App: React.FC = () => {
           return 'What is the capital of France?';
         }
       : undefined,
-    onSubmit: async (text, details) => {
+    llmModel: localLlm ?? undefined,
+    // ?tts=mms: the engine iPhones get by default.
+    ttsEngine: params.get('tts') === 'mms' ? 'mms' : undefined,
+    onSubmit: localLlm ? undefined : async (text, details) => {
       probe.submitted.push(text);
       probe.speechMs.push(details.speechMs);
       if (replyMode === 'empty') return '';

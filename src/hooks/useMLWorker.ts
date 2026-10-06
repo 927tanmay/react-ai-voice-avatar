@@ -274,6 +274,7 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
       payload: {
         asr: config.loadAsr !== false || !!config.preloadSpeech,
         tts: config.loadTts !== false || !!config.preloadSpeech,
+        hostVoice: config.loadTts === false,
       },
     });
   }, [config.loadAsr, config.loadTts, config.preloadSpeech, isReady]);

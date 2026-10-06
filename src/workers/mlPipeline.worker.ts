@@ -45,6 +45,12 @@ let currentTtsEngine: 'kokoro' | 'mms' = 'mms';
  */
 let wantAsr = true;
 let wantTts = true;
+/**
+ * The host speaks the replies through `onSynthesize`, so sentences go back as
+ * text for it, never through a local voice. Separate from wantTts, which is
+ * also true when the host preloads the local voice it is not yet using.
+ */
+let hostVoice = false;
 /** The recognition model to load if it is wanted after startup skipped it. */
 let deferredAsrModel = '';
 /** Resolves when a recognition model loaded after startup is ready. */
@@ -317,7 +323,11 @@ const processTtsQueue = async () => {
   if (isTtsProcessing) return;
   isTtsProcessing = true;
   while (ttsQueue.length > 0) {
-    if (!ttsPipeline && currentTtsEngine !== 'kokoro') {
+    // Kokoro runs in its own worker and the host's voice in the host, so for
+    // both the sentence goes back as text. Waiting here for MMS instead, which
+    // a host with its own voice never loads, left every reply queued for good.
+    const textOnly = hostVoice || currentTtsEngine === 'kokoro';
+    if (!textOnly && !ttsPipeline) {
       // MMS pipeline is still loading; pause queue processing.
       // switchTts will call processTtsQueue() when ready.
       isTtsProcessing = false;
@@ -330,7 +340,7 @@ const processTtsQueue = async () => {
     if (cleanText.length === 0) continue;
 
     try {
-      if (currentTtsEngine === 'kokoro') {
+      if (textOnly) {
         self.postMessage({
           type: 'speechOutput',
           payload: {
@@ -406,6 +416,7 @@ self.onmessage = async (e: MessageEvent) => {
     currentFallbackMode = fallbackMode;
     wantAsr = payload.loadAsr !== false;
     wantTts = payload.loadTts !== false;
+    hostVoice = payload.loadTts === false;
     deferredAsrModel = asrModel;
     console.log(
       `[ML Worker] Language ${ttsLanguage} → ` +
@@ -479,6 +490,9 @@ self.onmessage = async (e: MessageEvent) => {
   if (type === 'localModels') {
     wantAsr = payload.asr !== false;
     wantTts = payload.tts !== false;
+    hostVoice = payload.hostVoice === true;
+    // Sentences held back for a voice that is now the host's can go.
+    if (hostVoice) processTtsQueue();
 
     if (wantAsr && !asrPipeline && !asrLoading) {
       self.postMessage({ type: 'loadingProgress', payload: { model: 'asr', pct: 0 } });

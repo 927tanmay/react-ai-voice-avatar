@@ -755,6 +755,27 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     if (hostedHistoryRef.current.length > 6) hostedHistoryRef.current.shift();
   };
 
+  /**
+   * The in-browser model's reply, spoken in the host's voice.
+   *
+   * The worker hands each sentence back as text when the host supplies
+   * `onSynthesize`. They used to go to Kokoro, which is never started for such
+   * a host, so the reply vanished and the status stayed on 'thinking'.
+   *
+   * Sentences arrive faster than a cloud voice answers, and requests made side
+   * by side can finish out of order, so each waits for the one before. The
+   * next is still fetched while the previous one plays. A sentence from a turn
+   * that has since been abandoned is dropped rather than spoken into the next.
+   */
+  const hostVoiceChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const hostVoiceTurnRef = useRef(0);
+  const queueForHostVoice = (step: () => unknown) => {
+    const turn = hostVoiceTurnRef.current;
+    hostVoiceChainRef.current = hostVoiceChainRef.current
+      .then(() => (turn === hostVoiceTurnRef.current ? step() : undefined))
+      .catch(() => {});
+  };
+
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
   const { isReady: isMLReady, isAsrReady, isMmsReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, loadLocalLlm, interrupt: mlInterrupt } = useMLWorker({
     enabled: loadModels,
@@ -777,9 +798,15 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     onModelStorageFailed: msg => reportError('model-storage', `Not kept for next visit — ${msg}`, 'degraded'),
     onCapabilityDetected: config.onCapabilityDetected,
     loadingProgress: config.loadingProgress,
-    // Route text to Kokoro if Kokoro is active, otherwise play MMS audio
+    // Route text to the host's voice or Kokoro, otherwise play MMS audio
     onSpeechOutput: (audio, sampleRate, text, isLast) => {
-      if (activeTtsEngine === 'kokoro') {
+      if (configRef.current.onSynthesize) {
+        // Announced already, by the worker hook. A failed sentence ends the
+        // turn, so the rest of the reply is stopped rather than spoken after it.
+        queueForHostVoice(async () => {
+          if (!(await synthesizeText(text, isLast, false))) stopWorkerGenerationRef.current();
+        });
+      } else if (activeTtsEngine === 'kokoro') {
         kokoroSynthesize(text, isLast);
       } else if (audio && sampleRate) {
         handleSpeechOutput(audio, sampleRate, text, '', isLast);
@@ -789,7 +816,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     // so this stays a no-op; consumers who want the stream use onTranscriptUpdate.
     onStreamWord: undefined,
     onSpeechEnd: () => {
-      if (activeTtsEngine === 'kokoro') {
+      if (configRef.current.onSynthesize) {
+        queueForHostVoice(handleSpeechEnd);
+      } else if (activeTtsEngine === 'kokoro') {
         kokoroSpeechEnd();
       } else {
         handleSpeechEnd();
@@ -922,6 +951,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const stopWorkerGenerationRef = useRef<() => void>(() => {});
   useEffect(() => {
     stopWorkerGenerationRef.current = () => {
+      hostVoiceTurnRef.current++;
       try { mlInterrupt(); } catch (e) { /* worker already gone */ }
       try { kokoroInterrupt(); } catch (e) { /* worker already gone */ }
     };
@@ -1488,6 +1518,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     vadRef.current?.pause(); // ensure VAD is stopped
 
     // Immediately stop worker synthesis
+    hostVoiceTurnRef.current++;
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
   }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState]);

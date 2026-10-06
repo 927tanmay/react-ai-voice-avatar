@@ -11,6 +11,12 @@
   sends nothing. Pressing during a reply now stops the reply and takes the
   floor, and `interrupt()` abandons a hold. The component's Stop button
   abandons rather than sends.
+- **The in-browser model with your own voice was silent.** With no `onSubmit`
+  and an `onSynthesize`, every reply sentence went to Kokoro, which is never
+  started when you supply the voice, or, on the MMS engine iPhones use, waited
+  for an MMS voice that is never loaded. The status stayed on `thinking` for
+  good. Sentences now go to `onSynthesize`, one at a time and in order, and
+  any left over from an interrupted turn are dropped.
 
 ## 0.7.0
 
