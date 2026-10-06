@@ -1,17 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.7.1
 
-### Docs
+Four ways a conversation could get stuck or go wrong, fixed, and a README that
+now says what has been tested and what has not.
 
-- **A "Status: beta" section** near the top of the README says what has been
-  tested (desktop Chrome, and headless Chromium in CI) and what has not
-  (Safari, Firefox, real phones, long sessions).
-- **The compatibility and hardware tables say what was tested.** They used to
-  list Safari, Firefox, iPhone 11+ and mid-range Android as supported without
-  any of them having been tried. "Ultra Fast" and "100% on-device" are gone,
-  and a code comment that promised "zero download" for a setup that downloads
-  the speech models now says what it actually skips.
+No breaking changes and no new API. Push-to-talk now sends the turn when the
+button is released, which is what it was always documented to do.
 
 ### Fixed
 
@@ -38,6 +33,17 @@
   seconds.** Its last sentence went out promising more, and only the stall
   watchdog closed the turn. It now ends when the audio does, with your voice or
   Kokoro. The MMS voice still waits for the watchdog.
+
+### Docs
+
+- **A "Status: beta" section** near the top of the README says what has been
+  tested (desktop Chrome, and headless Chromium in CI) and what has not
+  (Safari, Firefox, real phones, long sessions).
+- **The compatibility and hardware tables say what was tested.** They used to
+  list Safari, Firefox, iPhone 11+ and mid-range Android as supported without
+  any of them having been tried. "Ultra Fast" and "100% on-device" are gone,
+  and a code comment that promised "zero download" for a setup that downloads
+  the speech models now says what it actually skips.
 
 ## 0.7.0
 
