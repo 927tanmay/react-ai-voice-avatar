@@ -47,9 +47,9 @@ button is released, which is what it was always documented to do.
 
 ## 0.7.0
 
-Fixes and additions from the first app built on the package by someone else:
-an interview practice app, where answers run long and one answer can span
-several pauses.
+Fixes and additions from building [Interview Room](https://github.com/927tanmay/interview-room),
+a mock interview app on the package, where answers run long and one answer can
+span several pauses.
 
 No breaking changes. New: `onSubmit`'s second argument `{ speechMs }`, the
 `react-ai-voice-avatar/model-cache` entry point, and the
