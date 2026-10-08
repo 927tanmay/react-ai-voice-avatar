@@ -1,0 +1,23 @@
+{
+  "name": "react-ai-voice-avatar-nextjs-voice",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Voice mode in a Next.js App Router app: the headless hook in a client component, replies from a route handler that keeps the key on the server.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-ai-voice-avatar": "^0.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.5.4"
+  }
+}
