@@ -3,5 +3,4 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 .env.local
-# Written by `next dev`
 AGENTS.md
