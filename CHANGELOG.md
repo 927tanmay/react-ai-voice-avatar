@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **An interrupted reply stopped playing, but was still read to the end.** The
+  rest of a streamed `onSubmit` reply went on to the voice under the next turn's
+  number, so its sentences could play into the next answer. The hook now stops
+  reading a reply once the user talks over it, `interrupt()` is called or a new
+  question arrives.
+- **A stream that went quiet for a tool call was treated as stalled.** After ten
+  seconds without audio the hook went back to listening, and the real answer
+  arrived into an idle conversation. While the stream is still open, the hook
+  now waits. Audio that turns up after a genuine stall is dropped instead of
+  playing with the status on `idle`.
+
+### Added
+
+- **`signal` in the second argument of `onSubmit`.** It is aborted when the reply
+  is no longer wanted. Pass it to `fetch` to cancel the request and the work
+  behind it.
+
 ## 0.7.1
 
 Four ways a conversation could get stuck or go wrong, fixed, and a README that

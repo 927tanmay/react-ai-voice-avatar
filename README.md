@@ -451,6 +451,24 @@ onSubmit={async (text, { speechMs }) => {
 }}
 ```
 
+### Stopping a reply
+
+A reply belongs to one turn. When the user talks over it, `interrupt()` is
+called, or a new question arrives, the hook stops reading it and aborts
+`signal`. Pass the signal to `fetch` so the request, and any model run or tool
+call behind it, stops too:
+
+```tsx
+onSubmit={async (text, { signal }) => {
+  const res = await fetch('/api/chat', { method: 'POST', body: JSON.stringify({ text }), signal });
+  return res.body;
+}}
+```
+
+A streamed reply may go quiet for as long as it needs, for a tool call for
+instance. The hook waits while the stream is open; it is your stream's job to
+end, or to fail, if the work behind it hangs.
+
 ---
 
 ## 🗣️ Languages

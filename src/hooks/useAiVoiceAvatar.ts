@@ -337,6 +337,26 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const isInterruptedRef = useRef(false);
 
   /**
+   * The reply an `onSubmit` handler is answering with, while it is current.
+   *
+   * A reply belongs to one turn. Once the user interrupts it or asks something
+   * else, it has to stop: the hook stops reading it, and the host is told
+   * through the signal so it can cancel the request and any work behind it.
+   * Reading on used to queue the rest of the old reply under the new turn's
+   * number, and it played into the next answer.
+   *
+   * `open` is true while the hook is still reading the stream. A stream may go
+   * quiet for a long time, a tool call for instance, and that is not a stall.
+   */
+  const submitRef = useRef<{ controller: AbortController; open: boolean } | null>(null);
+  /** Abandon the current `onSubmit` reply, if there is one. */
+  const cancelSubmit = useCallback(() => {
+    const current = submitRef.current;
+    submitRef.current = null;
+    current?.controller.abort();
+  }, []);
+
+  /**
    * Move the conversation on, if this event is legal where we are.
    *
    * Every status change goes through here. The functional form of setState
@@ -528,6 +548,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     }
 
     if (isWaitingForMoreRef.current) {
+      // A host stream that is still open has not stalled, only gone quiet: a
+      // model calling a tool says "Let me check" and then nothing for a while.
+      // Its end, or the user, closes the turn. The watchdog is for promised
+      // audio after the text has all arrived.
+      if (submitRef.current?.open) return;
       // More chunks are promised. Arm the watchdog so a stalled generator cannot
       // strand the pipeline in 'speaking' forever.
       if (!playbackWatchdogRef.current) {
@@ -539,6 +564,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           playbackWatchdogRef.current = null;
           isWaitingForMoreRef.current = false;
           resetPlaybackState();
+          // The turn is over, so audio that turns up late belongs to nobody.
+          // Without this it played anyway, with the status on 'idle'.
+          stopWorkerGenerationRef.current();
           advance('reply-stalled');
           configRef.current.onInferenceEnd?.();
           resumeVadIfAllowed();
@@ -843,8 +871,19 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           configRef.current.onInferenceEnd?.();
           resumeVadIfAllowed();
         };
-        Promise.resolve(configRef.current.onSubmit(text, { speechMs }))
+        // A new question supersedes whatever was still being read.
+        cancelSubmit();
+        const submit = { controller: new AbortController(), open: false };
+        submitRef.current = submit;
+        const isCurrent = () => submitRef.current === submit;
+        Promise.resolve(configRef.current.onSubmit(text, { speechMs, signal: submit.controller.signal }))
           .then(async (result: any) => {
+            if (!isCurrent()) {
+              // Abandoned before it answered. Let go of a stream it returned.
+              try { result?.cancel?.(); } catch (e) { /* not cancellable */ }
+              try { result?.return?.(); } catch (e) { /* not an iterator */ }
+              return;
+            }
             if (!result || (typeof result === 'string' && !result.trim())) {
               settleWithoutReply();
               return;
@@ -860,37 +899,56 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               let spoken = '';
               const iterator = isAsyncIterable ? result[Symbol.asyncIterator]() : null;
               const reader = isReadableStream ? result.getReader() : null;
-              
-              while (true) {
-                const step = iterator ? await iterator.next() : await reader!.read();
-                if (step.done) break;
-                
-                let chunk = step.value || '';
-                if (chunk instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(chunk))) {
-                  chunk = new TextDecoder().decode(chunk);
-                } else if (typeof chunk !== 'string') {
-                  chunk = String(chunk);
-                }
-                
-                sentenceBuffer += chunk;
-                const sentenceMatch = sentenceBuffer.match(/([.!?\u0964]|\n\n+)/);
-                const minLen = configRef.current.ttsEngine === 'kokoro' ? 5 : 35;
-                if ((sentenceMatch && sentenceBuffer.trim().length > minLen) || sentenceBuffer.trim().length > 150) {
-                  const splitIdx = sentenceMatch 
-                    ? sentenceBuffer.lastIndexOf(sentenceMatch[0]) + sentenceMatch[0].length 
-                    : sentenceBuffer.lastIndexOf(' ') + 1;
+              /** Stop reading an abandoned reply, and tell its source. */
+              const release = () => {
+                try { reader?.cancel()?.catch?.(() => {}); } catch (e) { /* already closed */ }
+                try { iterator?.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
+              };
 
-                  if (splitIdx > 0) {
-                    const phrase = sentenceBuffer.substring(0, splitIdx).trim();
-                    sentenceBuffer = sentenceBuffer.substring(splitIdx);
-                    if (phrase.length > 0) {
-                      queueSentence(phrase, false);
-                      spoken += (spoken ? ' ' : '') + phrase;
+              submit.open = true;
+              try {
+                while (true) {
+                  const step = iterator ? await iterator.next() : await reader!.read();
+                  if (!isCurrent()) {
+                    release();
+                    return;
+                  }
+                  if (step.done) break;
+                
+                  let chunk = step.value || '';
+                  if (chunk instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(chunk))) {
+                    chunk = new TextDecoder().decode(chunk);
+                  } else if (typeof chunk !== 'string') {
+                    chunk = String(chunk);
+                  }
+                
+                  sentenceBuffer += chunk;
+                  const sentenceMatch = sentenceBuffer.match(/([.!?\u0964]|\n\n+)/);
+                  const minLen = configRef.current.ttsEngine === 'kokoro' ? 5 : 35;
+                  if ((sentenceMatch && sentenceBuffer.trim().length > minLen) || sentenceBuffer.trim().length > 150) {
+                    const splitIdx = sentenceMatch 
+                      ? sentenceBuffer.lastIndexOf(sentenceMatch[0]) + sentenceMatch[0].length 
+                      : sentenceBuffer.lastIndexOf(' ') + 1;
+
+                    if (splitIdx > 0) {
+                      const phrase = sentenceBuffer.substring(0, splitIdx).trim();
+                      sentenceBuffer = sentenceBuffer.substring(splitIdx);
+                      if (phrase.length > 0) {
+                        queueSentence(phrase, false);
+                        spoken += (spoken ? ' ' : '') + phrase;
+                      }
                     }
                   }
                 }
+              } finally {
+                submit.open = false;
               }
               
+              // The stream is closed, so promised audio that never comes is a
+              // stall again. Checked now, in case playback had already run dry
+              // while the stream was quiet.
+              if (isWaitingForMoreRef.current) finishIfDrained();
+
               if (sentenceBuffer.trim().length > 0) {
                 queueSentence(sentenceBuffer.trim(), true);
                 spoken += (spoken ? ' ' : '') + sentenceBuffer.trim();
@@ -919,6 +977,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             }
           })
           .catch((err) => {
+            // Abandoned on purpose. A host that passed the signal to fetch
+            // sees its request rejected, and that is not a failure.
+            if (!isCurrent()) return;
             console.error('onSubmit streaming error:', err);
             advance('pipeline-failed');
             configRef.current.onInferenceEnd?.();
@@ -963,6 +1024,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const stopWorkerGenerationRef = useRef<() => void>(() => {});
   useEffect(() => {
     stopWorkerGenerationRef.current = () => {
+      cancelSubmit();
       voiceQueueTurnRef.current++;
       try { mlInterrupt(); } catch (e) { /* worker already gone */ }
       try { kokoroInterrupt(); } catch (e) { /* worker already gone */ }
@@ -1353,6 +1415,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // Stopping the workers is a message, not an instruction that has
             // already taken effect. Cleared when the turn resolves, either way.
             isInterruptedRef.current = true;
+            // The reply is being talked over, so the host can stop paying for
+            // it now rather than when the user finishes.
+            cancelSubmit();
 
             advance('user-started-speaking');
 
@@ -1416,7 +1481,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (!ok && micSetupRef.current === setup) micSetupRef.current = null;
     });
     return setup;
-  }, [ensureAudioContext, clearWatchdog, reportError, suspendPlayback, resumePlayback, advance]);
+  }, [ensureAudioContext, clearWatchdog, reportError, suspendPlayback, resumePlayback, advance, cancelSubmit]);
 
   // Release audio devices when the hook goes away. Deliberately dependency-free:
   // this must run on unmount and at no other time, because anything that makes
@@ -1529,11 +1594,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     advance('stop-requested');
     vadRef.current?.pause(); // ensure VAD is stopped
 
-    // Immediately stop worker synthesis
+    // Immediately stop worker synthesis, and the host's reply with it.
+    cancelSubmit();
     voiceQueueTurnRef.current++;
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
-  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState]);
+  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit]);
 
   // Audio polling loop for onAudioLevelChange callback
   useEffect(() => {

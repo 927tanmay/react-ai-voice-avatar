@@ -22,6 +22,8 @@ type Probe = {
   userInterrupts: number;
   /** Each piece of the reply as it began to play, from onSpeechStart. */
   played: string[];
+  /** How many onSubmit signals have been aborted. */
+  aborted: number;
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -31,12 +33,15 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0 };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
  * ?reply=stream: three sentences streamed, the first of which the voice is
  * slowest to synthesise. ?reply=stream-fail: the voice fails on the second.
+ * ?reply=tool: one sentence, then twelve seconds of nothing, as a model calling
+ * a tool would, then the answer. ?reply=slow: eight sentences a second and a
+ * half apart, numbered by reply, from a host that ignores the signal.
  */
 const replyMode = params.get('reply');
 /**
@@ -65,6 +70,9 @@ const STREAMED = [
   'The third sentence closes the reply.',
 ];
 
+const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+let replies = 0;
+
 const App: React.FC = () => {
   const [adapters, setAdapters] = useState(true);
   const { status, sendText, startListening, stopListening, interrupt, activeTtsEngine } = useAiVoiceAvatar({
@@ -84,6 +92,23 @@ const App: React.FC = () => {
     onSubmit: localLlm ? undefined : async (text, details) => {
       probe.submitted.push(text);
       probe.speechMs.push(details.speechMs);
+      details.signal?.addEventListener('abort', () => { probe.aborted++; });
+      if (replyMode === 'tool') {
+        return (async function* () {
+          yield 'Let me check that for you, one moment please. ';
+          await wait(12_000);
+          yield 'The answer is that Paris is the capital of France.';
+        })();
+      }
+      if (replyMode === 'slow') {
+        const reply = ++replies;
+        return (async function* () {
+          for (let n = 1; n <= 8; n++) {
+            if (n > 1) await wait(1500);
+            yield `Reply ${reply} sentence ${n} is long enough to be spoken. `;
+          }
+        })();
+      }
       if (replyMode === 'empty') return '';
       if (replyMode === 'empty-stream') return (async function* () {})();
       if (replyMode?.startsWith('stream')) {

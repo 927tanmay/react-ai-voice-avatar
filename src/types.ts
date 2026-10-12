@@ -77,4 +77,11 @@ export interface AiVoiceAvatarSubmitDetails {
    * Undefined for typed input from `sendText`, which was never spoken.
    */
   speechMs?: number;
+  /**
+   * Aborted when this reply is no longer wanted: the user talked over it,
+   * `interrupt()` was called, or a new turn began. Pass it
+   * to `fetch` so the request, and the work behind it, stops too. The hook
+   * stops reading the reply either way.
+   */
+  signal: AbortSignal;
 }
