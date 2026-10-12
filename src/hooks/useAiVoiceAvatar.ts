@@ -4,7 +4,7 @@ import { useKokoroWorker } from './useKokoroWorker';
 import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails } from '../types';
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
-import { splitForSpeech } from '../lib/speechChunks';
+import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
 
 const CRUMB = 'rava:kokoro-init-crashed';
@@ -66,6 +66,13 @@ const SPEECH_DETECTION_DEFAULTS = {
   preSpeechPadMs: 800,
 };
 
+/**
+ * How long a streamed reply may go quiet before a short sentence it is holding
+ * back is spoken alone. Tokens arrive far faster than this; a pause this long
+ * is a model doing something else, such as calling a tool.
+ */
+const HOLD_SHORT_SENTENCE_MS = 500;
+
 /** How long to wait for promised audio that never arrives before recovering. */
 const RESPONSE_STALL_TIMEOUT_MS = 10000;
 
@@ -109,11 +116,13 @@ export interface UseAiVoiceAvatarConfig {
   onTranscriptUpdate?: (text: string, speaker: 'user' | 'avatar') => void;
   /**
    * Answer the user with your own language model. Return the reply as a string,
-   * an async iterable of text or a ReadableStream; a stream is spoken a sentence
-   * at a time while the rest is still arriving. Return an empty string, or a
+   * an async iterable of text, a ReadableStream of text or bytes, or a fetch
+   * Response; a stream is spoken a sentence at a time while the rest is still
+   * arriving. Return an empty string, or a
    * stream that ends without text, to say nothing and keep listening.
    *
-   * `details.speechMs` is how long the user spoke for this turn.
+   * `details.speechMs` is how long the user spoke for this turn, and
+   * `details.signal` is aborted when the reply is no longer wanted.
    */
   onSubmit?: (transcript: string, details: AiVoiceAvatarSubmitDetails) => Promise<string | AsyncIterable<string> | ReadableStream<any> | any> | string | AsyncIterable<string> | ReadableStream<any> | any;
   /**
@@ -889,56 +898,73 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               return;
             }
 
+            // A fetch Response, returned as it came: its body is the stream.
+            // It used to be spoken as "[object Response]".
+            if (typeof Response !== 'undefined' && result instanceof Response) {
+              if (!result.ok || !result.body) throw new Error(`onSubmit returned a ${result.status} response`);
+              result = result.body;
+            }
+
             // Check if result is an AsyncIterable or ReadableStream (e.g. OpenAI SDK / LangChain / Vercel AI)
             const isAsyncIterable = typeof result[Symbol.asyncIterator] === 'function';
             const isReadableStream = typeof result.getReader === 'function';
             
             if (isAsyncIterable || isReadableStream) {
-              let sentenceBuffer = '';
+              // Kokoro takes a sentence of any length. Other voices keep the
+              // 35-character floor, as speakInSentences does.
+              const localKokoro = !configRef.current.onSynthesize && activeTtsEngine === 'kokoro';
+              const sentences = createSentenceStream({ minChars: localKokoro ? 0 : 35 });
+              // One decoder for the whole reply, so a character whose bytes are
+              // split across two chunks survives. Hindi letters are three bytes.
+              const decoder = new TextDecoder();
               /** The reply as spoken, kept so a local model can inherit the conversation. */
               let spoken = '';
-              const iterator = isAsyncIterable ? result[Symbol.asyncIterator]() : null;
+              const say = (pieces: string[]) => {
+                for (const piece of pieces) {
+                  queueSentence(piece, false);
+                  spoken += (spoken ? ' ' : '') + piece;
+                }
+              };
+              // A ReadableStream is async-iterable too in current browsers, so
+              // asking for both locked it to the iterator and getReader threw:
+              // every `return res.body` failed the turn. Use the reader if any.
               const reader = isReadableStream ? result.getReader() : null;
+              const iterator = reader ? null : result[Symbol.asyncIterator]();
+              const read = (): Promise<any> => (iterator ? iterator.next() : reader!.read());
               /** Stop reading an abandoned reply, and tell its source. */
               const release = () => {
                 try { reader?.cancel()?.catch?.(() => {}); } catch (e) { /* already closed */ }
                 try { iterator?.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
               };
+              const QUIET = Symbol('quiet');
+              const quiet = () => new Promise<typeof QUIET>(r => setTimeout(() => r(QUIET), HOLD_SHORT_SENTENCE_MS));
 
               submit.open = true;
               try {
+                let next = read();
                 while (true) {
-                  const step = iterator ? await iterator.next() : await reader!.read();
+                  // A short sentence waits to join the next, unless the stream
+                  // goes quiet: "Sure." before a tool call is said, not held.
+                  let step: any = await (sentences.holding ? Promise.race([next, quiet()]) : next);
                   if (!isCurrent()) {
                     release();
                     return;
                   }
-                  if (step.done) break;
-                
-                  let chunk = step.value || '';
-                  if (chunk instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(chunk))) {
-                    chunk = new TextDecoder().decode(chunk);
-                  } else if (typeof chunk !== 'string') {
-                    chunk = String(chunk);
-                  }
-                
-                  sentenceBuffer += chunk;
-                  const sentenceMatch = sentenceBuffer.match(/([.!?\u0964]|\n\n+)/);
-                  const minLen = configRef.current.ttsEngine === 'kokoro' ? 5 : 35;
-                  if ((sentenceMatch && sentenceBuffer.trim().length > minLen) || sentenceBuffer.trim().length > 150) {
-                    const splitIdx = sentenceMatch 
-                      ? sentenceBuffer.lastIndexOf(sentenceMatch[0]) + sentenceMatch[0].length 
-                      : sentenceBuffer.lastIndexOf(' ') + 1;
-
-                    if (splitIdx > 0) {
-                      const phrase = sentenceBuffer.substring(0, splitIdx).trim();
-                      sentenceBuffer = sentenceBuffer.substring(splitIdx);
-                      if (phrase.length > 0) {
-                        queueSentence(phrase, false);
-                        spoken += (spoken ? ' ' : '') + phrase;
-                      }
+                  if (step === QUIET) {
+                    say(sentences.release());
+                    step = await next;
+                    if (!isCurrent()) {
+                      release();
+                      return;
                     }
                   }
+                  if (step.done) break;
+                  const value = step.value;
+                  const text = value instanceof Uint8Array
+                    ? decoder.decode(value, { stream: true })
+                    : typeof value === 'string' ? value : String(value ?? '');
+                  say(sentences.push(text));
+                  next = read();
                 }
               } finally {
                 submit.open = false;
@@ -949,9 +975,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
               // while the stream was quiet.
               if (isWaitingForMoreRef.current) finishIfDrained();
 
-              if (sentenceBuffer.trim().length > 0) {
-                queueSentence(sentenceBuffer.trim(), true);
-                spoken += (spoken ? ' ' : '') + sentenceBuffer.trim();
+              const rest = [...sentences.push(decoder.decode()), ...sentences.flush()];
+              if (rest.length > 0) {
+                rest.forEach((piece, i) => queueSentence(piece, i === rest.length - 1));
+                spoken += (spoken ? ' ' : '') + rest.join(' ');
               } else if (spoken) {
                 // The stream ended on a sentence boundary, so its last sentence
                 // went out promising more. Say the reply is over, or the stall

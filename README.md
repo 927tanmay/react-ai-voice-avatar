@@ -367,9 +367,15 @@ If your backend uses Vercel AI SDK's `streamText(...).toTextStreamResponse()` or
 ```tsx
 onSubmit={async (text) => {
   const res = await fetch('/api/chat', { method: 'POST', body: JSON.stringify({ prompt: text }) });
-  return res.body; // Natively supported!
+  return res.body; // Natively supported! Returning `res` itself works too.
 }}
 ```
+
+Text is cut into sentences as it arrives, so the voice starts on the first one.
+Decimals, abbreviations and initials stay whole, and Hindi (।), Urdu (۔ ؟) and
+Chinese or Japanese (。！？) sentence endings are recognised. A sentence shorter
+than 35 characters waits to join the next one, unless the stream goes quiet for
+half a second, so a "Sure." before a slow tool call is still said straight away.
 
 ### Recipe 1: Vercel AI SDK (≤v4 Data Stream)
 Older versions of the Vercel AI SDK stream data using a specific protocol (e.g., `0:"Hello"`). This recipe parses those chunks into clean text with a carry-over buffer for safe network boundaries.

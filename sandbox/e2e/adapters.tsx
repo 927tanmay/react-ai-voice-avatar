@@ -42,6 +42,11 @@ const params = new URLSearchParams(location.search);
  * ?reply=tool: one sentence, then twelve seconds of nothing, as a model calling
  * a tool would, then the answer. ?reply=slow: eight sentences a second and a
  * half apart, numbered by reply, from a host that ignores the signal.
+ * ?reply=decimal: a sentence with "72.5" in it, one character at a time.
+ * ?reply=bytes: Hindi as raw bytes, cut through the middle of letters, as a
+ * ReadableStream. ?reply=bytes-iterator: the same from an async generator.
+ * ?reply=response: a fetch Response, returned as it is.
+ * ?reply=short: "Sure.", three seconds of nothing, then the answer.
  */
 const replyMode = params.get('reply');
 /**
@@ -71,6 +76,7 @@ const STREAMED = [
 ];
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+const HINDI = 'नमस्ते, आज हम गणित के बारे में बात करेंगे।';
 let replies = 0;
 
 const App: React.FC = () => {
@@ -98,6 +104,36 @@ const App: React.FC = () => {
           yield 'Let me check that for you, one moment please. ';
           await wait(12_000);
           yield 'The answer is that Paris is the capital of France.';
+        })();
+      }
+      if (replyMode === 'decimal') {
+        return (async function* () {
+          yield* 'In maths your score went up to 72.5 percent this term, a good jump. ';
+        })();
+      }
+      if (replyMode === 'bytes-iterator') {
+        const bytes = new TextEncoder().encode(HINDI);
+        return (async function* () {
+          for (let i = 0; i < bytes.length; i += 5) yield bytes.slice(i, i + 5);
+        })();
+      }
+      if (replyMode === 'bytes') {
+        const bytes = new TextEncoder().encode(HINDI);
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            // Five bytes at a time: Devanagari letters are three, so most
+            // chunks end partway through one.
+            for (let i = 0; i < bytes.length; i += 5) controller.enqueue(bytes.slice(i, i + 5));
+            controller.close();
+          },
+        });
+      }
+      if (replyMode === 'response') return new Response('This is the reply from a Response object, spoken in full.');
+      if (replyMode === 'short') {
+        return (async function* () {
+          yield 'Sure. ';
+          await wait(3000);
+          yield 'The capital of France is Paris, a lovely city. ';
         })();
       }
       if (replyMode === 'slow') {

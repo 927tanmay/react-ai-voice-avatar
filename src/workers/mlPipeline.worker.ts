@@ -1,6 +1,7 @@
 import { pipeline, AutomaticSpeechRecognitionPipeline, TextGenerationPipeline, TextToAudioPipeline, TextStreamer, env } from '@huggingface/transformers';
 import { normalizeToDevanagari } from '../lib/transliterate';
 import { createDownloadProgress } from '../lib/downloadProgress';
+import { createSentenceStream } from '../lib/speechChunks';
 import { createModelCache, isModelCacheSupported, modelFileLabel } from '../lib/modelCache';
 
 // Setup environment specifically for the worker
@@ -704,7 +705,9 @@ const isNonSpeech = (transcript: string): boolean => {
     }
 
     let fullReplyText = '';
-    let sentenceBuffer = '';
+    // Kokoro takes a sentence of any length; other voices get 35 characters at
+    // least, the same floor the engine gives a host's streamed reply.
+    const sentences = createSentenceStream({ minChars: currentTtsEngine === 'kokoro' && !hostVoice ? 0 : 35 });
     // Tokens generated so far. The text callback fires only once a word is
     // whole, so it undercounts tokens and runs a token behind the first one.
     // scripts/measure-latency.mjs reads both of these for time to first token
@@ -724,26 +727,10 @@ const isNonSpeech = (transcript: string): boolean => {
           throw new Error('INTERRUPTED');
         }
         fullReplyText += text;
-        sentenceBuffer += text;
 
         self.postMessage({ type: 'streamWord', payload: { word: text, fullText: fullReplyText, tokens: tokenCount } });
 
-        const sentenceMatch = sentenceBuffer.match(/([.!?\u0964]|\n\n+)/);
-        const minLen = currentTtsEngine === 'kokoro' ? 5 : 35;
-        if ((sentenceMatch && sentenceBuffer.trim().length > minLen) || sentenceBuffer.trim().length > 150) {
-          const splitIdx = sentenceMatch 
-            ? sentenceBuffer.lastIndexOf(sentenceMatch[0]) + sentenceMatch[0].length 
-            : sentenceBuffer.lastIndexOf(' ') + 1;
-
-          if (splitIdx > 0) {
-            const chunk = sentenceBuffer.substring(0, splitIdx).trim();
-            sentenceBuffer = sentenceBuffer.substring(splitIdx);
-            
-            if (chunk.length > 0) {
-              pushPhraseToTts(chunk, false, turn);
-            }
-          }
-        }
+        for (const sentence of sentences.push(text)) pushPhraseToTts(sentence, false, turn);
       }
     });
 
@@ -751,8 +738,9 @@ const isNonSpeech = (transcript: string): boolean => {
       // @ts-ignore
       await llmPipeline(messagesForModel(chatHistory, llmPipeline.tokenizer), { max_new_tokens: 128, streamer });
       
-      if (sentenceBuffer.trim().length > 0) {
-        pushPhraseToTts(sentenceBuffer.trim(), true, turn);
+      const rest = sentences.flush();
+      if (rest.length > 0) {
+        rest.forEach((sentence, i) => pushPhraseToTts(sentence, i === rest.length - 1, turn));
       } else if (ttsQueue.length > 0) {
         ttsQueue[ttsQueue.length - 1].isLast = true;
       } else {

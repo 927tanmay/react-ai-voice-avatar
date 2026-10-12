@@ -8,7 +8,7 @@
  *
  * Run with: node --experimental-strip-types scripts/test-speech-chunks.mjs
  */
-import { splitForSpeech, MAX_CHUNK_CHARS } from '../src/lib/speechChunks.ts';
+import { splitForSpeech, createSentenceStream, MAX_CHUNK_CHARS } from '../src/lib/speechChunks.ts';
 
 const checks = [];
 const check = (name, fn) => checks.push({ name, fn });
@@ -159,6 +159,80 @@ check('nothing is lost across a realistic reply', () => {
   if (pieces.some(p => p.length > MAX_CHUNK_CHARS)) return 'a piece is over the limit';
   if (pieces[0] !== 'Sure!') return `started with ${JSON.stringify(pieces[0])}`;
   return null;
+});
+
+check('Urdu, Arabic and Chinese sentences end where they should', () =>
+  expectPieces('یہ پہلا جملہ ہے۔ کیا آپ تیار ہیں؟ ہاں', ['یہ پہلا جملہ ہے۔', 'کیا آپ تیار ہیں؟', 'ہاں']) ??
+  expectPieces('你好。我是你的老师！你准备好了吗？', ['你好。', '我是你的老师！', '你准备好了吗？']));
+
+/** Feed text to a stream in the given pieces and collect everything it says. */
+function streamed(pieces, options) {
+  const stream = createSentenceStream(options);
+  const out = [];
+  for (const piece of pieces) out.push(...stream.push(piece));
+  out.push(...stream.flush());
+  return out;
+}
+/** Feed text one character at a time, the worst a stream can do. */
+const byChar = text => [...text];
+function expectStreamed(pieces, expected, options) {
+  const got = streamed(pieces, options);
+  if (JSON.stringify(got) === JSON.stringify(expected)) return null;
+  return `expected ${JSON.stringify(expected)}\n      got      ${JSON.stringify(got)}`;
+}
+
+check('streamed: a decimal is not a sentence end, however the text is cut', () =>
+  expectStreamed(byChar('In maths your score went up to 72.5 percent this term. Is 72.5 enough? It is.'),
+    ['In maths your score went up to 72.5 percent this term.', 'Is 72.5 enough?', 'It is.']) ??
+  expectStreamed(['Your score went up to 72.', '5 percent. Well done.'],
+    ['Your score went up to 72.5 percent.', 'Well done.']));
+
+check('streamed: abbreviations, initials and versions stay whole', () =>
+  expectStreamed(byChar('Dr. Rao met J. R. R. Tolkien. Version 0.7.1 is out. '),
+    ['Dr. Rao met J. R. R. Tolkien.', 'Version 0.7.1 is out.']));
+
+check('streamed: Hindi, Urdu and Chinese endings', () =>
+  expectStreamed(byChar('नमस्ते। आज हम गणित पढ़ेंगे।'), ['नमस्ते।', 'आज हम गणित पढ़ेंगे।']) ??
+  expectStreamed(byChar('یہ پہلا جملہ ہے۔ کیا آپ تیار ہیں؟'), ['یہ پہلا جملہ ہے۔', 'کیا آپ تیار ہیں؟']) ??
+  expectStreamed(byChar('你好。我是你的老师！'), ['你好。', '我是你的老师！']));
+
+check('streamed: a sentence is handed over once the next character confirms it', () => {
+  const stream = createSentenceStream();
+  const first = stream.push('The capital of France is Paris.');
+  if (first.length) return `spoke before the ending was confirmed: ${JSON.stringify(first)}`;
+  const second = stream.push(' And');
+  if (JSON.stringify(second) !== JSON.stringify(['The capital of France is Paris.'])) return `got ${JSON.stringify(second)}`;
+  return null;
+});
+
+check('streamed: a short sentence is held, and can be released when the stream goes quiet', () => {
+  const stream = createSentenceStream({ minChars: 35 });
+  const said = stream.push('Sure. ');
+  if (said.length) return `"Sure." went alone despite the minimum: ${JSON.stringify(said)}`;
+  if (!stream.holding) return 'not holding "Sure."';
+  const released = stream.release();
+  if (JSON.stringify(released) !== '["Sure."]') return `released ${JSON.stringify(released)}`;
+  if (stream.holding) return 'still holding after release';
+  return expectStreamed(['Sure. ', 'The capital of France is Paris, a lovely city. '],
+    ['Sure. The capital of France is Paris, a lovely city.'], { minChars: 35 });
+});
+
+check('streamed: a run-on with no ending is cut, and nothing is lost', () => {
+  const text = Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ');
+  const pieces = streamed(byChar(text));
+  if (pieces.some(p => p.length > MAX_CHUNK_CHARS)) return `lengths ${pieces.map(p => p.length)}`;
+  if (!lossless(text, pieces)) return 'lost text';
+  return null;
+});
+
+check('streamed: a line break ends a piece', () =>
+  expectStreamed(byChar('First line without a stop\nSecond line.'), ['First line without a stop', 'Second line.']));
+
+check('streamed: the same pieces as the whole text, for a realistic reply', () => {
+  const text = "Sure! It's MIT licensed and free. The first visit downloads about 590 MB; after that, your browser keeps the models. Want to know more?";
+  const whole = JSON.stringify(splitForSpeech(text));
+  const got = JSON.stringify(streamed(byChar(text)));
+  return whole === got ? null : `whole ${whole}\n      streamed ${got}`;
 });
 
 let failures = 0;

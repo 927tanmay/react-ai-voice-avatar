@@ -42,8 +42,17 @@ const ABBREVIATIONS = new Set([
   'e.g', 'i.e', 'no', 'fig', 'inc', 'ltd', 'co', 'u.s', 'u.k', 'a.m', 'p.m',
 ]);
 
-/** Sentence-ending punctuation, with any closing quotes or brackets after it. */
-const SENTENCE_END = /[.!?।॥…]+["'”’)\]]*/g;
+/**
+ * Sentence-ending punctuation, with any closing quotes or brackets after it.
+ *
+ * Latin, Devanagari (। ॥), Urdu and Arabic (۔ ؟), and Chinese and Japanese
+ * (。！？). The last group is written without a space after it, so it ends a
+ * sentence on its own; the rest only do when whitespace follows.
+ */
+const SENTENCE_END = /[.!?।॥…۔؟。！？]+["'”’)\]」』]*/g;
+
+/** Endings that need no space after them to close a sentence. */
+const CLOSES_WITHOUT_SPACE = /[。！？]/;
 
 /** Where a sentence that runs too long can be cut with the least damage. */
 const SOFT_BREAK = /[,;:—–]\s/g;
@@ -105,7 +114,7 @@ function splitSentences(line: string): string[] {
     const end = match.index + match[0].length;
     // Only a boundary when followed by a space or the end of the line, which
     // is what keeps "3.5", "0.5B" and "react-ai-voice-avatar.vercel.app" whole.
-    if (end < line.length && !/\s/.test(line[end])) continue;
+    if (end < line.length && !/\s/.test(line[end]) && !CLOSES_WITHOUT_SPACE.test(match[0])) continue;
     if (match[0].startsWith('.') && match[0].length === 1 && !endsSentence(line.slice(start, match.index))) continue;
     const sentence = line.slice(start, end).trim();
     if (sentence) out.push(sentence);
@@ -171,4 +180,108 @@ function mergeBare(pieces: string[]): string[] {
     }
   }
   return out;
+}
+
+/**
+ * The same cuts for text that arrives a piece at a time: a reply streamed from
+ * `onSubmit`, or tokens from the in-browser model.
+ *
+ * WHY THIS EXISTS
+ *
+ * Both used to cut on the first full stop in the buffer, so "72.5 percent" was
+ * spoken as "72." and then "5 percent", and "Is 72.5 ok?" stopped at the
+ * decimal point too. A stream also hides what follows a full stop until the
+ * next piece arrives, so here an ending is only trusted once the character
+ * after it is known. A single unconfirmed "." is held, never guessed at.
+ */
+export interface SentenceStream {
+  /** Add text and take whatever sentences it completed. */
+  push(text: string): string[];
+  /**
+   * True while a complete sentence shorter than `minChars` is held back,
+   * waiting to join the next. Hand it over with {@link release} if the stream
+   * goes quiet, so "Sure." before a tool call is not kept waiting for it.
+   */
+  readonly holding: boolean;
+  /** Take a held short sentence now. */
+  release(): string[];
+  /** The stream has ended: take everything left. */
+  flush(): string[];
+}
+
+export function createSentenceStream(options: SplitOptions = {}): SentenceStream {
+  const { maxChars = MAX_CHUNK_CHARS, minChars = 0 } = options;
+  let buffer = '';
+  let held = '';
+
+  /** Pass one finished piece on, or hold it if it is too short to go alone. */
+  const take = (piece: string, out: string[]) => {
+    if (!/[\p{L}\p{N}]/u.test(piece)) {
+      // A stray "..." or quote. Joins what is held, or is dropped as silence.
+      if (held) held += piece;
+      return;
+    }
+    held = held ? `${held} ${piece}` : piece;
+    if (held.length >= minChars) {
+      out.push(held);
+      held = '';
+    }
+  };
+
+  /** The end of the first sentence in the buffer that is certainly over, or -1. */
+  const confirmedEnd = (): number => {
+    const newline = buffer.indexOf('\n');
+    SENTENCE_END.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let start = 0;
+    while ((match = SENTENCE_END.exec(buffer)) !== null) {
+      if (newline !== -1 && newline < match.index) return newline + 1;
+      const end = match.index + match[0].length;
+      if (CLOSES_WITHOUT_SPACE.test(match[0])) return end;
+      // What follows has not arrived yet: "72." may become "72.5".
+      if (end >= buffer.length) return -1;
+      if (!/\s/.test(buffer[end])) continue;
+      if (match[0].startsWith('.') && match[0].length === 1 && !endsSentence(buffer.slice(start, match.index))) continue;
+      return end;
+    }
+    return newline === -1 ? -1 : newline + 1;
+  };
+
+  return {
+    push(text) {
+      buffer += text;
+      const out: string[] = [];
+      for (let end = confirmedEnd(); end !== -1; end = confirmedEnd()) {
+        const sentence = buffer.slice(0, end).trim();
+        buffer = buffer.slice(end);
+        for (const piece of limitLength(sentence, maxChars)) if (piece) take(piece, out);
+      }
+      // A run-on with no ending yet still has to be cut somewhere.
+      while (buffer.length > maxChars) {
+        const cut = breakPoint(buffer, maxChars);
+        take(buffer.slice(0, cut).trim(), out);
+        buffer = buffer.slice(cut);
+      }
+      return out;
+    },
+    get holding() {
+      return held.length > 0;
+    },
+    release() {
+      if (!held) return [];
+      const out = [held];
+      held = '';
+      return out;
+    },
+    flush() {
+      const out: string[] = [];
+      const rest = buffer;
+      buffer = '';
+      for (const piece of splitForSpeech(rest, { maxChars })) take(piece, out);
+      // A short tail goes alone: what came before it has already been said.
+      if (held) out.push(held);
+      held = '';
+      return out;
+    },
+  };
 }

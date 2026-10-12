@@ -15,8 +15,25 @@
   now waits. Audio that turns up after a genuine stall is dropped instead of
   playing with the status on `idle`.
 
+- **`return res.body` from `onSubmit` failed the turn in current browsers.** A
+  `ReadableStream` is now also async-iterable, and the hook took both an iterator
+  and a reader from it, which throws. That broke the README's own simplest
+  recipe. The reader is used whenever there is one.
+- **A streamed reply was cut at decimal points.** "72.5 percent" was spoken as
+  "72." and "5 percent". Streamed replies, and the in-browser model's, now use
+  the same sentence rules as `speak()`: decimals, abbreviations and initials
+  stay whole, and Urdu, Arabic, Chinese and Japanese endings are recognised.
+- **Letters split across two chunks of a byte stream came out garbled.** One
+  decoder now reads the whole reply, so Hindi and other multi-byte text survives.
+- **A short sentence was held back until more text came.** "Sure." before a slow
+  tool call meant silence. It is now spoken once the stream has been quiet for
+  half a second.
+
 ### Added
 
+- **`onSubmit` may return a fetch `Response`.** It was spoken as
+  "[object Response]". Its body is read as the stream, and a failed response
+  fails the turn.
 - **`signal` in the second argument of `onSubmit`.** It is aborted when the reply
   is no longer wanted. Pass it to `fetch` to cancel the request and the work
   behind it.
