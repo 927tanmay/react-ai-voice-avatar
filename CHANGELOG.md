@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.7.2
+
+Fixes for hosts that answer with their own model through `onSubmit`, most of
+them reported by someone integrating the package: replies that kept playing
+after an interruption, a tool call mistaken for a stall, sentences cut at
+decimal points, and failures the host was never told about.
+
+No breaking changes. `onSubmit` gets a `signal`, may return a `Response`, and
+your adapters' failures now reach `onError` as `degraded` reports.
 
 ### Fixed
 
