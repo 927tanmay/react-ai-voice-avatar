@@ -24,6 +24,10 @@ type Probe = {
   played: string[];
   /** How many onSubmit signals have been aborted. */
   aborted: number;
+  /** Every onError report, as stage, severity and detail. */
+  errors: { stage: string; severity: string; detail?: string }[];
+  /** What onTranscriptUpdate announced for the user. */
+  userTranscripts: string[];
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -33,7 +37,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0 };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -47,6 +51,7 @@ const params = new URLSearchParams(location.search);
  * ReadableStream. ?reply=bytes-iterator: the same from an async generator.
  * ?reply=response: a fetch Response, returned as it is.
  * ?reply=short: "Sure.", three seconds of nothing, then the answer.
+ * ?reply=fail: onSubmit throws.
  */
 const replyMode = params.get('reply');
 /**
@@ -54,6 +59,8 @@ const replyMode = params.get('reply');
  * onSynthesize speaks. tests/local-llm-host-voice.spec.ts serves a tiny one.
  */
 const localLlm = params.get('llm');
+/** ?transcribe=empty or ?transcribe=fail: onTranscribe hears nothing, or throws. */
+const transcribeMode = params.get('transcribe');
 /** ?listen=ptt: push-to-talk, driven by startListening and stopListening. */
 const listenMode = params.get('listen') === 'ptt' ? 'push-to-talk' : 'continuous';
 (window as unknown as { __e2e: Probe }).__e2e = probe;
@@ -89,6 +96,8 @@ const App: React.FC = () => {
     onTranscribe: adapters
       ? async audio => {
           probe.heard.push(audio.length / 16000);
+          if (transcribeMode === 'empty') return '';
+          if (transcribeMode === 'fail') throw new Error('transcription service down');
           return 'What is the capital of France?';
         }
       : undefined,
@@ -99,6 +108,7 @@ const App: React.FC = () => {
       probe.submitted.push(text);
       probe.speechMs.push(details.speechMs);
       details.signal?.addEventListener('abort', () => { probe.aborted++; });
+      if (replyMode === 'fail') throw new Error('model service down');
       if (replyMode === 'tool') {
         return (async function* () {
           yield 'Let me check that for you, one moment please. ';
@@ -155,6 +165,8 @@ const App: React.FC = () => {
       return 'This is the reply.';
     },
     onInferenceEnd: () => { probe.inferenceEnded++; },
+    onError: e => { probe.errors.push({ stage: e.stage, severity: e.severity, detail: e.detail }); },
+    onTranscriptUpdate: (text, speaker) => { if (speaker === 'user') probe.userTranscripts.push(text); },
     onSpeechStart: text => { probe.played.push(text); },
     onUserInterrupt: () => { probe.userInterrupts++; },
     onSynthesize: adapters

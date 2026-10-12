@@ -681,7 +681,7 @@ const isNonSpeech = (transcript: string): boolean => {
     if (!transcript || isNonSpeech(transcript)) {
       self.postMessage({
         type: 'error',
-        payload: { stage: 'pipeline', message: `Ignored a transcript with no speech in it: ${JSON.stringify(transcript)}` },
+        payload: { stage: 'no-speech', message: `Ignored a transcript with no speech in it: ${JSON.stringify(transcript)}` },
       });
       return;
     }

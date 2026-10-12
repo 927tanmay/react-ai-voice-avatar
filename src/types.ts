@@ -53,15 +53,19 @@ export type AiVoiceAvatarErrorStage =
 export interface AiVoiceAvatarError {
   stage: AiVoiceAvatarErrorStage;
   /**
-   * `degraded` — it recovered on a worse path and the avatar still works.
+   * `degraded` — the avatar still works. It fell back to a worse path, or one
+   * turn failed (your adapter threw, or nothing was recognised) and it is
+   * listening again; the next turn may well succeed.
    * `fatal` — that capability is gone for this session.
    */
   severity: 'degraded' | 'fatal';
   /** Plain-language description, safe to show or log. */
   message: string;
   /**
-   * The engine's own stage name, for bug reports. Unstable across versions;
-   * do not branch on it.
+   * The engine's own stage name, for bug reports. Unstable across versions,
+   * except these four, which are safe to branch on: `onTranscribe`,
+   * `onSubmit` and `onSynthesize` (your adapter threw), and `no-speech`
+   * (someone was heard and nothing was recognised).
    */
   detail?: string;
 }

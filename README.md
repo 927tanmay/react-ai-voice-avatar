@@ -618,6 +618,19 @@ reports; it is not stable across versions, so do not branch on it.
 kept, so the next visit downloads it again. The message says why — usually not
 enough free space, which on a phone is the common case.
 
+Your own adapters report here too. When `onTranscribe`, `onSubmit` or
+`onSynthesize` throws, the turn ends, the avatar goes back to listening, and
+`onError` gets a `degraded` report whose `detail` is the callback's name. When
+someone was heard but no words were recognised, `detail` is `no-speech`. These
+four `detail` values are stable, so you can branch on them:
+
+```tsx
+onError={(e) => {
+  if (e.detail === 'no-speech') say("Sorry, I didn't catch that.");
+  else if (e.detail === 'onSubmit') toast("Couldn't reach the server. Try again?");
+}}
+```
+
 ### Models are kept between visits
 
 Downloaded models are stored in the browser's Origin Private File System, so a

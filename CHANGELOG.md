@@ -29,8 +29,19 @@
   tool call meant silence. It is now spoken once the stream has been quiet for
   half a second.
 
+- **With `onTranscribe`, the user's words reached `onTranscriptUpdate` twice.**
+  Once from the hook and once more from the engine's echo. Now once.
+
 ### Added
 
+- **Your adapters' failures reach `onError`.** When `onTranscribe`, `onSubmit` or
+  `onSynthesize` throws, `onError` gets a `degraded` report with the callback's
+  name in `detail`, so an app can say "couldn't reach the server". Before, the
+  failure was only logged to the console.
+- **`no-speech` when nothing was recognised.** Someone was heard and no words
+  came out: an empty `onTranscribe` result, or Whisper hearing only noise. It
+  arrives as a `degraded` `speech-recognition` report, so an app can say "didn't
+  catch that". The in-browser path used to report this as `fatal`.
 - **`onSubmit` may return a fetch `Response`.** It was spoken as
   "[object Response]". Its body is read as the stream, and a failed response
   fails the turn.

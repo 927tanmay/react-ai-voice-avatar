@@ -37,6 +37,12 @@ const PUBLIC_ERROR_STAGE: Record<string, AiVoiceAvatarErrorStage> = {
   'ml-worker-init': 'worker',
   'ml-worker-message': 'worker',
   'model-storage': 'model-storage',
+  // The host's own adapters. Named for the callback, so `detail` says which.
+  onTranscribe: 'speech-recognition',
+  onSubmit: 'language-model',
+  onSynthesize: 'speech-synthesis',
+  /** Something was heard, and it held no words. */
+  'no-speech': 'speech-recognition',
 };
 
 /**
@@ -1008,6 +1014,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // sees its request rejected, and that is not a failure.
             if (!isCurrent()) return;
             console.error('onSubmit streaming error:', err);
+            reportError('onSubmit', `onSubmit failed: ${err?.message ?? err}`, 'degraded');
             advance('pipeline-failed');
             configRef.current.onInferenceEnd?.();
             resumeVadIfAllowed();
@@ -1016,7 +1023,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     },
     onError: (stage, msg) => {
       advance('pipeline-failed');
-      reportError(stage, msg, 'fatal');
+      // A noise mistaken for speech costs one turn, not the session.
+      reportError(stage, msg, stage === 'no-speech' ? 'degraded' : 'fatal');
       configRef.current.onInferenceEnd?.();
       resumeVadIfAllowed();
     }
@@ -1106,6 +1114,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         handleSpeechOutput(pcmData, sampleRate, text, '', isLast);
       } catch (err) {
         console.error('[AiVoiceAvatar] Cloud onSynthesize adapter failed:', err);
+        reportError('onSynthesize', `onSynthesize failed: ${(err as Error)?.message ?? err}`, 'degraded');
         advance('pipeline-failed');
         configRef.current.onInferenceEnd?.();
         resumeVadIfAllowed();
@@ -1234,16 +1243,21 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         try {
           const text = await configRef.current.onTranscribe(audio);
           if (text && text.trim()) {
-            // Pipe the text into the standard LLM / onSubmit flow
-            configRef.current.onTranscriptUpdate?.(text, 'user');
+            // Into the standard LLM / onSubmit flow. Not announced here: the
+            // worker echoes it as a transcript, which announces it, and it
+            // used to reach onTranscriptUpdate twice.
             processText(text, !!configRef.current.onSubmit, speechMs);
           } else {
+            // Heard, and no words in it. Worth telling the user rather than
+            // going back to listening without a word.
+            reportError('no-speech', 'Nothing was recognised in what was said.', 'degraded');
             advance('pipeline-failed');
             configRef.current.onInferenceEnd?.();
             resumeVadIfAllowed();
           }
         } catch (err) {
           console.error('[AiVoiceAvatar] Cloud onTranscribe adapter failed:', err);
+          reportError('onTranscribe', `onTranscribe failed: ${(err as Error)?.message ?? err}`, 'degraded');
           advance('pipeline-failed');
           configRef.current.onInferenceEnd?.();
           resumeVadIfAllowed();
