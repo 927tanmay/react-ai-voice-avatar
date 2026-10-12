@@ -7,6 +7,7 @@ examples/**/node_modules/
 dist/
 sandbox/dist/
 examples/**/dist/
+examples/**/.next/
 *.tgz
 # Generated worker code blobs (multi-MB, rebuilt by build-workers.mjs)
 # Type stubs (.d.ts) in this dir ARE committed so tsc resolves them in CI.
