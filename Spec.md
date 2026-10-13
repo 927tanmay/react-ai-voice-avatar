@@ -1,3 +1,11 @@
+> **Historical document.** This is the original build specification from
+> July 2026, when the project was called `react-indic-avatar`. The package has
+> since been renamed and much of this design replaced: the default voice is
+> Kokoro, workers ship as code strings, the hook is `useAiVoiceAvatar`, and
+> there is no CommonJS build. It is kept for the reasoning behind the early
+> choices. For how things work now, read the [README](README.md),
+> [DECISIONS.md](DECISIONS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
 # IndicAvatar — Full Build Specification (v2)
 
 **Purpose of this document:** hand this directly to Claude Code as the working spec for building `react-indic-avatar`. This is a revision of the v1 plan after an end-to-end verification pass against live sources (Hugging Face, npm, GitHub). It locks in confirmed model choices, defines the npm package contract, describes both audiences of end-user (the developer integrating the package, and the person talking to the avatar), and breaks the build into concrete, sequential tasks with acceptance criteria per phase.

@@ -76,9 +76,9 @@ npm run lint                     # type-check
 npm run test:turn-state          # and the other test:* suites, each a few seconds:
                                  # speech-gate, hindi, download-progress, chat-route,
                                  # worker-contract, model-cache, arm-rig, gestures,
-                                 # speech-chunks, avatar-symmetry
+                                 # speech-chunks, push-to-talk, avatar-symmetry
 npm run build
-npm run test:smoke               # the built bundle loads in several bundlers
+npm run test:smoke               # static checks on the built package: files, exports
 
 npx playwright install chromium  # once
 npm run test:e2e                 # starts the sandbox if it is not running
@@ -87,9 +87,11 @@ node scripts/verify-pack.mjs     # packs, installs and speaks in a real browser;
 ```
 
 The `test:*` suites cover the logic in `src/lib/` and the message contract
-between the hooks and the workers. The React layer itself has no unit tests, so
-a change to the hooks should say in the pull request how you checked it in a
-browser.
+between the hooks and the workers. The Playwright specs in `tests/` drive the
+hook in a real browser through `sandbox/e2e/adapters.html`, with the host's
+adapters standing in for the models, so most changes to the hook can be tested
+there. The 3D component and the lip-sync have no automated tests yet, so a
+change to those should say in the pull request how you checked it.
 
 ## Trying an example against your changes
 
@@ -126,7 +128,8 @@ gestures. `scripts/mirror-arm-rest-pose.mjs` makes the arms symmetric, and
 - A claim about speed or size needs the measurement behind it, and how it was
   taken.
 - New logic in `src/lib/` gets a check in the matching `scripts/test-*.mjs`.
-  A bug fix is best proved by a check that fails without it.
+- A bug fix comes with a test that fails without it. Check that it does: put
+  the old file back (`git show HEAD:path > path`) and watch the test fail.
 - For anything you can see or hear, attach a screenshot or a short recording.
 
 A few things are settled, so please open a discussion before changing them:

@@ -1,41 +1,51 @@
-# 🇮🇳 React AI Voice Avatar — 3D Character Asset Guide
+# Avatars
 
-This directory houses the default 3D `.glb` avatar characters used by the `react-ai-voice-avatar` engine and the sandbox test studio.
+The two characters that ship with `react-ai-voice-avatar`.
 
-## Built-In AI Voice Personas
-1. **`ananya.glb` (Female AI Voice Companion)**:
-   - Default warm, intuitive conversational companion with high-fidelity ARKit facial blendshapes and expressive lip syncing.
-2. **`aarav.glb` (Male AI Voice Companion)**:
-   - Confident, dynamic technical assistant representing articulate, natural spoken human dialogue.
-3. **`default.glb`**:
-   - Fallback reference target for backward compatibility.
+| File | Preset | Source | Size |
+| :--- | :--- | :--- | :--- |
+| `ananya.glb` | `ananya` (the default; `default` and `kiosk` are aliases) | Microsoft Rocketbox `Female_Adult_07` | ~4.7 MB |
+| `aarav.glb` | `aarav` | Microsoft Rocketbox `Male_Adult_04` | ~4.5 MB |
 
-## How to Customize or Replace Avatar Models (Zero Code Changes Required!)
-During initial prototyping and development, `aarav.glb` and `ananya.glb` are seeded with our verified ARKit facial blendshape character mesh so the application builds cleanly out-of-the-box without missing file errors.
+Both are MIT licensed. See [LICENSE.md](LICENSE.md).
 
-To deploy your own custom character model:
-1. **Export/Obtain Your Model**:
-   - Use compatible 3D character generator pipelines (e.g., **Avatar SDK**, **Blender / MPFB (MakeHuman Plugin for Blender)** with TalkingHead rigs, **Tripo3D**, or existing **Ready Player Me** archives).
-   - Ensure the `.glb` mesh includes standard ARKit or Oculus viseme blendshapes for facial animation and speech sync.
-2. **Drop-in File Replacement**:
-   - Rename your custom male model file to **`aarav.glb`**.
-   - Copy and overwrite the file in two locations:
-     - `assets/avatars/aarav.glb` (for distribution & archiving)
-     - `sandbox/public/aarav.glb` (for immediate studio test viewing)
-3. **Instant Activation**:
-   - Reload your studio app (`npm run dev` in `/sandbox`). When you select **"👨🏽 Aarav"**, your realistic custom character will instantly load with all voice prompts and theme styling applied automatically!
+## How they reach the browser
 
-## NPM Package Consumer Usage
-When developers install `react-ai-voice-avatar`, they select their preferred persona via standard props:
-```tsx
-import { AiVoiceAvatar } from 'react-ai-voice-avatar';
+They are not in the npm package. The engine loads them from jsDelivr, pinned to
+a git tag of this repository:
 
-// Render Female Voice Companion (Ananya)
-<AiVoiceAvatar avatarPreset="ananya" systemPrompt="..." />
-
-// Render Male Voice Companion (Aarav)
-<AiVoiceAvatar avatarPreset="aarav" systemPrompt="..." />
-
-// Or provide a custom remote CDN endpoint directly:
-<AiVoiceAvatar modelSrc="https://cdn.example.com/custom-avatar.glb" />
 ```
+https://cdn.jsdelivr.net/gh/927tanmay/react-ai-voice-avatar@avatars-v2/assets/avatars/ananya.glb
+```
+
+The tag is set by `ASSET_TAG` in [`src/lib/avatarAssets.ts`](../../src/lib/avatarAssets.ts).
+A tag never changes, so a release can rely on the exact files it was tested
+with. That also means **changing a GLB needs a new tag**: commit the new file,
+tag the commit (`avatars-v3`, and so on), push the tag, and bump `ASSET_TAG`.
+
+To serve them yourself, pass `enableLocalAssetProbe` and put the files in your
+own `public/` directory, or point `modelSrc` at any URL.
+
+## How they were made
+
+[`scripts/convert-rocketbox.py`](../../scripts/convert-rocketbox.py) converts a
+Rocketbox FBX in headless Blender. It renames the skeleton and blend shapes to
+the ARKit names the engine drives, drops the morph targets it never uses,
+relaxes the arms and fingers out of the T-pose, and shrinks the textures.
+[`scripts/mirror-arm-rest-pose.mjs`](../../scripts/mirror-arm-rest-pose.mjs)
+then makes the right arm an exact mirror of the left, and
+`npm run test:avatar-symmetry` checks that every left and right bone pair
+mirrors within 0.5 cm.
+
+Any of the 115 Rocketbox characters can be converted the same way.
+
+## Using your own character
+
+```tsx
+<AiVoiceAvatar modelSrc="https://cdn.example.com/my-character.glb" />
+```
+
+The model needs the 52 ARKit blend shapes on its face mesh, and standard
+`Head`/`Neck` bone names for head movement. The main README's
+[Custom Avatar Requirements](../../README.md#-custom-avatar-requirements) has
+the details.

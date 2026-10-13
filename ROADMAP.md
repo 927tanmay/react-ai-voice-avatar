@@ -8,7 +8,7 @@ it says so.
 
 ---
 
-## Now — before the launch posts
+## Now
 
 ### ~~1. Make the models actually cache~~ — done
 
@@ -172,11 +172,11 @@ and deliberately deferred.
 
 ## Known gaps in the project itself
 
-- **CI needs Node 22.6+** for the test suites, which import TypeScript directly.
-  Contributors on Node 20 cannot run them. Worth stating in CONTRIBUTING.md.
-- **No test covers the React layer.** The suites cover pure logic — turn-taking
-  rules, the speech gate, phonemisation, download progress — plus a packaging
-  test that drives a real browser. The hooks themselves are verified by hand.
+- **The 3D component and the lip-sync have no automated tests.** The hook is
+  covered by Playwright specs that drive it in a real browser with stand-in
+  adapters, and the pure logic by the `test:*` suites. What the face does is
+  still checked by eye.
+- **Never measured on a real phone.** See item 6.
 - **The packaging test depends on the live npm registry**, so an upstream
   hiccup can fail a build. Installs retry three times, which covers the
   transient case but not a sustained outage.
@@ -185,7 +185,20 @@ and deliberately deferred.
 
 ## Recently done
 
-Shipped in 0.3.0 and 0.4.0, and no longer open questions:
+Shipped in 0.5.0 to 0.7.2:
+
+- Hosted replies while the local model downloads (`preloadLocalLlm`), and the
+  same for hearing and voice (`preloadLocalSpeech`).
+- Voice mode on its own: the `/headless` entry, the `/voice` page and the
+  `voice-only`, `groq-voice` and `nextjs-voice` examples.
+- Adapters skip the downloads they replace: all three means nothing but the
+  ~4 MB voice detector.
+- Models kept between visits (item 1), gestures (item 5), symmetric avatars.
+- Push-to-talk that hands over what was said when the button is released.
+- `onSubmit` replies: an abort `signal`, a `Response` return, sentences cut the
+  way `speak()` cuts them, and failures reported through `onError`.
+
+Shipped in 0.3.0 and 0.4.0:
 
 - Interruption: the user can talk over the avatar, and turns are decided on
   sustained speech, so a cough ducks the voice and the reply resumes.
