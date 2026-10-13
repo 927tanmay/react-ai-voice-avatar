@@ -23,7 +23,11 @@ export interface AiVoiceAvatarHandle {
   interrupt: () => void;
   /** Begin listening. Resolves once the microphone is live, or has failed. */
   startListening: () => Promise<void>;
+  /** Stop hearing the user. A reply already under way finishes. */
   stopListening: () => void;
+  /** Mute or unmute the microphone without closing it. */
+  setMicMuted: (muted: boolean) => void;
+  isMicMuted: boolean;
   speak: (text: string) => void;
   sendText: (text: string, options?: { hidden?: boolean }) => void;
   getAnalyser: () => AnalyserNode | undefined;
@@ -640,6 +644,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
   const {
     status, isLoading, isIdle, isListening, isThinking, isSpeaking, micError,
     analyser, startListening, stopListening, interrupt, speak, sendText, clearHistory,
+    setMicMuted, isMicMuted,
     currentSpeechTextRef,
     currentSpeechPhonemesRef,
     currentAudioDurationRef, playbackStartTimeRef, audioContextRef,
@@ -734,6 +739,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     interrupt,
     startListening,
     stopListening,
+    setMicMuted,
+    isMicMuted,
     speak,
     sendText: (text: string, options?: { hidden?: boolean }) => {
       if (options?.hidden) {

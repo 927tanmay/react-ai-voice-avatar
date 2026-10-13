@@ -34,6 +34,8 @@ type Probe = {
   startListening?: () => Promise<void>;
   stopListening?: () => void;
   interrupt?: () => void;
+  setMicMuted?: (muted: boolean) => void;
+  isMicMuted?: boolean;
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
@@ -88,7 +90,7 @@ let replies = 0;
 
 const App: React.FC = () => {
   const [adapters, setAdapters] = useState(true);
-  const { status, sendText, startListening, stopListening, interrupt, activeTtsEngine } = useAiVoiceAvatar({
+  const { status, sendText, startListening, stopListening, interrupt, setMicMuted, isMicMuted, activeTtsEngine } = useAiVoiceAvatar({
     listenMode,
     // ?preload=1: fetch the local hearing and voice behind the adapters.
     preloadLocalSpeech: params.has('preload'),
@@ -188,6 +190,8 @@ const App: React.FC = () => {
   probe.startListening = startListening;
   probe.stopListening = stopListening;
   probe.interrupt = interrupt;
+  probe.setMicMuted = setMicMuted;
+  probe.isMicMuted = isMicMuted;
   probe.dropSpeechAdapters = () => setAdapters(false);
 
   return <p id="status">{status}</p>;

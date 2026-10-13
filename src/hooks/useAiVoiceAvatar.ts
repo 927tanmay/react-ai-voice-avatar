@@ -257,8 +257,20 @@ export interface UseAiVoiceAvatarReturn {
    * is set if it never does.
    */
   startListening: () => Promise<void>;
+  /**
+   * Stop hearing the user. A reply already under way finishes; call
+   * `interrupt()` as well to stop it.
+   */
   stopListening: () => void;
+  /** Stop the avatar talking, and the reply behind it. */
   interrupt: () => void;
+  /**
+   * Mute or unmute the microphone without closing it, like the mute button in
+   * a call. Replies keep playing; the user cannot talk over them while muted.
+   */
+  setMicMuted: (muted: boolean) => void;
+  /** Whether the microphone is muted. See `setMicMuted`. */
+  isMicMuted: boolean;
   clearHistory: () => void;
   speak: (text: string) => void;
   sendText: (text: string) => void;
@@ -385,11 +397,44 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, []);
 
 
-  const resumeVadIfAllowed = useCallback(() => {
-    if (configRef.current.listenMode !== 'push-to-talk' && !isInterruptedRef.current) {
-      vadRef.current?.start();
-    }
+  /**
+   * Whether the host wants the microphone heard: set by startListening, cleared
+   * by stopListening. A reply that finishes reopens the detector only while it
+   * is set, so stopping listening during a reply stays stopped.
+   */
+  const listeningWantedRef = useRef(false);
+  /** Whether the microphone is muted. See setMicMuted. */
+  const micMutedRef = useRef(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+
+  /**
+   * Turn the voice detector on or off, in the order asked.
+   *
+   * vad-web's start() is asynchronous, and a pause() that arrives before it
+   * has finished does nothing: the detector then comes on after being told to
+   * stop, and hears a turn nobody wanted taken. So every start and pause waits
+   * for the one before it.
+   */
+  const detectorQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const setDetector = useCallback((on: boolean) => {
+    detectorQueueRef.current = detectorQueueRef.current.then(async () => {
+      const vad = vadRef.current;
+      if (!vad) return;
+      try {
+        await (on ? vad.start() : vad.pause());
+      } catch (e) { /* destroyed or errored; nothing to switch */ }
+    });
   }, []);
+
+  const resumeVadIfAllowed = useCallback(() => {
+    if (
+      configRef.current.listenMode !== 'push-to-talk' &&
+      !isInterruptedRef.current &&
+      listeningWantedRef.current
+    ) {
+      setDetector(true);
+    }
+  }, [setDetector]);
 
   /**
    * Report a failure to the host application.
@@ -1235,7 +1280,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       // It is paused only when interruption is switched off, or in push-to-talk,
       // where the user takes the floor explicitly anyway.
       if (!allowsInterruption()) {
-        vadRef.current?.pause();
+        setDetector(false);
       }
 
       // Cloud adapter: override local ASR.
@@ -1270,7 +1315,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
       processAudio(audio, langCode, !!configRef.current.onSubmit, speechMs);
     };
-  }, [processAudio, processText, resumeVadIfAllowed]);
+  }, [processAudio, processText, resumeVadIfAllowed, setDetector]);
 
   /**
    * Open the microphone and start voice activity detection, once.
@@ -1314,6 +1359,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
         setMicError(null);
         mediaStreamRef.current = stream;
+        // Muted before the microphone was ever opened: it opens muted.
+        stream.getAudioTracks().forEach(t => { t.enabled = !micMutedRef.current; });
 
         const audioCtx = ensureAudioContext();
         if (!audioCtx) {
@@ -1365,6 +1412,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             return fresh;
           }
           mediaStreamRef.current = fresh;
+          fresh.getAudioTracks().forEach(t => { t.enabled = !micMutedRef.current; });
           meterOn(fresh);
           return fresh;
         };
@@ -1563,6 +1611,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const startListening = useCallback(async () => {
     isInterruptedRef.current = false;
     if (!isReady) return;
+    listeningWantedRef.current = true;
 
     // Synchronous, and first, so the context is constructed while the browser
     // still considers itself inside the user gesture that led here.
@@ -1589,23 +1638,32 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         if (wasSpeaking) configRef.current.onUserInterrupt?.();
       }
       heldAudioRef.current = { frames: [], speech: [], msPerFrame: 0 };
-      vadRef.current.start();
+      setDetector(true);
       advance('user-started-speaking');
       return;
     }
 
-    vadRef.current.start();
+    setDetector(true);
     advance('listen-requested');
-  }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance]);
+  }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance, setDetector]);
 
+  /**
+   * Stop hearing the user. A reply already under way carries on: stopping the
+   * input is not stopping the avatar, and interrupt() is the way to do that.
+   *
+   * It used to do both. It marked the turn interrupted and moved the status to
+   * idle, so every sentence of the reply still to come was dropped, and a host
+   * could not stop listening without cutting the avatar off.
+   */
   const stopListening = useCallback(() => {
+    listeningWantedRef.current = false;
     // Push-to-talk: letting go of the button is the end of the turn, so what
     // was said while it was held is handed over. This used to be dropped,
     // leaving the status on 'listening' with nothing coming.
     const held = heldAudioRef.current;
     heldAudioRef.current = null;
     if (held && configRef.current.listenMode === 'push-to-talk') {
-      vadRef.current?.pause();
+      setDetector(false);
       const detection = { ...SPEECH_DETECTION_DEFAULTS, ...(configRef.current.speechDetection ?? {}) };
       const speech = heldSpeech(held, {
         msPerFrame: held.msPerFrame,
@@ -1619,10 +1677,26 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       // Nothing said, or too little to be words. Fall through to a plain stop.
     }
 
+    setDetector(false);
+    // The avatar has the floor, and keeps it until its reply ends.
+    if (statusRef.current === 'thinking' || statusRef.current === 'speaking') return;
     isInterruptedRef.current = true;
-    vadRef.current?.pause();
     advance('stop-requested');
-  }, [advance]);
+  }, [advance, setDetector]);
+
+  /**
+   * Mute or unmute the microphone, the way a call app does.
+   *
+   * The device stays open and the detector keeps running; it just hears
+   * silence. So a reply plays on, the user cannot talk over it while muted,
+   * and unmuting needs no new permission prompt. Applies to a microphone opened
+   * later too.
+   */
+  const setMicMuted = useCallback((muted: boolean) => {
+    micMutedRef.current = muted;
+    setIsMicMuted(muted);
+    mediaStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = !muted; });
+  }, []);
 
   const interrupt = useCallback(() => {
     // Cancels a push-to-talk hold too: interrupt() is the way to abandon one.
@@ -1633,14 +1707,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     resetPlaybackState();
     configRef.current.onUserInterrupt?.();
     advance('stop-requested');
-    vadRef.current?.pause(); // ensure VAD is stopped
+    setDetector(false);
 
     // Immediately stop worker synthesis, and the host's reply with it.
     cancelSubmit();
     voiceQueueTurnRef.current++;
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
-  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit]);
+  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit, setDetector]);
 
   // Audio polling loop for onAudioLevelChange callback
   useEffect(() => {
@@ -1707,6 +1781,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     startListening,
     stopListening,
     interrupt,
+    setMicMuted,
+    isMicMuted,
     clearHistory,
     speak,
     sendText,

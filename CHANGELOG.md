@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **`stopListening()` no longer stops the reply.** It used to mark the turn
+  interrupted and move the status to idle, so the rest of a reply in flight was
+  dropped. It now stops only the microphone, and the reply finishes. Call
+  `interrupt()` as well where you want both, as the built-in Stop button does.
+  A reply that ends after `stopListening()` no longer reopens the microphone.
+
+### Added
+
+- **`setMicMuted(muted)` and `isMicMuted`**, on the hook and on the component's
+  handle. Mutes the microphone without closing it: replies keep playing, the
+  user cannot talk over them, and unmuting needs no new permission prompt. A
+  microphone opened while muted opens muted. Reported by someone integrating the
+  package.
+
+### Fixed
+
+- **The voice detector could come on after being told to stop.** Its `start()`
+  is asynchronous, and a `pause()` that arrived before it finished did nothing.
+  Starting and stopping are now done in order.
+
 ## 0.7.2
 
 Fixes for hosts that answer with their own model through `onSubmit`, most of

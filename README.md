@@ -549,6 +549,26 @@ hold without sending it, and a hold with no speech in it sends nothing.
 </button>
 ```
 
+### Stopping and muting
+
+Three controls, for three different intentions:
+
+| Call | The microphone | A reply under way |
+| :--- | :--- | :--- |
+| `stopListening()` | Stops hearing, until `startListening()` | Finishes |
+| `setMicMuted(true)` | Stays open, hears silence | Finishes, and cannot be talked over |
+| `interrupt()` | Pauses | Stops now |
+
+So a Stop button that should silence everything calls both:
+
+```tsx
+voice.interrupt();
+voice.stopListening();
+```
+
+A mute button, like the one in a call, calls `setMicMuted(!voice.isMicMuted)`.
+Unmuting needs no new permission prompt.
+
 ### How a turn is decided
 
 Voice detection scores every 96ms frame for how much it sounds like speech. A
@@ -873,6 +893,9 @@ interface AiVoiceAvatarHandle {
   startListening: () => void;
   /** Pause active microphone listening */
   stopListening: () => void;
+  /** Mute or unmute the microphone without closing it; replies keep playing */
+  setMicMuted: (muted: boolean) => void;
+  isMicMuted: boolean;
   /** Instantly interrupt and halt active voice speech synthesis and clear the audio queue */
   interrupt: () => void;
   /** Manually submit text to the onSubmit handler, simulating a spoken utterance (useful for text-only fallback) */
@@ -932,8 +955,10 @@ It returns:
 | `isLocalSpeechReady` | `boolean` | The in-browser hearing and voice are loaded, whether or not they are in use. |
 | `activeTtsEngine` | `'kokoro' \| 'mms' \| 'custom'` | The voice actually speaking. iPhones and iPads get `'mms'`, a single plainer voice that ignores `ttsVoice`, because Kokoro runs Safari out of memory; so does any device where Kokoro fails to load. `'custom'` is your `onSynthesize`. Worth showing if your users will compare devices. |
 | `startListening` | `() => Promise<void>` | Opens the microphone and starts listening. Call it from a click: the first call is where the browser asks for permission. In `'continuous'` mode the microphone then stays open across turns. |
-| `stopListening` | `() => void` | Closes the microphone. |
+| `stopListening` | `() => void` | Stops hearing the user. A reply already under way finishes; call `interrupt()` as well to stop it. |
 | `interrupt` | `() => void` | Stops the reply mid-sentence and clears what was queued. |
+| `setMicMuted` | `(muted: boolean) => void` | Mutes or unmutes the microphone without closing it, like the mute button in a call. Replies keep playing, and the user cannot talk over them while muted. |
+| `isMicMuted` | `boolean` | Whether the microphone is muted. |
 | `speak` | `(text: string) => void` | Says the text without a model turn: a greeting, a notification. Plays a sentence at a time. |
 | `sendText` | `(text: string) => void` | Typed input, handled as if it had been spoken. |
 | `clearHistory` | `() => void` | Forgets the conversation so far. |
