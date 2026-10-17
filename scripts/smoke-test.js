@@ -1,5 +1,7 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 console.log('[Smoke Test] Starting post-build bundle integrity assertions...');
 
@@ -134,6 +136,35 @@ if (pkg.dependencies?.['onnxruntime-web'] !== ortDeclared) {
   errors++;
 } else {
   console.log(`[PASS] onnxruntime-web is pinned to ${ortDeclared}, the release its .wasm files load from.`);
+}
+
+// 8. The subpaths' types resolve for an app on TypeScript's older "node"
+// resolution, which ignores "exports" and reads "typesVersions" instead. Many
+// webpack apps still use it, and `react-ai-voice-avatar/headless` failed there
+// with TS2307 until "typesVersions" was added.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rava-types-'));
+  fs.mkdirSync(path.join(dir, 'node_modules'));
+  fs.symlinkSync(rootDir, path.join(dir, 'node_modules', 'react-ai-voice-avatar'), 'dir');
+  const consumer = path.join(dir, 'consumer.ts');
+  fs.writeFileSync(consumer, [
+    "import { useAiVoiceAvatar } from 'react-ai-voice-avatar/headless';",
+    "import { createModelCache } from 'react-ai-voice-avatar/model-cache';",
+    "import { AiVoiceAvatar } from 'react-ai-voice-avatar';",
+    'export const used = [useAiVoiceAvatar, createModelCache, AiVoiceAvatar];',
+  ].join('\n'));
+  const tsc = path.join(rootDir, 'node_modules', '.bin', 'tsc');
+  for (const resolution of ['node', 'bundler']) {
+    try {
+      execFileSync(tsc, ['--noEmit', '--strict', '--skipLibCheck', '--module', 'esnext',
+        '--moduleResolution', resolution, '--jsx', 'react-jsx', '--target', 'es2022', consumer], { stdio: 'pipe' });
+      console.log(`[PASS] Every entry point's types resolve under moduleResolution "${resolution}".`);
+    } catch (e) {
+      console.error(`[FAIL] Types do not resolve under moduleResolution "${resolution}":\n${String(e.stdout || e.message)}`);
+      errors++;
+    }
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 if (errors > 0) {

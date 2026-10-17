@@ -23,6 +23,12 @@
 
 ### Added
 
+- **`/headless` and `/model-cache` types resolve under TypeScript's older
+  `moduleResolution: "node"`**, which many webpack apps use. It ignores
+  `exports`, so both failed with TS2307; `typesVersions` now covers them.
+  Closes #22.
+- **README: hiding webpack's "Critical dependency" warnings** from
+  onnxruntime-web, for webpack and for Next.js builds that use it. Closes #23.
 - **`onSynthesize` audio at any sample rate.** Return `{ audio, sampleRate }`
   with Float32 or Int16 samples, a bare `Int16Array`, or an encoded file as a
   `Uint8Array` as well as an `ArrayBuffer`. A bare `Float32Array` is still

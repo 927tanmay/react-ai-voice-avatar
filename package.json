@@ -76,6 +76,16 @@
       "default": "./dist/model-cache.js"
     }
   },
+  "typesVersions": {
+    "*": {
+      "headless": [
+        "./dist/headless.d.ts"
+      ],
+      "model-cache": [
+        "./dist/model-cache.d.ts"
+      ]
+    }
+  },
   "peerDependencies": {
     "@react-three/drei": "^9.0.0 || ^10.0.0",
     "@react-three/fiber": "^8.0.0 || ^9.0.0",

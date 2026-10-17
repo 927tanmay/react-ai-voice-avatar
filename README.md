@@ -307,6 +307,41 @@ export default {
 > [!CAUTION]
 > **Strict CSP Policies:** If your enterprise enforces strict Content Security Policies that block `blob:` workers (`worker-src 'self'`), you can bypass our zero-config Blob loaders by passing the `workerBaseUrl` prop to the avatar and hosting the pre-compiled `.worker.js` files from our `dist/assets/` directory yourself.
 
+#### Webpack 5 and Next.js: the "Critical dependency" warnings
+
+Built with webpack, an app using the package shows four warnings like this one,
+and webpack-dev-server puts them in an overlay over the page:
+
+```
+WARNING in ./node_modules/onnxruntime-web/dist/ort.min.js
+Critical dependency: require function is used in a way in which dependencies cannot be statically extracted
+```
+
+They come from a branch of onnxruntime-web that only runs in Node, and are
+harmless. To hide them, in `webpack.config.js`:
+
+```js
+module.exports = {
+  // ...
+  ignoreWarnings: [{ module: /onnxruntime-web/, message: /Critical dependency/ }],
+};
+```
+
+Or in `next.config.ts`, for a Next.js build that uses webpack (`next build
+--webpack`, or Next.js 15 and earlier; Turbopack does not show them):
+
+```ts
+const nextConfig: NextConfig = {
+  webpack: config => {
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings ?? []),
+      { module: /onnxruntime-web/, message: /Critical dependency/ },
+    ];
+    return config;
+  },
+};
+```
+
 ## ⚡ 3D Avatar Quickstart
 
 ```tsx
