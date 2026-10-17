@@ -28,6 +28,8 @@ type Probe = {
   errors: { stage: string; severity: string; detail?: string }[];
   /** What onTranscriptUpdate announced for the user. */
   userTranscripts: string[];
+  /** Seconds of audio in each piece as it began to play. */
+  durations: number[];
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -39,7 +41,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -61,6 +63,18 @@ const replyMode = params.get('reply');
  * onSynthesize speaks. tests/local-llm-host-voice.spec.ts serves a tiny one.
  */
 const localLlm = params.get('llm');
+/**
+ * ?voice=16k: the voice answers with one second of 16 kHz Float32 samples, as
+ * { audio, sampleRate }. ?voice=int16: one second of 22.05 kHz Int16 samples.
+ * ?voice=bare16k: one second at 16 kHz returned bare, which is taken as 24 kHz.
+ */
+const voiceMode = params.get('voice');
+/** One second of a quiet tone at this rate. */
+const second = (rate: number) => {
+  const pcm = new Float32Array(rate);
+  for (let i = 0; i < rate; i++) pcm[i] = 0.1 * Math.sin((2 * Math.PI * 440 * i) / rate);
+  return pcm;
+};
 /** ?transcribe=empty or ?transcribe=fail: onTranscribe hears nothing, or throws. */
 const transcribeMode = params.get('transcribe');
 /** ?listen=ptt: push-to-talk, driven by startListening and stopListening. */
@@ -90,7 +104,7 @@ let replies = 0;
 
 const App: React.FC = () => {
   const [adapters, setAdapters] = useState(true);
-  const { status, sendText, startListening, stopListening, interrupt, setMicMuted, isMicMuted, activeTtsEngine } = useAiVoiceAvatar({
+  const voice = useAiVoiceAvatar({
     listenMode,
     // ?preload=1: fetch the local hearing and voice behind the adapters.
     preloadLocalSpeech: params.has('preload'),
@@ -169,7 +183,11 @@ const App: React.FC = () => {
     onInferenceEnd: () => { probe.inferenceEnded++; },
     onError: e => { probe.errors.push({ stage: e.stage, severity: e.severity, detail: e.detail }); },
     onTranscriptUpdate: (text, speaker) => { if (speaker === 'user') probe.userTranscripts.push(text); },
-    onSpeechStart: text => { probe.played.push(text); },
+    onSpeechStart: text => {
+      probe.played.push(text);
+      // Set by the hook for the piece that has just begun.
+      probe.durations.push(voice.currentAudioDurationRef.current ?? 0);
+    },
     onUserInterrupt: () => { probe.userInterrupts++; },
     onSynthesize: adapters
       ? async text => {
@@ -177,10 +195,18 @@ const App: React.FC = () => {
           // A long first sentence takes a cloud voice longer than a short second.
           if (text.startsWith('The first')) await new Promise(r => setTimeout(r, 800));
           if (replyMode === 'stream-fail' && text.startsWith('The second')) throw new Error('voice down');
+          if (voiceMode === '16k') return { audio: second(16000), sampleRate: 16000 };
+          if (voiceMode === 'bare16k') return second(16000);
+          if (voiceMode === 'int16') {
+            const f = second(22050);
+            return { audio: Int16Array.from(f, v => Math.round(v * 32767)), sampleRate: 22050 };
+          }
           return tone();
         }
       : undefined,
   });
+
+  const { status, sendText, startListening, stopListening, interrupt, setMicMuted, isMicMuted, activeTtsEngine } = voice;
 
   useEffect(() => {
     probe.statuses.push(status);

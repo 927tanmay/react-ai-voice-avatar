@@ -6,6 +6,7 @@ import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
+import { toPlayableAudio, type SynthesizedAudio } from '../lib/synthesizedAudio';
 
 const CRUMB = 'rava:kokoro-init-crashed';
 
@@ -145,7 +146,13 @@ export interface UseAiVoiceAvatarConfig {
   /** Fires once the model requested by `preloadLocalLlm` is loaded and warm. */
   onLocalLlmReady?: () => void;
   onTranscribe?: (audio: Float32Array) => Promise<string>;
-  onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
+  /**
+   * Speak with your own voice. Return raw samples as a Float32Array (-1 to 1)
+   * or an Int16Array, which are taken to be 24 kHz; `{ audio, sampleRate }`
+   * for any other rate; or an encoded file (MP3, WAV, Ogg) as an ArrayBuffer
+   * or Uint8Array, which the browser decodes.
+   */
+  onSynthesize?: (text: string) => Promise<SynthesizedAudio>;
   /**
    * Download the in-browser hearing and voice in the background even though
    * `onTranscribe` and `onSynthesize` are handling them.
@@ -1141,22 +1148,16 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     if (configRef.current.onSynthesize) {
       try {
         const audioResult = await configRef.current.onSynthesize(text);
-        let pcmData: Float32Array;
-        let sampleRate = 24000; // Default assuming 24kHz for cloud standard, but decoded overrides this
-
-        if (audioResult instanceof ArrayBuffer) {
-          // Decode MP3/WAV from ArrayBuffer
+        // Raw samples at any rate, as floats or 16-bit integers, or an encoded
+        // file. See lib/synthesizedAudio.ts.
+        const { pcm, sampleRate } = await toPlayableAudio(audioResult, async encoded => {
           const ctx = ensureAudioContext();
-          if (!ctx) throw new Error("AudioContext not ready");
-          const decoded = await ctx.decodeAudioData(audioResult.slice(0)); // slice to prevent detaching original buffer if reused
-          pcmData = decoded.getChannelData(0);
-          sampleRate = decoded.sampleRate;
-        } else {
-          // Raw Float32Array PCM passed in
-          pcmData = audioResult;
-        }
+          if (!ctx) throw new Error('AudioContext not ready');
+          const decoded = await ctx.decodeAudioData(encoded);
+          return { pcm: decoded.getChannelData(0), sampleRate: decoded.sampleRate };
+        });
 
-        handleSpeechOutput(pcmData, sampleRate, text, '', isLast);
+        handleSpeechOutput(pcm, sampleRate, text, '', isLast);
       } catch (err) {
         console.error('[AiVoiceAvatar] Cloud onSynthesize adapter failed:', err);
         reportError('onSynthesize', `onSynthesize failed: ${(err as Error)?.message ?? err}`, 'degraded');

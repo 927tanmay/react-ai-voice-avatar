@@ -22,3 +22,4 @@ export { StatusPill } from './components/StatusPill';
 export type { StatusPillProps } from './components/StatusPill';
 
 export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails } from './types';
+export type { SynthesizedAudio } from './lib/synthesizedAudio';

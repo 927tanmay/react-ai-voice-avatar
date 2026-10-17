@@ -63,6 +63,8 @@ jobs:
         run: npm run test:speech-chunks
       - name: Push-to-talk
         run: npm run test:push-to-talk
+      - name: Synthesized audio
+        run: npm run test:synthesized-audio
       - name: Avatar symmetry
         run: npm run test:avatar-symmetry
 

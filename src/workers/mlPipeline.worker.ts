@@ -519,6 +519,13 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === 'switchAsr') {
     const { asrModel } = payload;
+    // A host transcribing through onTranscribe needs no model. Remember the
+    // choice for when it stops; loading it now downloaded Whisper for nothing,
+    // which the 3D component, always naming a model, did on every visit.
+    if (!wantAsr) {
+      if (asrModel) deferredAsrModel = asrModel;
+      return;
+    }
     if (!asrModel || asrModel === currentAsrModel) return;
 
     // Reload only the recognition model. Recreating the whole worker would

@@ -179,6 +179,26 @@ const voice = useAiVoiceAvatar({
 });
 ```
 
+`onSynthesize` can return audio in whichever form your voice service gives it:
+
+| Return | Played as |
+| :--- | :--- |
+| `ArrayBuffer` or `Uint8Array` of an MP3, WAV or Ogg file | Decoded by the browser, at the file's own rate |
+| `{ audio: Float32Array \| Int16Array, sampleRate }` | Raw samples at that rate, such as 16000 or 22050 |
+| `Float32Array` (-1 to 1) or `Int16Array` | Raw samples at 24 kHz |
+
+Most raw-PCM voice APIs return 16-bit samples at 16 or 22.05 kHz, so return
+them with their rate. Bare samples at the wrong rate play too fast or too slow:
+
+```tsx
+onSynthesize: async (text) => {
+  const res = await fetch('/api/tts', { method: 'POST', body: text });
+  return { audio: new Int16Array(await res.arrayBuffer()), sampleRate: 22050 };
+},
+```
+
+The same adapters work on the 3D `<AiVoiceAvatar>` as props.
+
 ---
 
 ### 🧑‍💼 Entry 2: The Full 3D Avatar 
@@ -867,7 +887,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
 | `onLocalLlmReady` | `() => void` | `undefined` | Fires once the model requested by `preloadLocalLlm` has loaded. Drop `onSubmit` here to hand the conversation over; the turns your backend answered are carried across, so the local model knows what was already said. |
 | `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. Receives one utterance as 16 kHz mono samples. |
-| `onSynthesize` | `(text: string) => Promise<Float32Array \| ArrayBuffer>` | `undefined` | Replaces local voice synthesis with your own service, and Kokoro is then not downloaded. Return an encoded MP3/WAV buffer, or raw 24 kHz PCM. Called a sentence at a time. |
+| `onSynthesize` | `(text: string) => Promise<SynthesizedAudio>` | `undefined` | Replaces local voice synthesis with your own service, and Kokoro is then not downloaded. Return an encoded file, `{ audio, sampleRate }`, or raw 24 kHz samples; see [Cloud Adapters](#%EF%B8%8F-cloud-adapters). Called a sentence at a time. |
 | `onError` | `(e: AiVoiceAvatarError) => void` | `undefined` | Fires when a stage fails. Carries `stage`, `message` and a `severity` of `degraded` or `fatal`. See [Handling failures](#-handling-failures). |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | `undefined` | Callback delivering real-time microphone transcriptions and assistant spoken utterance strings. |
 | `onStatusChange`| `(status: string) => void` | `undefined` | Emits live state transitions (`loading`, `idle`, `listening`, `thinking`, `speaking`). |

@@ -12,6 +12,12 @@
 
 ### Added
 
+- **`onSynthesize` audio at any sample rate.** Return `{ audio, sampleRate }`
+  with Float32 or Int16 samples, a bare `Int16Array`, or an encoded file as a
+  `Uint8Array` as well as an `ArrayBuffer`. A bare `Float32Array` is still
+  taken as 24 kHz. Before, a 16 kHz voice played one and a half times too fast,
+  and Int16 samples did not play at all. The type is exported as
+  `SynthesizedAudio`.
 - **`setMicMuted(muted)` and `isMicMuted`**, on the hook and on the component's
   handle. Mutes the microphone without closing it: replies keep playing, the
   user cannot talk over them, and unmuting needs no new permission prompt. A
@@ -20,6 +26,13 @@
 
 ### Fixed
 
+- **`<AiVoiceAvatar>` ignored `onTranscribe` and `onSynthesize`.** It accepted
+  both props and never passed them on, so it downloaded Whisper and Kokoro,
+  some 590 MB, and spoke in the local voice. The headless hook was not
+  affected.
+- **The 3D component downloaded Whisper even with `onTranscribe`.** It always
+  names a recognition model, and the engine loaded the named model whether or
+  not it was needed. It is now remembered for when the adapter is dropped.
 - **The voice detector could come on after being told to stop.** Its `start()`
   is asynchronous, and a `pause()` that arrived before it finished did nothing.
   Starting and stopping are now done in order.

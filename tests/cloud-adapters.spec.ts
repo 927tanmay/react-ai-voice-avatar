@@ -145,3 +145,21 @@ test('cloud adapters: when the voice fails mid-reply, the rest of it is not spok
   expect(probe.synthesized.map((t: string) => t.split(' ')[1])).toEqual(['first', 'second']);
   await expect(page.locator('#status')).toHaveText('idle');
 });
+
+/**
+ * onSynthesize at the rate the voice really uses. A Float32Array was assumed to
+ * be 24 kHz, so a 16 kHz reply played one and a half times too fast; Int16
+ * samples and { audio, sampleRate } did not play at all. Most voice APIs,
+ * Indian ones included, return 16 or 22.05 kHz, often as 16-bit integers.
+ */
+for (const [voice, want] of [['16k', 1], ['int16', 1], ['bare16k', 16000 / 24000]] as const) {
+  test(`cloud adapters: one second from onSynthesize (${voice}) plays for ${want === 1 ? 'one second' : 'two thirds of a second, as 24 kHz'}`, async ({ page }) => {
+    await page.goto(`/e2e/adapters.html?voice=${voice}`);
+    await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
+    await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
+    await expect.poll(() => page.evaluate(() => (window as any).__e2e.durations.length), { timeout: 15_000 }).toBe(1);
+    const [seconds] = await page.evaluate(() => (window as any).__e2e.durations);
+    expect(seconds).toBeCloseTo(want, 2);
+    await expect(page.locator('#status')).toHaveText('idle', { timeout: 15_000 });
+  });
+}

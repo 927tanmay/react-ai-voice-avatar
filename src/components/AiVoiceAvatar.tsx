@@ -6,6 +6,7 @@ import { resolveAvatarUrl } from '../lib/avatarAssets';
 import { StatusPill } from './StatusPill';
 import { useAiVoiceAvatar } from '../hooks/useAiVoiceAvatar';
 import { AudioLipSync } from '../lib/audioLipSync';
+import type { SynthesizedAudio } from '../lib/synthesizedAudio';
 
 const LazyLevaDebugPanel = React.lazy(() => import('./LevaDebugPanel'));
 import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
@@ -116,7 +117,8 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   /** Cloud Adapter: Intercept the raw microphone Float32Array to use an external STT service (e.g. Sarvam, Whisper API) instead of the local ONNX model */
   onTranscribe?: (audio: Float32Array) => Promise<string>;
   /** Cloud Adapter: Intercept the text before synthesis to use an external TTS service (e.g. ElevenLabs, OpenAI) instead of the local Kokoro/MMS model. Supports Float32Array PCM or ArrayBuffer (MP3/WAV) */
-  onSynthesize?: (text: string) => Promise<Float32Array | ArrayBuffer>;
+  /** Speak with your own voice. See `UseAiVoiceAvatarConfig.onSynthesize` for the formats. */
+  onSynthesize?: (text: string) => Promise<SynthesizedAudio>;
   /**
    * Which voice is speaking: `'kokoro'`, `'mms'` on iPhones and wherever
    * Kokoro cannot load, or `'custom'` for `onSynthesize`. Fires on every change.
@@ -665,6 +667,10 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     // nothing revealed the mismatch until you actually said something.
     asrLanguage: asrLanguage ?? ttsLanguage,
     onSubmit,
+    // Passed on: these used to be accepted and then dropped, so the component
+    // quietly downloaded and used the local hearing and voice instead.
+    onTranscribe,
+    onSynthesize,
     preloadLocalLlm: props.preloadLocalLlm,
     onLocalLlmReady: props.onLocalLlmReady,
     onTranscriptUpdate: (text, speaker) => {
