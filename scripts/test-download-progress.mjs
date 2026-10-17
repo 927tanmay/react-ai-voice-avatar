@@ -9,6 +9,7 @@
  * Run with: node --experimental-strip-types scripts/test-download-progress.mjs
  */
 import { createDownloadProgress } from '../src/lib/downloadProgress.ts';
+import { resolveAvatarUrl } from '../src/lib/avatarAssets.ts';
 
 /** Feed events through a fresh aggregator and collect every figure it reports. */
 function replay(events) {
@@ -180,9 +181,27 @@ check('a realistic Whisper download climbs steadily and never runs backwards', (
   return null;
 });
 
+check('the avatar reports on the same 0-100 scale as the models', async () => {
+  // A 4 MB avatar arriving in four pieces, from a stand-in for fetch.
+  const chunk = new Uint8Array(1024 * 1024);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    start(c) { for (let i = 0; i < 4; i++) c.enqueue(chunk); c.close(); },
+  }), { headers: { 'content-length': String(4 * chunk.length) } });
+  const reports = [];
+  try {
+    await resolveAvatarUrl('ananya', pct => reports.push(pct));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  // Before: 0.25, 0.5, 0.75, 1, which a host showed as "1%".
+  if (JSON.stringify(reports) !== '[25,50,75,99,100]') return `reported ${JSON.stringify(reports)}`;
+  return null;
+});
+
 let failures = 0;
 for (const { name, fn } of checks) {
-  const problem = fn();
+  const problem = await fn();
   if (problem) {
     console.error(`FAIL  ${name}`);
     console.error(`      ${problem}`);

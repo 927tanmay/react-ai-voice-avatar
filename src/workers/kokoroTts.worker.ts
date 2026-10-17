@@ -1,5 +1,6 @@
 import { pipeline, env as transformersEnv } from '@huggingface/transformers';
 import { createDownloadProgress } from '../lib/downloadProgress';
+import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
 import { createModelCache, isModelCacheSupported, modelFileLabel } from '../lib/modelCache';
 // Prevent esbuild from tree-shaking the ONNX Runtime WASM backend registration side-effects
 if (typeof self !== 'undefined' && self.location && self.location.href && self.location.href.includes('prevent-tree-shaking')) {
@@ -335,6 +336,9 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === 'init') {
     const { voice, language = 'en-US' } = payload;
+    // The host's onnxWasmPath, for a page that serves the runtime itself. It
+    // was hard-coded here, so Kokoro could not load under a strict CSP.
+    const wasmPaths: string = payload.onnxWasmPath || DEFAULT_ONNX_WASM_PATH;
     currentLanguage = SUPPORTED_LANGUAGES.has(language) ? language : 'en-US';
     if (language && !SUPPORTED_LANGUAGES.has(language)) {
       console.warn(
@@ -354,7 +358,7 @@ self.onmessage = async (e: MessageEvent) => {
           if (env) {
             env.logLevel = 'error';
             if (env.wasm) {
-              env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+              env.wasm.wasmPaths = wasmPaths;
             }
           }
         } catch (_) {}
@@ -362,13 +366,13 @@ self.onmessage = async (e: MessageEvent) => {
           // Set wasm paths on transformers env to ensure clean WASM fallback
           const { env: tfEnv } = await import('@huggingface/transformers');
           if (tfEnv && tfEnv.backends && tfEnv.backends.onnx && tfEnv.backends.onnx.wasm) {
-            tfEnv.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+            tfEnv.backends.onnx.wasm.wasmPaths = wasmPaths;
           }
         } catch (_) {}
         const mod = await import('kokoro-js');
         KokoroTTS = mod.KokoroTTS || (mod as any).default?.KokoroTTS || mod;
         if (mod.env) {
-          mod.env.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+          mod.env.wasmPaths = wasmPaths;
         }
       }
 

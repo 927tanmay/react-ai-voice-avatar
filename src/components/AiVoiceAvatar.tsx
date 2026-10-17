@@ -161,6 +161,7 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onError?: (error: AiVoiceAvatarError) => void;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
+  /** @deprecated Accepted and ignored: nothing reads it. It will be removed in 1.0. */
   lowMemoryMode?: boolean;
 
   /** Optional overrides for self-hosting VAD and ONNX runtime WASM assets */

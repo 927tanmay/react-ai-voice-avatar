@@ -89,6 +89,53 @@ if (fs.existsSync(modelCacheEntry)) {
   console.log(`[PASS] dist/model-cache.js stands alone (${seen.size} files).`);
 }
 
+// 6. The models' libraries are bundled into the workers when the package is
+// built, so an install must not fetch them again. As dependencies they pulled
+// transformers.js twice, sharp, onnxruntime-node and three copies of
+// onnxruntime-web into every app, though nothing outside the workers used them.
+const WORKER_ONLY = ['@huggingface/transformers', 'kokoro-js', 'phonemizer'];
+const declared = Object.keys(pkg.dependencies ?? {});
+const shipped = WORKER_ONLY.filter(name => declared.includes(name));
+if (shipped.length > 0) {
+  console.error(`[FAIL] ${shipped.join(', ')} ${shipped.length === 1 ? 'is a dependency' : 'are dependencies'}, but only the pre-bundled workers use them. Move them to devDependencies.`);
+  errors++;
+} else {
+  console.log('[PASS] The workers\' bundled libraries are not installed again.');
+}
+const mainThreadFiles = [];
+const collect = (dir) => {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!['assets', 'generated'].includes(entry.name)) collect(full);
+    } else if (entry.name.endsWith('.js')) {
+      mainThreadFiles.push(full);
+    }
+  }
+};
+collect(distDir);
+for (const file of mainThreadFiles) {
+  const source = fs.readFileSync(file, 'utf8');
+  for (const name of WORKER_ONLY) {
+    if (new RegExp(`(from|import\\()\\s*['"]${name}['"]`).test(source)) {
+      console.error(`[FAIL] ${path.relative(rootDir, file)} imports "${name}", which is not installed with the package.`);
+      errors++;
+    }
+  }
+}
+console.log(`[PASS] No main-thread file imports a worker-only library (${mainThreadFiles.length} files).`);
+
+// 7. The voice detector uses the installed onnxruntime-web and loads its .wasm
+// from the release in src/lib/onnxRuntime.ts. A range would let an install
+// pick a newer JavaScript build than those files.
+const ortDeclared = fs.readFileSync(path.join(rootDir, 'src/lib/onnxRuntime.ts'), 'utf8').match(/ONNX_RUNTIME_VERSION\s*=\s*'([^']+)'/)?.[1];
+if (pkg.dependencies?.['onnxruntime-web'] !== ortDeclared) {
+  console.error(`[FAIL] onnxruntime-web is "${pkg.dependencies?.['onnxruntime-web']}" in package.json; it must be exactly "${ortDeclared}", as in src/lib/onnxRuntime.ts.`);
+  errors++;
+} else {
+  console.log(`[PASS] onnxruntime-web is pinned to ${ortDeclared}, the release its .wasm files load from.`);
+}
+
 if (errors > 0) {
   console.error(`\n[Smoke Test] FAILED with ${errors} error(s).`);
   process.exit(1);

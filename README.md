@@ -893,7 +893,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `onStatusChange`| `(status: string) => void` | `undefined` | Emits live state transitions (`loading`, `idle`, `listening`, `thinking`, `speaking`). |
 | `debug` | `boolean` | `false` | When true, renders an interactive floating GUI (Leva) to inspect and tune individual 3D blendshapes. |
 | `vadAssetPath` | `string` | `undefined` | Optional URL or local path override for self-hosting `@ricky0123/vad-web` ONNX asset binaries in airgapped deployments. |
-| `onnxWasmPath` | `string` | `undefined` | Optional URL override for self-hosting `onnxruntime-web` WASM distribution files. |
+| `onnxWasmPath` | `string` | jsDelivr, `onnxruntime-web@1.29.0` | Where onnxruntime's `.wasm` files load from, for the voice detector and both model workers. Serve the `dist/` files of `onnxruntime-web@1.29.0` there to self-host; other versions will not start. |
 | `workerBaseUrl`| `string` | `undefined` | CSP Escape Hatch: if `blob:` workers are blocked by your server, fetch pre-compiled Web Workers from this URL directory. |
 | `enableLocalAssetProbe` | `boolean` | `false` | When true, HEAD-checks `/ananya.glb` in your own public directory before falling back to the CDN. Off by default: with no local copy the probe 404s, and that 404 lands in every visitor's console. |
 | `statusPillStyle` | `React.CSSProperties` | `undefined` | Optional custom CSS styling & absolute positioning overrides for the interactive Status Pill overlay. |
@@ -1022,7 +1022,7 @@ The largest pieces currently open:
    box. Royalty-free character GLBs (~3MB) rigged with the standard 52 Apple
    ARKit facial blendshapes are welcome. Avatar meshes are served from a CDN
    rather than bundled, so adding one adds nothing to the npm install (2.3 MB
-   tarball, 6.0 MB unpacked, asserted in CI by `scripts/verify-pack.mjs`).
+   tarball, 5.8 MB unpacked, asserted in CI by `scripts/verify-pack.mjs`).
 4. **🙌 Gestures.** The avatar stands still while it speaks. Hand and arm
    movement tied to speech is the most visible thing still missing.
 5. **📱 React Native / Expo support.** Exploring bindings to run ONNX inference

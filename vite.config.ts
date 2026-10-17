@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import dts from 'vite-plugin-dts';
+import { DEFAULT_ONNX_WASM_PATH } from './src/lib/onnxRuntime';
 
 // Plugin to prevent Vite from converting static .wasm URL references into base64 data URIs in bundled workers
 const excludeOnnxWasmPlugin = () => ({
@@ -10,7 +11,7 @@ const excludeOnnxWasmPlugin = () => ({
     if (code.includes('.wasm')) {
       return {
         code: code.replace(/new\s+URL\(\s*['"]([^'"]+\.wasm)['"]\s*,\s*import\.meta\.url\s*\)/g, (_, wasmFile) => {
-          return `new (globalThis.URL || URL)(${JSON.stringify(wasmFile)}, "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/").href`;
+          return `new (globalThis.URL || URL)(${JSON.stringify(wasmFile)}, ${JSON.stringify(DEFAULT_ONNX_WASM_PATH)}).href`;
         }),
         map: null
       };

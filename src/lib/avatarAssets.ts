@@ -77,12 +77,16 @@ export async function resolveAvatarUrl(
         const reader = response.body.getReader();
         let loaded = 0;
         
+        // 0 to 100, the scale the models report on through the same callback.
+        // This used to report a fraction, so the avatar sat at "1%" while the
+        // models beside it climbed to 100. Held at 99 until the last byte.
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           loaded += value.length;
-          onProgress(loaded / total, `avatar-${preset}`);
+          onProgress(Math.min(99, (loaded / total) * 100), `avatar-${preset}`);
         }
+        onProgress(100, `avatar-${preset}`);
       }
     } catch (e) {
       console.warn('Failed to stream avatar download with progress, proceeding to direct loader:', e);

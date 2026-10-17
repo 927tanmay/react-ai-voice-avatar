@@ -100,6 +100,16 @@ async function run() {
   // Install the absolute path to the tarball
   installing(`npm install ${tarballPath}`, APP_DIR);
 
+  // The workers carry their own copies of these, so an install must not.
+  // They used to come with it: transformers.js twice, sharp and onnxruntime-node
+  // among them, in every app, used by nothing.
+  const installedTwice = ['@huggingface/transformers', 'kokoro-js', 'phonemizer', 'sharp', 'onnxruntime-node']
+    .filter(name => fs.existsSync(path.join(APP_DIR, 'node_modules', name)));
+  if (installedTwice.length > 0) {
+    throw new Error(`Installing the package also installed ${installedTwice.join(', ')}, which only the bundled workers use.`);
+  }
+  console.log('✅ No model library installed alongside the package.');
+
   console.log('✍️ 4. Writing Test App.tsx & vite.config.ts...');
   
   const viteConfigCode = `

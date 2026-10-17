@@ -30,6 +30,8 @@ export interface UseKokoroWorkerConfig {
   onModelStorageFailed?: (message: string) => void;
   loadingProgress?: (pct: number, label: string) => void;
   workerBaseUrl?: string;
+  /** Where the voice loads onnxruntime's .wasm files from. */
+  onnxWasmPath?: string;
 }
 
 export function useKokoroWorker(config: UseKokoroWorkerConfig) {
@@ -142,6 +144,7 @@ export function useKokoroWorker(config: UseKokoroWorkerConfig) {
             // and having the worker override it a moment later.
             voice: configRef.current.voice,
             language: configRef.current.language || 'en-US',
+            onnxWasmPath: configRef.current.onnxWasmPath,
           },
         });
 

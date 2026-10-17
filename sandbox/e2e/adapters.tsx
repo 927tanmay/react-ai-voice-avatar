@@ -75,6 +75,8 @@ const second = (rate: number) => {
   for (let i = 0; i < rate; i++) pcm[i] = 0.1 * Math.sin((2 * Math.PI * 440 * i) / rate);
   return pcm;
 };
+/** ?wasm=local: onnxruntime's .wasm files from this page's own origin. */
+const onnxWasmPath = params.get('wasm') === 'local' ? `${location.origin}/__ort/` : undefined;
 /** ?transcribe=empty or ?transcribe=fail: onTranscribe hears nothing, or throws. */
 const transcribeMode = params.get('transcribe');
 /** ?listen=ptt: push-to-talk, driven by startListening and stopListening. */
@@ -118,6 +120,7 @@ const App: React.FC = () => {
         }
       : undefined,
     llmModel: localLlm ?? undefined,
+    onnxWasmPath,
     // ?tts=mms: the engine iPhones get by default.
     ttsEngine: params.get('tts') === 'mms' ? 'mms' : undefined,
     onSubmit: localLlm ? undefined : async (text, details) => {

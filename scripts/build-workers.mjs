@@ -74,7 +74,25 @@ const ignoreWasmPlugin = {
   }
 };
 
+/**
+ * The workers bundle the installed onnxruntime-web, and load its .wasm files
+ * from the release named in src/lib/onnxRuntime.ts. A mismatch fails at
+ * runtime with errors that do not mention versions, so fail here instead.
+ */
+async function assertOrtVersion() {
+  const source = await fs.readFile('src/lib/onnxRuntime.ts', 'utf8');
+  const declared = source.match(/ONNX_RUNTIME_VERSION\s*=\s*'([^']+)'/)?.[1];
+  const installed = JSON.parse(await fs.readFile('node_modules/onnxruntime-web/package.json', 'utf8')).version;
+  if (declared !== installed) {
+    throw new Error(
+      `onnxruntime-web ${installed} is installed, but src/lib/onnxRuntime.ts says ${declared}. ` +
+      'Change both together, and the exact version in package.json with them.',
+    );
+  }
+}
+
 async function build() {
+  await assertOrtVersion();
   console.log('[Esbuild] Pre-bundling workers to ensure Emscripten initialization order...');
   await fs.mkdir('dist/assets', { recursive: true });
   

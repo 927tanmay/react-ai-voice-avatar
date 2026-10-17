@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **A much smaller install.** `@huggingface/transformers` and `kokoro-js` are no
+  longer dependencies. The workers have always carried their own bundled
+  copies, so nothing used the installed ones, but they pulled transformers.js
+  in twice, plus `sharp`, `onnxruntime-node` and three builds of
+  `onnxruntime-web`, into every app. Reported by someone integrating the
+  package, whose lockfile grew by about 16,000 lines.
+- **`onnxruntime-web` is pinned to exactly 1.29.0**, the release whose `.wasm`
+  files the engine loads. With a range, the voice detector could get a newer
+  JavaScript build than its `.wasm` files.
+- **`lowMemoryMode` is deprecated.** It was accepted and never read. It will
+  be removed in 1.0.
 - **`stopListening()` no longer stops the reply.** It used to mark the turn
   interrupted and move the status to idle, so the rest of a reply in flight was
   dropped. It now stops only the microphone, and the reply finishes. Call
@@ -26,6 +37,12 @@
 
 ### Fixed
 
+- **`onnxWasmPath` reaches the models.** It was only given to the voice
+  detector: the worker running Whisper and the language model, and the Kokoro
+  worker, always fetched onnxruntime from jsDelivr, so a page with a strict
+  Content Security Policy could not run them even when it served the files.
+- **The avatar's download progress is 0 to 100,** like the models' on the same
+  `loadingProgress` callback. It reported a fraction, so it read as "1%".
 - **`<AiVoiceAvatar>` ignored `onTranscribe` and `onSynthesize`.** It accepted
   both props and never passed them on, so it downloaded Whisper and Kokoro,
   some 590 MB, and spoke in the local voice. The headless hook was not

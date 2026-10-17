@@ -54,7 +54,6 @@ export interface UseMLWorkerReturn {
   synthesizeText: (text: string, isLast?: boolean) => void;
   clearHistory: () => void;
   loadLocalLlm: (history?: Array<{ role: string; content: string }>) => void;
-  updateConfig: (newConfig: Partial<UseMLWorkerConfig>) => void;
   interrupt: () => void;
 }
 
@@ -175,6 +174,9 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
               loadLlm: configRef.current.loadLlm,
               loadAsr: configRef.current.loadAsr,
               loadTts: configRef.current.loadTts,
+              // Read by the worker, and never sent: the option did nothing
+              // for the models, only for the voice detector.
+              onnxWasmPath: configRef.current.onnxWasmPath,
             }
           });
 
@@ -338,9 +340,6 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     []
   );
 
-  const updateConfig = useCallback((newConfig: Partial<UseMLWorkerConfig>) => {
-    workerRef.current?.postMessage({ type: 'updateConfig', payload: newConfig });
-  }, []);
 
   return {
     isReady,
@@ -351,7 +350,6 @@ export function useMLWorker(config: UseMLWorkerConfig): UseMLWorkerReturn {
     synthesizeText,
     clearHistory,
     loadLocalLlm,
-    updateConfig,
     interrupt
   };
 }

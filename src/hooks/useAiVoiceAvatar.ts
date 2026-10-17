@@ -7,6 +7,7 @@ import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
 import { toPlayableAudio, type SynthesizedAudio } from '../lib/synthesizedAudio';
+import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
 
 const CRUMB = 'rava:kokoro-init-crashed';
 
@@ -117,6 +118,7 @@ export interface UseAiVoiceAvatarConfig {
   ttsEngine?: 'kokoro' | 'mms';
   ttsVoice?: string;
   fallbackMode?: 'wasm' | 'disable' | 'error';
+  /** @deprecated Accepted and ignored: nothing reads it. It will be removed in 1.0. */
   lowMemoryMode?: boolean;
   systemPrompt?: string;
   asrLanguage?: string;
@@ -819,6 +821,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     onSpeechEnd: activeTtsEngine === 'kokoro' ? handleSpeechEnd : undefined,
     loadingProgress: reportKokoroProgress,
     workerBaseUrl: config.workerBaseUrl,
+    onnxWasmPath: config.onnxWasmPath,
     onModelStorageFailed: msg => reportError('model-storage', `Not kept for next visit — ${msg}`, 'degraded'),
     onError: (stage, msg) => {
       console.warn(`[AiVoiceAvatar] Kokoro engine failed (${msg}). Automatically falling back to MMS TTS for audio...`);
@@ -1436,7 +1439,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           // Two contexts cost a little memory and keep hearing independent of
           // speaking, which is what they are.
           baseAssetPath: configRef.current.vadAssetPath || "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
-          onnxWASMBasePath: configRef.current.onnxWasmPath || "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/",
+          onnxWASMBasePath: configRef.current.onnxWasmPath || DEFAULT_ONNX_WASM_PATH,
           ...detection,
           /** Every frame, speech or not, about ten a second. Kept to counting. */
           onFrameProcessed: (probs: { isSpeech: number }, frame: Float32Array) => {

@@ -75,3 +75,35 @@ for (const engine of ['kokoro', 'mms'] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+/**
+ * onnxWasmPath reaching the engine. It was only given to the voice detector:
+ * the worker running the models always fetched onnxruntime from jsDelivr, so
+ * a page with a strict CSP could not run them even when it served the files.
+ */
+test('onnxWasmPath is where the in-browser model loads onnxruntime from', async ({ page, context }) => {
+  const served: string[] = [];
+  const cdn: string[] = [];
+  await serveTinyModel(context);
+  // This page's /__ort/ stands in for a host serving the files itself.
+  await context.route(/\/__ort\/(.+)$/, async route => {
+    const file = route.request().url().match(/\/__ort\/([^?]+)/)![1];
+    served.push(file);
+    const response = await fetch(`https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/${file}`);
+    return route.fulfill({
+      status: response.status,
+      body: Buffer.from(await response.arrayBuffer()),
+      contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+    });
+  });
+  context.on('request', r => { if (/cdn\.jsdelivr\.net\/npm\/onnxruntime-web/.test(r.url())) cdn.push(r.url()); });
+
+  await page.goto(`/e2e/adapters.html?llm=${MODEL}&wasm=local`);
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 60_000 });
+  await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));
+  await expect.poll(() => page.evaluate(() => (window as any).__e2e.synthesized.length), { timeout: 30_000 }).toBeGreaterThan(0);
+
+  // Before: nothing from /__ort/, and the runtime fetched from jsDelivr.
+  expect(served.some(f => /\.wasm$/.test(f))).toBe(true);
+  expect(cdn).toEqual([]);
+});
