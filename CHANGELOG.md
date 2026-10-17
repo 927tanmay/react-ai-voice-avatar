@@ -1,6 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
+
+A smaller install, a mute button, the 3D component honouring your speech
+adapters, and your own voice at any sample rate. Most of it was reported by
+someone integrating the package.
+
+### Upgrading from 0.7
+
+One behaviour changed. `stopListening()` now stops only the microphone, and a
+reply already under way finishes. If you used it to silence the avatar too,
+call `interrupt()` as well:
+
+```ts
+voice.interrupt();
+voice.stopListening();
+```
+
+The built-in Stop button on `<AiVoiceAvatar>` already does both, so the
+component behaves as before. Nothing else needs changing: the install drops
+packages you never used, and the new options are additions.
 
 ### Changed
 
