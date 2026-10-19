@@ -1,7 +1,7 @@
 {
   "name": "react-ai-voice-avatar",
   "version": "0.8.0",
-  "description": "Open-source alternative to real-time avatar APIs like HeyGen Interactive Avatar and Tavus. A talking, lip-synced 3D avatar that runs on your user's GPU, driven by your own LLM. No video stream, no per-minute billing. Or voice mode alone, ChatGPT-style, as a headless React hook.",
+  "description": "Voice mode for your React app, on your own LLM and speech vendors: mic, turn-taking, barge-in and streamed speech in one hook. No platform, no media server, no per-minute fee. Speech can run in the browser, and an optional lip-synced 3D avatar adds a face.",
   "keywords": [
     "react",
     "threejs",
@@ -34,7 +34,13 @@
     "voice-agent",
     "speech-to-speech",
     "headless",
-    "react-hook"
+    "react-hook",
+    "turn-taking",
+    "barge-in",
+    "vad",
+    "speech-recognition",
+    "text-to-speech",
+    "realtime-voice"
   ],
   "author": "Tanmay <https://github.com/927tanmay>",
   "repository": {

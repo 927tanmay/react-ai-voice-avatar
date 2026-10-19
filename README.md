@@ -6,17 +6,26 @@
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel)](https://react-ai-voice-avatar.vercel.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-**The open-source alternative to real-time avatar APIs, as a React component.**
+**Voice mode for your React app, on your own LLM and your own speech vendors. Add a talking 3D avatar if you want a face.**
 
-HeyGen Interactive Avatar, Tavus and Soul Machines sell a talking avatar that holds a conversation, rendered on their servers and billed per streaming minute. This does the same job as an npm install: the avatar renders on your user's GPU, so there is no video stream, no per-minute cost, and no third party in the middle of your conversations.
+You already have a chat backend. This adds the voice, the way ChatGPT and Gemini do it: the microphone, knowing when someone has finished speaking, stopping the reply the moment they talk over it, and speaking the answer sentence by sentence as it streams in. Point it at OpenAI, Anthropic, your own fine-tune or your existing chat endpoint, and keep your keys on your backend. There is no platform to sign up to, no media server to run and no per-minute fee.
 
-You bring the model. Point it at OpenAI, Anthropic, your own fine-tune or your existing chat endpoint, and keep your keys on your own backend. The package owns the parts that are tedious to build and easy to get wrong: microphone capture, knowing when someone has finished speaking, interrupting the avatar mid-sentence when they talk over it, streaming speech synthesis, and driving 52 ARKit facial blendshapes at 60 FPS so the mouth matches the words.
+```tsx
+import { useAiVoiceAvatar } from 'react-ai-voice-avatar/headless';
 
-It can also run with no backend at all. Speech recognition, generation and voice all have in-browser implementations, which makes for a convincing demo and a genuinely offline kiosk. Most production apps will use their own model and keep only speech and lip-sync on the device.
+const voice = useAiVoiceAvatar({
+  // Your model. Return a string, or a stream so speech starts sooner.
+  onSubmit: (text, { signal }) =>
+    fetch('/api/chat', { method: 'POST', body: text, signal }).then(r => r.body),
+});
+// Call voice.startListening() from a click, and talk.
+```
 
-**Don't need a face?** The same engine is a headless React hook for voice mode, the way ChatGPT and Gemini do it: `react-ai-voice-avatar/headless`, with no three.js in your bundle. [See it ➔](https://react-ai-voice-avatar.vercel.app/voice) · [How ➔](#-entry-1-the-headless-hook-voice-mode-for-your-app)
+Speech is yours to choose too. Pass `onTranscribe` and `onSynthesize` to use your own speech-to-text and voice providers, or leave them out and Whisper and Kokoro run in the browser, so audio never leaves the device. Even the model can run in the browser, for a demo or an offline kiosk. [Voice mode ➔](#-entry-1-the-headless-hook-voice-mode-for-your-app)
 
-### 🌐 [**Try the live demo ➔**](https://react-ai-voice-avatar.vercel.app/) · [**Voice only ➔**](https://react-ai-voice-avatar.vercel.app/voice)
+**Want a face?** The same engine drives a lip-synced 3D avatar, 52 ARKit blendshapes at 60 FPS, rendered on your user's GPU. HeyGen Interactive Avatar, Tavus and Soul Machines do that job on their servers and bill per streaming minute; here there is no video stream and nothing to bill. The headless import keeps three.js out of your bundle when you don't use it. [3D avatar ➔](#-entry-2-the-full-3d-avatar)
+
+### 🌐 [**Try voice mode ➔**](https://react-ai-voice-avatar.vercel.app/voice) · [**Try the avatar ➔**](https://react-ai-voice-avatar.vercel.app/)
 *Speech recognition, voice synthesis and lip-sync, all running in your browser tab.*
 
 The first visit downloads about 590 MB of models, roughly a minute and a half on a
