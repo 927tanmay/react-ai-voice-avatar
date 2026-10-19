@@ -8,6 +8,8 @@
 
 **Voice mode for your React app, on your own LLM and your own speech vendors. Add a talking 3D avatar if you want a face.**
 
+![Talking to the avatar: it answers with captions and gestures, is interrupted mid-answer, stops and answers the new question](./assets/gif/avatar-demo.gif)
+
 You already have a chat backend. This adds the voice, the way ChatGPT and Gemini do it: the microphone, knowing when someone has finished speaking, stopping the reply the moment they talk over it, and speaking the answer sentence by sentence as it streams in. Point it at OpenAI, Anthropic, your own fine-tune or your existing chat endpoint, and keep your keys on your backend. There is no platform to sign up to, no media server to run and no per-minute fee.
 
 ```tsx
@@ -35,8 +37,6 @@ hosted model on Groq's free tier, shared by everyone trying it, and start about
 3 seconds after you stop talking; on a busy day that tier can run out, and
 [`examples/groq-voice`](https://github.com/927tanmay/react-ai-voice-avatar/tree/main/examples/groq-voice)
 runs the same thing on your own free key.
-
-![Talking to the avatar: it answers with captions and gestures, is interrupted mid-answer, stops and answers the new question](./assets/gif/avatar-demo.gif)
 
 ### 🧪 Status: beta
 
