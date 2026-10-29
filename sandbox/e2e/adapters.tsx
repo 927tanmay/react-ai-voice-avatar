@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { useAiVoiceAvatar } from 'react-ai-voice-avatar/headless';
+import { useAiVoiceAvatar, pcmStream } from 'react-ai-voice-avatar/headless';
 
 /**
  * The hook with every stage handed to the host: transcription, replies and
@@ -30,6 +30,13 @@ type Probe = {
   userTranscripts: string[];
   /** Seconds of audio in each piece as it began to play. */
   durations: number[];
+  /** The message of each onError report. */
+  errorMessages: string[];
+  /** Streamed voices that yielded their last chunk, and that were closed at all. */
+  streamsEnded: number;
+  streamsClosed: number;
+  /** How many onSynthesize signals have been aborted. */
+  synthAborted: number;
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -41,7 +48,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0 };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -67,6 +74,10 @@ const localLlm = params.get('llm');
  * ?voice=16k: the voice answers with one second of 16 kHz Float32 samples, as
  * { audio, sampleRate }. ?voice=int16: one second of 22.05 kHz Int16 samples.
  * ?voice=bare16k: one second at 16 kHz returned bare, which is taken as 24 kHz.
+ * ?voice=stream: streamed, half a second of tone, a second and a half of
+ * nothing, then another half second. ?voice=stream-bytes: one second of
+ * 22.05 kHz Int16 PCM as bytes cut mid-sample, through pcmStream.
+ * ?voice=stream-mp3: MP3 bytes streamed, which cannot be played a piece at a time.
  */
 const voiceMode = params.get('voice');
 /** One second of a quiet tone at this rate. */
@@ -189,7 +200,10 @@ const App: React.FC = () => {
       return 'This is the reply.';
     },
     onInferenceEnd: () => { probe.inferenceEnded++; },
-    onError: e => { probe.errors.push({ stage: e.stage, severity: e.severity, detail: e.detail }); },
+    onError: e => {
+      probe.errors.push({ stage: e.stage, severity: e.severity, detail: e.detail });
+      probe.errorMessages.push(e.message);
+    },
     onTranscriptUpdate: (text, speaker) => { if (speaker === 'user') probe.userTranscripts.push(text); },
     onSpeechStart: text => {
       probe.played.push(text);
@@ -198,13 +212,44 @@ const App: React.FC = () => {
     },
     onUserInterrupt: () => { probe.userInterrupts++; },
     onSynthesize: adapters
-      ? async text => {
+      ? async (text, details) => {
           probe.synthesized.push(text);
+          details?.signal.addEventListener('abort', () => { probe.synthAborted++; });
           // A long first sentence takes a cloud voice longer than a short second.
           if (text.startsWith('The first')) await new Promise(r => setTimeout(r, 800));
           if (replyMode === 'stream-fail' && text.startsWith('The second')) throw new Error('voice down');
           if (voiceMode === '16k') return { audio: second(16000), sampleRate: 16000 };
           if (voiceMode === 'bare16k') return second(16000);
+          if (voiceMode === 'stream') {
+            return (async function* () {
+              try {
+                yield tone();
+                await wait(1500);
+                yield tone();
+                probe.streamsEnded++;
+              } finally {
+                probe.streamsClosed++;
+              }
+            })();
+          }
+          if (voiceMode === 'stream-bytes') {
+            const pcm = Int16Array.from(second(22050), v => Math.round(v * 32767));
+            const bytes = new Uint8Array(pcm.buffer);
+            const body = new ReadableStream<Uint8Array>({
+              start(c) {
+                for (let at = 0, i = 0; at < bytes.length; i++) {
+                  const n = [1001, 3, 4097][i % 3];
+                  c.enqueue(bytes.slice(at, at + n));
+                  at += n;
+                }
+                c.close();
+              },
+            });
+            return pcmStream(body, { sampleRate: 22050 });
+          }
+          if (voiceMode === 'stream-mp3') {
+            return (async function* () { yield new Uint8Array([0xff, 0xfb, 0x90, 0x44]); })();
+          }
           if (voiceMode === 'int16') {
             const f = second(22050);
             return { audio: Int16Array.from(f, v => Math.round(v * 32767)), sampleRate: 22050 };

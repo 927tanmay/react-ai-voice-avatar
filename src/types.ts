@@ -89,3 +89,13 @@ export interface AiVoiceAvatarSubmitDetails {
    */
   signal: AbortSignal;
 }
+
+/** The second argument to `onSynthesize`. */
+export interface AiVoiceAvatarSynthesizeDetails {
+  /**
+   * Aborted when this sentence is no longer wanted: the user talked over the
+   * reply, `interrupt()` was called, or a new turn began. Pass it to `fetch`
+   * so the request stops too.
+   */
+  signal: AbortSignal;
+}

@@ -6,7 +6,7 @@ import { resolveAvatarUrl } from '../lib/avatarAssets';
 import { StatusPill } from './StatusPill';
 import { useAiVoiceAvatar } from '../hooks/useAiVoiceAvatar';
 import { AudioLipSync } from '../lib/audioLipSync';
-import type { SynthesizedAudio } from '../lib/synthesizedAudio';
+import type { SynthesisResult } from '../lib/synthesizedAudio';
 
 const LazyLevaDebugPanel = React.lazy(() => import('./LevaDebugPanel'));
 import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
@@ -17,7 +17,7 @@ import type { VisemeWeights } from '../lib/visemeTable';
 
 // Re-exported from ../types so the headless entry never pulls in this module.
 export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarSubmitDetails } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from '../types';
 
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
@@ -116,9 +116,8 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onLocalLlmReady?: () => void;
   /** Cloud Adapter: Intercept the raw microphone Float32Array to use an external STT service (e.g. Sarvam, Whisper API) instead of the local ONNX model */
   onTranscribe?: (audio: Float32Array) => Promise<string>;
-  /** Cloud Adapter: Intercept the text before synthesis to use an external TTS service (e.g. ElevenLabs, OpenAI) instead of the local Kokoro/MMS model. Supports Float32Array PCM or ArrayBuffer (MP3/WAV) */
-  /** Speak with your own voice. See `UseAiVoiceAvatarConfig.onSynthesize` for the formats. */
-  onSynthesize?: (text: string) => Promise<SynthesizedAudio>;
+  /** Speak with your own voice, whole or streamed. See `UseAiVoiceAvatarConfig.onSynthesize` for the formats. */
+  onSynthesize?: (text: string, details: AiVoiceAvatarSynthesizeDetails) => Promise<SynthesisResult>;
   /**
    * Which voice is speaking: `'kokoro'`, `'mms'` on iPhones and wherever
    * Kokoro cannot load, or `'custom'` for `onSynthesize`. Fires on every change.

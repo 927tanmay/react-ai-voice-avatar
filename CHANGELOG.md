@@ -4,6 +4,18 @@
 
 Breaks nothing.
 
+### Added
+
+- **Streamed voices.** `onSynthesize` can return an async iterable of raw
+  audio chunks, and each plays as it arrives, so a sentence starts with its
+  first chunk rather than when your provider has finished it. `pcmStream()`
+  turns a fetch body of PCM bytes into one, carrying samples split across
+  network chunks. Encoded audio cannot be streamed, and is reported through
+  `onError` with a pointer to `pcmStream`.
+- **`onSynthesize` gets a `signal`**, aborted when the reply is talked over,
+  interrupted or superseded, whether the voice is streamed or whole. An
+  abandoned request rejecting is not reported as a failure.
+
 ### Changed
 
 - **Supplying every adapter no longer starts the ML worker.** With

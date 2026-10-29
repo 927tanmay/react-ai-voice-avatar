@@ -25,6 +25,18 @@ export type SynthesizedAudio =
   /** Raw samples, and the rate they were recorded at. */
   | { audio: Float32Array | Int16Array; sampleRate: number };
 
+/**
+ * One piece of a streamed voice. Raw samples only: an encoded file cannot be
+ * decoded a piece at a time.
+ */
+export type AudioChunk =
+  | Float32Array
+  | Int16Array
+  | { audio: Float32Array | Int16Array; sampleRate: number };
+
+/** What `onSynthesize` may resolve to: one result, or chunks as they arrive. */
+export type SynthesisResult = SynthesizedAudio | AsyncIterable<AudioChunk>;
+
 /** The rate assumed when an adapter returns bare samples without saying. */
 export const DEFAULT_SYNTHESIS_SAMPLE_RATE = 24000;
 
@@ -66,4 +78,75 @@ export async function toPlayableAudio(
     'onSynthesize must return a Float32Array, an Int16Array, an encoded file as an ArrayBuffer, ' +
     'or { audio, sampleRate }',
   );
+}
+
+/** Whether `onSynthesize` returned chunks rather than one result. */
+export function isAudioStream(result: unknown): result is AsyncIterable<AudioChunk> {
+  return !!result && typeof (result as any)[Symbol.asyncIterator] === 'function';
+}
+
+/** One streamed chunk as playable samples. Encoded chunks are refused. */
+export async function chunkToPlayable(chunk: AudioChunk): Promise<PlayableAudio> {
+  return toPlayableAudio(chunk as SynthesizedAudio, async () => {
+    throw new Error(
+      'onSynthesize streamed encoded audio, which cannot be played a piece at a time. ' +
+      'Ask your provider for raw PCM, and wrap a byte stream in pcmStream().',
+    );
+  });
+}
+
+export interface PcmStreamOptions {
+  /** Samples per second, as your provider sends them. */
+  sampleRate: number;
+  /** 16-bit integers or 32-bit floats, little-endian. Defaults to 's16le'. */
+  encoding?: 's16le' | 'f32le';
+}
+
+/**
+ * Raw PCM bytes, from `fetch(...).body` say, as chunks `onSynthesize` can
+ * stream. Network chunks split samples anywhere, so the bytes of a sample cut
+ * in two are carried into the next chunk rather than lost or misread.
+ */
+export async function* pcmStream(
+  source: ReadableStream<Uint8Array> | AsyncIterable<Uint8Array>,
+  { sampleRate, encoding = 's16le' }: PcmStreamOptions,
+): AsyncGenerator<{ audio: Float32Array | Int16Array; sampleRate: number }> {
+  if (!(typeof sampleRate === 'number' && Number.isFinite(sampleRate) && sampleRate > 0)) {
+    throw new Error(`pcmStream needs a sampleRate, got ${String(sampleRate)}`);
+  }
+  const width = encoding === 'f32le' ? 4 : 2;
+  const reader = 'getReader' in source ? source.getReader() : null;
+  const iterator = reader ? null : (source as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]();
+  let carry = new Uint8Array(0);
+  try {
+    while (true) {
+      const step = reader ? await reader.read() : await iterator!.next();
+      if (step.done) break;
+      const value = step.value as Uint8Array;
+      let bytes = value;
+      if (carry.length > 0) {
+        bytes = new Uint8Array(carry.length + value.length);
+        bytes.set(carry);
+        bytes.set(value, carry.length);
+      }
+      const whole = bytes.length - (bytes.length % width);
+      carry = bytes.slice(whole);
+      if (whole === 0) continue;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, whole);
+      const count = whole / width;
+      if (encoding === 'f32le') {
+        const audio = new Float32Array(count);
+        for (let i = 0; i < count; i++) audio[i] = view.getFloat32(i * 4, true);
+        yield { audio, sampleRate };
+      } else {
+        const audio = new Int16Array(count);
+        for (let i = 0; i < count; i++) audio[i] = view.getInt16(i * 2, true);
+        yield { audio, sampleRate };
+      }
+    }
+  } finally {
+    // Stopped early, by an interruption: let the source go too.
+    try { reader?.cancel()?.catch?.(() => {}); } catch (e) { /* already closed */ }
+    try { iterator?.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
+  }
 }

@@ -206,6 +206,32 @@ onSynthesize: async (text) => {
 },
 ```
 
+#### Streaming the voice
+
+Returned whole, a sentence is silent until your provider has produced all of
+it. Stream it instead and it plays from the first chunk: return an async
+iterable of raw chunks, in any of the raw forms above. `pcmStream` turns a
+fetch body of PCM bytes into one, keeping samples whole when the network cuts
+them in two:
+
+```tsx
+import { pcmStream } from 'react-ai-voice-avatar/headless';
+
+onSynthesize: async (text, { signal }) => {
+  const res = await fetch('/api/tts', { method: 'POST', body: text, signal });
+  return pcmStream(res.body!, { sampleRate: 24000 }); // or encoding: 'f32le'
+},
+```
+
+- Ask your provider for raw PCM: ElevenLabs `pcm_24000`, Cartesia
+  `pcm_s16le` or `pcm_f32le`, OpenAI `response_format: 'pcm'` (24 kHz,
+  16-bit). MP3 and Opus cannot be played a piece at a time, and a stream of
+  them is reported through `onError`.
+- `signal` is aborted when the user talks over the reply, `interrupt()` is
+  called or a new turn begins, whole or streamed. Pass it to `fetch` and the
+  request stops too.
+- Sentences are still requested one after another, so they play in order.
+
 The same adapters work on the 3D `<AiVoiceAvatar>` as props.
 
 ---
@@ -931,7 +957,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
 | `onLocalLlmReady` | `() => void` | `undefined` | Fires once the model requested by `preloadLocalLlm` has loaded. Drop `onSubmit` here to hand the conversation over; the turns your backend answered are carried across, so the local model knows what was already said. |
 | `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. Receives one utterance as 16 kHz mono samples. |
-| `onSynthesize` | `(text: string) => Promise<SynthesizedAudio>` | `undefined` | Replaces local voice synthesis with your own service, and Kokoro is then not downloaded. Return an encoded file, `{ audio, sampleRate }`, or raw 24 kHz samples; see [Cloud Adapters](#%EF%B8%8F-cloud-adapters). Called a sentence at a time. |
+| `onSynthesize` | `(text: string, { signal }) => Promise<SynthesisResult>` | `undefined` | Replaces local voice synthesis with your own service, and Kokoro is then not downloaded. Return an encoded file, `{ audio, sampleRate }`, raw 24 kHz samples, or a stream of raw chunks; see [Streaming the voice](#streaming-the-voice). Called a sentence at a time. |
 | `onError` | `(e: AiVoiceAvatarError) => void` | `undefined` | Fires when a stage fails. Carries `stage`, `message` and a `severity` of `degraded` or `fatal`. See [Handling failures](#-handling-failures). |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | `undefined` | Callback delivering real-time microphone transcriptions and assistant spoken utterance strings. |
 | `onStatusChange`| `(status: string) => void` | `undefined` | Emits live state transitions (`loading`, `idle`, `listening`, `thinking`, `speaking`). |

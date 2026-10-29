@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from '../types';
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
-import { toPlayableAudio, type SynthesizedAudio } from '../lib/synthesizedAudio';
+import { toPlayableAudio, isAudioStream, chunkToPlayable, type SynthesisResult } from '../lib/synthesizedAudio';
 import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
 
 const CRUMB = 'rava:kokoro-init-crashed';
@@ -153,8 +153,12 @@ export interface UseAiVoiceAvatarConfig {
    * or an Int16Array, which are taken to be 24 kHz; `{ audio, sampleRate }`
    * for any other rate; or an encoded file (MP3, WAV, Ogg) as an ArrayBuffer
    * or Uint8Array, which the browser decodes.
+   *
+   * Or stream it: return an async iterable of raw chunks, in any of the raw
+   * forms above, and each plays as it arrives. `pcmStream()` turns a fetch
+   * body of PCM bytes into one. Encoded audio cannot be streamed.
    */
-  onSynthesize?: (text: string) => Promise<SynthesizedAudio>;
+  onSynthesize?: (text: string, details: AiVoiceAvatarSynthesizeDetails) => Promise<SynthesisResult>;
   /**
    * Download the in-browser hearing and voice in the background even though
    * `onTranscribe` and `onSynthesize` are handling them.
@@ -356,7 +360,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     startAt: number;
     apply: () => void;
   }>>([]);
-  const audioQueueRef = useRef<Array<{ audioData: Float32Array; sampleRate: number; text: string; phonemes: string; isLast: boolean }>>([]);
+  /**
+   * `stream` marks a piece of a voice that arrives in chunks: the first starts
+   * the sentence, and the rest carry on from it without restarting captions
+   * or lip sync.
+   */
+  const audioQueueRef = useRef<Array<{ audioData: Float32Array; sampleRate: number; text: string; phonemes: string; isLast: boolean; stream?: 'first' | 'more' }>>([]);
   const isWaitingForMoreRef = useRef<boolean>(false);
   const currentSpeechTextRef = useRef<string>('');
   const currentSpeechPhonemesRef = useRef<string>('');
@@ -386,10 +395,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    */
   const submitRef = useRef<{ controller: AbortController; open: boolean } | null>(null);
   /** Abandon the current `onSubmit` reply, if there is one. */
+  /** The host's voice requests under way, aborted with the reply they belong to. */
+  const synthesisRef = useRef(new Set<AbortController>());
   const cancelSubmit = useCallback(() => {
     const current = submitRef.current;
     submitRef.current = null;
     current?.controller.abort();
+    for (const controller of synthesisRef.current) controller.abort();
+    synthesisRef.current.clear();
   }, []);
 
   /**
@@ -715,9 +728,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         // accurate to within a few milliseconds, which is imperceptible on a face.
         const apply = () => {
           visemeTimersRef.current = visemeTimersRef.current.filter(c => c.apply !== apply);
+          // The sentence's next chunk: it is already captioned and timed.
+          if (item.stream === 'more') return;
           currentSpeechTextRef.current = item.text;
           currentSpeechPhonemesRef.current = item.phonemes;
-          currentAudioDurationRef.current = buffer.duration;
+          // A streamed sentence's length is not known yet, so lip sync times it
+          // from the text alone rather than squeezing it into the first chunk.
+          currentAudioDurationRef.current = item.stream === 'first' ? 0 : buffer.duration;
           playbackStartTimeRef.current = startAt;
           configRef.current.onSpeechStart?.(item.text);
         };
@@ -741,10 +758,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     finishIfDrained();
   }, [ensureAudioContext, clearWatchdog, finishIfDrained]);
 
-  const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, phonemes: string = '', isLast: boolean = true) => {
+  const handleSpeechOutput = useCallback((audioData: Float32Array, sampleRate: number, text: string, phonemes: string = '', isLast: boolean = true, stream?: 'first' | 'more') => {
     if (isInterruptedRef.current) return;
     isWaitingForMoreRef.current = !isLast;
-    audioQueueRef.current.push({ audioData, sampleRate, text, phonemes, isLast });
+    audioQueueRef.current.push({ audioData, sampleRate, text, phonemes, isLast, stream });
     scheduleQueuedAudio();
   }, [scheduleQueuedAudio]);
 
@@ -1176,8 +1193,45 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     // Cloud Adapter: Override local TTS
     if (configRef.current.onSynthesize) {
+      const controller = new AbortController();
+      synthesisRef.current.add(controller);
+      /** Interrupted, or superseded by a new reply: stop quietly. */
+      const abandoned = () => controller.signal.aborted || isInterruptedRef.current;
       try {
-        const audioResult = await configRef.current.onSynthesize(text);
+        const audioResult = await configRef.current.onSynthesize(text, { signal: controller.signal });
+        if (abandoned()) return true;
+
+        // Chunks as the voice produces them. Each is played as it arrives,
+        // stitched onto the one before, so the sentence starts with its first.
+        if (isAudioStream(audioResult)) {
+          const iterator = audioResult[Symbol.asyncIterator]();
+          let started = false;
+          let ended = false;
+          try {
+            while (true) {
+              const step = await iterator.next();
+              if (abandoned()) return true;
+              if (step.done) {
+                ended = true;
+                break;
+              }
+              const { pcm, sampleRate } = await chunkToPlayable(step.value);
+              if (pcm.length === 0) continue;
+              handleSpeechOutput(pcm, sampleRate, text, '', false, started ? 'more' : 'first');
+              started = true;
+            }
+          } finally {
+            // Abandoned, or a chunk it could not play: let the source go.
+            if (!ended) {
+              try { iterator.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
+            }
+          }
+          // Only now is it known which chunk was the last. Nothing came at all
+          // is an empty sentence, and the turn still settles.
+          if (isLast) handleSpeechEnd();
+          return true;
+        }
+
         // Raw samples at any rate, as floats or 16-bit integers, or an encoded
         // file. See lib/synthesizedAudio.ts.
         const { pcm, sampleRate } = await toPlayableAudio(audioResult, async encoded => {
@@ -1189,12 +1243,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
         handleSpeechOutput(pcm, sampleRate, text, '', isLast);
       } catch (err) {
+        // A host passing the signal to fetch sees it rejected when the reply
+        // is abandoned, and that is not a failure.
+        if (abandoned()) return true;
         console.error('[AiVoiceAvatar] Cloud onSynthesize adapter failed:', err);
         reportError('onSynthesize', `onSynthesize failed: ${(err as Error)?.message ?? err}`, 'degraded');
         advance('pipeline-failed');
         configRef.current.onInferenceEnd?.();
         resumeVadIfAllowed();
         return false;
+      } finally {
+        synthesisRef.current.delete(controller);
       }
       return true;
     }
@@ -1206,7 +1265,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       mmsSynthesize(text, isLast);
     }
     return true;
-  }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize, handleSpeechOutput, resumeVadIfAllowed, ensureAudioContext]);
+  }, [activeTtsEngine, isKokoroReady, kokoroSynthesize, mmsSynthesize, handleSpeechOutput, handleSpeechEnd, resumeVadIfAllowed, ensureAudioContext]);
 
   /** Which call to speakInSentences is current, so a superseded one stops. */
   const sentenceTurnRef = useRef(0);
