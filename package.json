@@ -155,6 +155,7 @@
     "test:speech-chunks": "node --experimental-strip-types scripts/test-speech-chunks.mjs",
     "test:push-to-talk": "node --experimental-strip-types scripts/test-push-to-talk.mjs",
     "test:synthesized-audio": "node --experimental-strip-types scripts/test-synthesized-audio.mjs",
+    "test:streaming-transcription": "node --experimental-strip-types scripts/test-streaming-transcription.mjs",
     "test:avatar-symmetry": "node scripts/test-avatar-symmetry.mjs"
   },
   "overrides": {

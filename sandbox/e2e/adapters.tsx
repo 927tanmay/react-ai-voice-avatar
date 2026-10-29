@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { useAiVoiceAvatar, pcmStream } from 'react-ai-voice-avatar/headless';
+import { useAiVoiceAvatar, pcmStream, streamingTranscriber } from 'react-ai-voice-avatar/headless';
 
 /**
  * The hook with every stage handed to the host: transcription, replies and
@@ -37,6 +37,13 @@ type Probe = {
   streamsClosed: number;
   /** How many onSynthesize signals have been aborted. */
   synthAborted: number;
+  /** From a streaming transcriber: what onUserPartial got, and its sessions. */
+  partials: string[];
+  sessionsOpened: number;
+  sessionsFinished: number;
+  sessionsAborted: number;
+  /** Seconds of audio pushed to each session the moment it opened. */
+  openingSeconds: number[];
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -48,7 +55,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0 };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -88,8 +95,61 @@ const second = (rate: number) => {
 };
 /** ?wasm=local: onnxruntime's .wasm files from this page's own origin. */
 const onnxWasmPath = params.get('wasm') === 'local' ? `${location.origin}/__ort/` : undefined;
-/** ?transcribe=empty or ?transcribe=fail: onTranscribe hears nothing, or throws. */
+/**
+ * ?transcribe=empty or ?transcribe=fail: onTranscribe hears nothing, or throws.
+ * ?transcribe=stream: a streaming transcriber, with partials, that never ends
+ * the turn itself. ?transcribe=stream-endturn: one that ends it after 300 ms
+ * of quiet following speech, as a provider's endpointing does.
+ * ?transcribe=stream-early: one that ends it after 0.6 s of speech, mid-sentence.
+ */
 const transcribeMode = params.get('transcribe');
+/** ?redemption=ms and ?minspeech=ms: the detector's silence timer and minimum speech. */
+const speechDetection = {
+  ...(params.has('redemption') ? { redemptionMs: Number(params.get('redemption')) } : {}),
+  ...(params.has('minspeech') ? { minSpeechMs: Number(params.get('minspeech')) } : {}),
+};
+
+/** A stand-in streaming provider. It hears the fake microphone's question. */
+const standInTranscriber = streamingTranscriber(({ signal, partial, endTurn, sampleRate }) => {
+  probe.sessionsOpened++;
+  signal.addEventListener('abort', () => { probe.sessionsAborted++; });
+  let saidPartial = false;
+  let speech = 0;
+  let quietAfterSpeech = 0;
+  let opening = true;
+  let openingSamples = 0;
+  queueMicrotask(() => {
+    probe.openingSeconds.push(openingSamples / sampleRate);
+    opening = false;
+  });
+  return {
+    push(frame) {
+      if (opening) openingSamples += frame.length;
+      let sum = 0;
+      for (const v of frame) sum += v * v;
+      const loud = Math.sqrt(sum / frame.length) > 0.01;
+      if (loud) {
+        speech += frame.length;
+        quietAfterSpeech = 0;
+      } else if (speech > 0) {
+        quietAfterSpeech += frame.length;
+      }
+      if (speech > 0.5 * sampleRate && !saidPartial) {
+        saidPartial = true;
+        partial('What is the');
+      }
+      if (transcribeMode === 'stream-early' && speech >= 0.6 * sampleRate) endTurn('What is');
+      if (transcribeMode === 'stream-endturn' && quietAfterSpeech >= 0.3 * sampleRate) {
+        endTurn('What is the capital of France?');
+      }
+    },
+    async finish() {
+      probe.sessionsFinished++;
+      await wait(50);
+      return 'What is the capital of France?';
+    },
+  };
+});
 /** ?listen=ptt: push-to-talk, driven by startListening and stopListening. */
 const listenMode = params.get('listen') === 'ptt' ? 'push-to-talk' : 'continuous';
 (window as unknown as { __e2e: Probe }).__e2e = probe;
@@ -122,7 +182,9 @@ const App: React.FC = () => {
     // ?preload=1: fetch the local hearing and voice behind the adapters.
     preloadLocalSpeech: params.has('preload'),
     onLocalSpeechReady: () => { probe.localSpeechReady = true; },
-    onTranscribe: adapters
+    speechDetection,
+    onUserPartial: text => { probe.partials.push(text); },
+    onTranscribe: !adapters ? undefined : transcribeMode?.startsWith('stream') ? standInTranscriber : adapters
       ? async audio => {
           probe.heard.push(audio.length / 16000);
           // A real service takes a moment. Answering in the same tick lets

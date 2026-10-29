@@ -24,3 +24,5 @@ export type { StatusPillProps } from './components/StatusPill';
 export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from './types';
 export type { SynthesizedAudio, SynthesisResult, AudioChunk, PcmStreamOptions } from './lib/synthesizedAudio';
 export { pcmStream } from './lib/synthesizedAudio';
+export { streamingTranscriber } from './lib/streamingTranscription';
+export type { StreamingTranscriber, TranscriberContext, TranscriptionSession } from './lib/streamingTranscription';

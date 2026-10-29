@@ -65,6 +65,8 @@ jobs:
         run: npm run test:push-to-talk
       - name: Synthesized audio
         run: npm run test:synthesized-audio
+      - name: Streaming transcription
+        run: npm run test:streaming-transcription
       - name: Avatar symmetry
         run: npm run test:avatar-symmetry
 

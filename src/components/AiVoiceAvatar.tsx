@@ -7,6 +7,7 @@ import { StatusPill } from './StatusPill';
 import { useAiVoiceAvatar } from '../hooks/useAiVoiceAvatar';
 import { AudioLipSync } from '../lib/audioLipSync';
 import type { SynthesisResult } from '../lib/synthesizedAudio';
+import type { StreamingTranscriber } from '../lib/streamingTranscription';
 
 const LazyLevaDebugPanel = React.lazy(() => import('./LevaDebugPanel'));
 import { PhonemeTimingEngine, blendAudioAndText } from '../lib/phonemeTiming';
@@ -114,8 +115,10 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   preloadLocalLlm?: boolean;
   /** Fires once the model requested by `preloadLocalLlm` is loaded and warm. */
   onLocalLlmReady?: () => void;
-  /** Cloud Adapter: Intercept the raw microphone Float32Array to use an external STT service (e.g. Sarvam, Whisper API) instead of the local ONNX model */
-  onTranscribe?: (audio: Float32Array) => Promise<string>;
+  /** Transcribe with your own speech-to-text, whole or streamed. See `UseAiVoiceAvatarConfig.onTranscribe`. */
+  onTranscribe?: ((audio: Float32Array) => Promise<string>) | StreamingTranscriber;
+  /** The words so far, from a `streamingTranscriber`, while the user speaks. */
+  onUserPartial?: (text: string) => void;
   /** Speak with your own voice, whole or streamed. See `UseAiVoiceAvatarConfig.onSynthesize` for the formats. */
   onSynthesize?: (text: string, details: AiVoiceAvatarSynthesizeDetails) => Promise<SynthesisResult>;
   /**
@@ -719,6 +722,7 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onInferenceStart: props.onInferenceStart,
     onInferenceEnd: props.onInferenceEnd,
     onUserInterrupt: props.onUserInterrupt,
+    onUserPartial: props.onUserPartial,
     onAudioLevelChange: props.onAudioLevelChange,
     onTtsEngineChange: props.onTtsEngineChange,
     preloadLocalSpeech: props.preloadLocalSpeech,

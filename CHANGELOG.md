@@ -6,6 +6,14 @@ Breaks nothing.
 
 ### Added
 
+- **Streaming speech-to-text.** Wrap your provider in `streamingTranscriber()`
+  and it hears the user while they speak: audio is pushed from the first loud
+  frame, with the moment before it so the first word is kept, partial
+  transcripts reach the new `onUserPartial`, and `endTurn()` ends the turn as
+  soon as the provider hears them finish, instead of after 1.4 s of silence.
+  The silence timer stays as the backstop. Carrying on after `endTurn` is a
+  new turn, and interrupts the reply. Push-to-talk streams from press to
+  release.
 - **Streamed voices.** `onSynthesize` can return an async iterable of raw
   audio chunks, and each plays as it arrives, so a sentence starts with its
   first chunk rather than when your provider has finished it. `pcmStream()`

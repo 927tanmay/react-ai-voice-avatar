@@ -7,6 +7,7 @@ import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
 import { toPlayableAudio, isAudioStream, chunkToPlayable, type SynthesisResult } from '../lib/synthesizedAudio';
+import { isStreamingTranscriber, openTranscription, type StreamingTranscriber, type TranscriptionSession } from '../lib/streamingTranscription';
 import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
 
 const CRUMB = 'rava:kokoro-init-crashed';
@@ -147,7 +148,20 @@ export interface UseAiVoiceAvatarConfig {
   preloadLocalLlm?: boolean;
   /** Fires once the model requested by `preloadLocalLlm` is loaded and warm. */
   onLocalLlmReady?: () => void;
-  onTranscribe?: (audio: Float32Array) => Promise<string>;
+  /**
+   * Transcribe with your own speech-to-text. A function gets the recording
+   * once the user has finished and returns the text. Or pass
+   * `streamingTranscriber(...)` to hear them while they speak: partial
+   * transcripts reach `onUserPartial`, and your provider can end the turn
+   * before the silence timer does.
+   */
+  onTranscribe?: ((audio: Float32Array) => Promise<string>) | StreamingTranscriber;
+  /**
+   * The words so far, while the user is still speaking, from a
+   * `streamingTranscriber`. Each call replaces the last. The final text still
+   * arrives through `onTranscriptUpdate`.
+   */
+  onUserPartial?: (text: string) => void;
   /**
    * Speak with your own voice. Return raw samples as a Float32Array (-1 to 1)
    * or an Int16Array, which are taken to be 24 kHz; `{ audio, sampleRate }`
@@ -1350,6 +1364,93 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [isReady, advance]);
 
   /**
+   * The streaming transcription hearing the user now, if any.
+   *
+   * Opened at the first loud frame, so the first word is heard, and detached
+   * once the turn ends or is abandoned. `realStarted` is whether the sound
+   * has lasted long enough to be speech; an end of turn the provider calls
+   * before that waits in `pendingEnd`, because until then it may be a cough.
+   */
+  type LiveTranscription = {
+    session: TranscriptionSession;
+    controller: AbortController;
+    realStarted: boolean;
+    pendingEnd?: { text?: string };
+  };
+  const liveTranscriptionRef = useRef<LiveTranscription | null>(null);
+  /** The last `preSpeechPadMs` of frames, sent first so the first word is not clipped. */
+  const preRollRef = useRef<Float32Array[]>([]);
+
+  const abortLiveTranscription = useCallback(() => {
+    const live = liveTranscriptionRef.current;
+    liveTranscriptionRef.current = null;
+    live?.controller.abort();
+  }, []);
+
+  /**
+   * The provider says the user has finished, so the turn ends now.
+   *
+   * The detector is still inside the same stretch of speech, and would not
+   * report a new one if the user carried on. So its segment is started over:
+   * whatever is said from here is a new turn, and talking over the reply
+   * interrupts it as usual. Its reset() does that without closing the
+   * microphone. pause() and start() would too, but pause() stops the tracks
+   * and start() reopens the device, losing audio in between, so they are only
+   * the fallback should a future version drop reset().
+   */
+  const endLiveTurn = useCallback((live: LiveTranscription, text?: string) => {
+    if (liveTranscriptionRef.current !== live) return;
+    liveTranscriptionRef.current = null;
+    const frameProcessor = (vadRef.current as any)?.frameProcessor;
+    if (typeof frameProcessor?.reset === 'function') {
+      frameProcessor.reset();
+    } else {
+      setDetector(false);
+      setDetector(true);
+    }
+    const frames = speechFramesRef.current;
+    const speechMs = Math.round(Math.max(1, frames.last - frames.first + 1) * frames.msPerFrame);
+    const finished = live.session.finish();
+    let transcript = finished;
+    if (text && text.trim()) {
+      // Still finished, so the host can close its connection; its answer is
+      // not needed.
+      finished.catch(() => {});
+      transcript = Promise.resolve(text);
+    }
+    handleVadSpeechEndRef.current(new Float32Array(0), speechMs, transcript);
+  }, [setDetector]);
+
+  /** Start hearing an utterance through the host's streaming transcriber. */
+  const openLiveTranscription = useCallback((withPreRoll: boolean) => {
+    const transcriber = configRef.current.onTranscribe;
+    if (!isStreamingTranscriber(transcriber)) return;
+    abortLiveTranscription();
+    const controller = new AbortController();
+    const live = { controller, realStarted: false } as LiveTranscription;
+    const isLive = () => liveTranscriptionRef.current === live;
+    live.session = openTranscription(transcriber, {
+      signal: controller.signal,
+      sampleRate: 16000,
+      partial: text => {
+        if (isLive() && text) configRef.current.onUserPartial?.(text);
+      },
+      endTurn: text => {
+        if (!isLive()) return;
+        // Letting go of the button ends a push-to-talk turn, nothing else.
+        if (configRef.current.listenMode === 'push-to-talk') return;
+        if (!live.realStarted) {
+          live.pendingEnd = { text };
+          return;
+        }
+        endLiveTurn(live, text);
+      },
+    });
+    liveTranscriptionRef.current = live;
+    if (withPreRoll) for (const frame of preRollRef.current) live.session.push(frame);
+  }, [abortLiveTranscription, endLiveTurn]);
+
+  /**
    * The voice detector's speech-end handler, held in a ref.
    *
    * The worker callbacks it needs change identity as the workers initialise.
@@ -1357,9 +1458,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * identity too, and re-running that would tear down the audio device and ask
    * the user for permission a second time in the middle of a conversation.
    */
-  const handleVadSpeechEndRef = useRef<(audio: Float32Array, speechMs?: number) => void>(() => {});
+  const handleVadSpeechEndRef = useRef<(audio: Float32Array, speechMs?: number, transcript?: Promise<string>) => void>(() => {});
   useEffect(() => {
-    handleVadSpeechEndRef.current = async (audio: Float32Array, speechMs?: number) => {
+    /** `transcript` is a streaming transcriber's text, heard as it was spoken. */
+    handleVadSpeechEndRef.current = async (audio: Float32Array, speechMs?: number, transcript?: Promise<string>) => {
       // The user has finished speaking, so a reply is wanted again. This
       // reopens the gate that barge-in closed; leaving it shut would silence
       // the answer to the very sentence that interrupted.
@@ -1389,9 +1491,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       }
 
       // Cloud adapter: override local ASR.
-      if (configRef.current.onTranscribe) {
+      const transcriber = configRef.current.onTranscribe;
+      if (transcript || transcriber) {
         try {
-          const text = await configRef.current.onTranscribe(audio);
+          const text = await (transcript ?? (isStreamingTranscriber(transcriber)
+            // Opened at the first sound of every turn, so this is a turn it
+            // never heard, which should not happen. Reported, not guessed at.
+            ? Promise.reject(new Error('the streaming transcriber heard none of this turn'))
+            : transcriber!(audio)));
           if (text && text.trim()) {
             submitUserText(text, speechMs);
           } else {
@@ -1547,6 +1654,18 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             const isSpeech = probs.isSpeech >= detection.positiveSpeechThreshold;
             if (isSpeech) frames.last = frames.index;
 
+            // A streaming transcriber hears every frame of an utterance, and
+            // the ones just before it, kept here, are sent when it opens.
+            if (isStreamingTranscriber(configRef.current.onTranscribe)) {
+              const preRoll = preRollRef.current;
+              preRoll.push(frame);
+              const keep = Math.ceil(detection.preSpeechPadMs / frames.msPerFrame);
+              while (preRoll.length > keep) preRoll.shift();
+            } else if (preRollRef.current.length > 0) {
+              preRollRef.current = [];
+            }
+            liveTranscriptionRef.current?.session.push(frame);
+
             // Push-to-talk keeps the lot. The detector's segments end on
             // silence, and there the button ends the turn instead.
             const held = heldAudioRef.current;
@@ -1577,6 +1696,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
             clearWatchdog();
             suspendPlayback();
+            openLiveTranscription(true);
           },
 
           /**
@@ -1615,13 +1735,23 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             if (wasSpeaking) {
               configRef.current.onUserInterrupt?.();
             }
+
+            // Speech now, so an end of turn the provider called early stands.
+            const live = liveTranscriptionRef.current;
+            if (live) {
+              live.realStarted = true;
+              if (live.pendingEnd) endLiveTurn(live, live.pendingEnd.text);
+            }
           },
           onSpeechEnd: (audio: Float32Array) => {
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return;
             const frames = speechFramesRef.current;
             const speechMs = Math.max(1, frames.last - frames.first + 1) * frames.msPerFrame;
-            handleVadSpeechEndRef.current(audio, Math.round(speechMs));
+            // The silence timer ended it before the provider did.
+            const live = liveTranscriptionRef.current;
+            liveTranscriptionRef.current = null;
+            handleVadSpeechEndRef.current(audio, Math.round(speechMs), live?.session.finish());
           },
           /**
            * The sound stopped before it ever became speech. A cough, in short.
@@ -1641,6 +1771,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             if (isUnmountedRef.current) return;
             if (configRef.current.listenMode === 'push-to-talk') return;
 
+            abortLiveTranscription();
             resumePlayback();
           },
           startOnLoad: false
@@ -1681,6 +1812,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     isUnmountedRef.current = false;
     return () => {
       isUnmountedRef.current = true;
+      liveTranscriptionRef.current?.controller.abort();
+      liveTranscriptionRef.current = null;
       if (playbackWatchdogRef.current) {
         clearTimeout(playbackWatchdogRef.current);
         playbackWatchdogRef.current = null;
@@ -1740,6 +1873,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         if (wasSpeaking) configRef.current.onUserInterrupt?.();
       }
       heldAudioRef.current = { frames: [], speech: [], msPerFrame: 0 };
+      // From the press: nothing before it is part of the turn.
+      openLiveTranscription(false);
       setDetector(true);
       advance('user-started-speaking');
       return;
@@ -1747,7 +1882,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     setDetector(true);
     advance('listen-requested');
-  }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance, setDetector]);
+  }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance, setDetector, openLiveTranscription]);
 
   /**
    * Stop hearing the user. A reply already under way carries on: stopping the
@@ -1764,6 +1899,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     // leaving the status on 'listening' with nothing coming.
     const held = heldAudioRef.current;
     heldAudioRef.current = null;
+    const live = liveTranscriptionRef.current;
+    liveTranscriptionRef.current = null;
     if (held && configRef.current.listenMode === 'push-to-talk') {
       setDetector(false);
       const detection = { ...SPEECH_DETECTION_DEFAULTS, ...(configRef.current.speechDetection ?? {}) };
@@ -1773,11 +1910,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         preSpeechPadMs: detection.preSpeechPadMs,
       });
       if (speech) {
-        handleVadSpeechEndRef.current(speech.audio, speech.speechMs);
+        handleVadSpeechEndRef.current(speech.audio, speech.speechMs, live?.session.finish());
         return;
       }
       // Nothing said, or too little to be words. Fall through to a plain stop.
     }
+    // An utterance cut off by stopping is abandoned, not transcribed.
+    live?.controller.abort();
 
     setDetector(false);
     // The avatar has the floor, and keeps it until its reply ends.
@@ -1803,6 +1942,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const interrupt = useCallback(() => {
     // Cancels a push-to-talk hold too: interrupt() is the way to abandon one.
     heldAudioRef.current = null;
+    abortLiveTranscription();
     isInterruptedRef.current = true;
     clearWatchdog();
     stopAllScheduledAudio();
@@ -1816,7 +1956,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     voiceQueueTurnRef.current++;
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
-  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit, setDetector]);
+  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit, setDetector, abortLiveTranscription]);
 
   // Audio polling loop for onAudioLevelChange callback
   useEffect(() => {

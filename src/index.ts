@@ -5,6 +5,8 @@ export type { AiVoiceAvatarProps, AiVoiceAvatarCapabilities, AiVoiceAvatarHandle
 export type { AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from './types';
 export type { SynthesizedAudio, SynthesisResult, AudioChunk, PcmStreamOptions } from './lib/synthesizedAudio';
 export { pcmStream } from './lib/synthesizedAudio';
+export { streamingTranscriber } from './lib/streamingTranscription';
+export type { StreamingTranscriber, TranscriberContext, TranscriptionSession } from './lib/streamingTranscription';
 export { StatusPill } from './components/StatusPill';
 export type { StatusPillProps } from './components/StatusPill';
 export { useAiVoiceAvatar, useAiVoiceAvatar as useAiVoiceAvatarState } from './hooks/useAiVoiceAvatar';

@@ -206,6 +206,54 @@ onSynthesize: async (text) => {
 },
 ```
 
+#### Streaming speech-to-text
+
+`onTranscribe` gets the recording once the user has stopped, and the hook
+only decides they have stopped after `redemptionMs` of silence, 1.4 s by
+default. A streaming provider (Deepgram, AssemblyAI, Soniox, Speechmatics and
+the like) hears the words as they are spoken and can say when the turn is
+over, often much sooner. Wrap it in `streamingTranscriber`:
+
+```tsx
+import { streamingTranscriber } from 'react-ai-voice-avatar/headless';
+
+onTranscribe: streamingTranscriber(({ signal, partial, endTurn }) => {
+  const ws = new WebSocket('wss://your-backend/stt'); // keep provider keys on your server
+  signal.addEventListener('abort', () => ws.close());
+  let done: ((text: string) => void) | undefined;
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data); // whatever your backend relays
+    if (msg.type === 'partial') partial(msg.text);         // the words so far
+    if (msg.type === 'end_of_turn') endTurn(msg.text);     // they have finished
+    if (msg.type === 'final') done?.(msg.text);            // answer to finish()
+  };
+  return {
+    push: frame => ws.send(toInt16(frame)), // 16 kHz mono, as captured
+    finish: () => new Promise(resolve => {
+      done = resolve;
+      ws.send(JSON.stringify({ type: 'finish' }));
+    }),
+  };
+}),
+onUserPartial: text => setLiveCaption(text),
+```
+
+- The session opens at the first loud frame, and the audio from just before it
+  (`preSpeechPadMs`) is pushed first, so the first word is not clipped. `open`
+  may be async while a socket connects; audio waits for it.
+- `endTurn(text)` ends the turn at once. Without it, the silence timer still
+  ends the turn and `finish()` gives the text, so a provider without
+  endpointing works too.
+- If the user carries on after `endTurn`, that is a new turn, and talking over
+  the reply interrupts it as usual.
+- A sound too short to be speech, such as a cough, aborts the session's
+  `signal`, as do `interrupt()`, `stopListening()` and unmounting. Each noise
+  opens a session, so close sockets promptly.
+- Partials go to `onUserPartial` and the final text to `onTranscriptUpdate`, so
+  a chat that appends every transcript is not flooded.
+- In push-to-talk the session runs from press to release, and the button, not
+  the provider, ends the turn.
+
 #### Streaming the voice
 
 Returned whole, a sentence is silent until your provider has produced all of
@@ -956,7 +1004,8 @@ Explore the canonical patterns in the `examples/` directory:
 | `onSubmit` | `(text: string, details: { speechMs?: number }) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. Return `''` to stay quiet and keep listening. `speechMs` is how long the user spoke. See [Staying quiet](#staying-quiet-and-how-long-they-spoke). |
 | `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
 | `onLocalLlmReady` | `() => void` | `undefined` | Fires once the model requested by `preloadLocalLlm` has loaded. Drop `onSubmit` here to hand the conversation over; the turns your backend answered are carried across, so the local model knows what was already said. |
-| `onTranscribe` | `(audio: Float32Array) => Promise<string>` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. Receives one utterance as 16 kHz mono samples. |
+| `onTranscribe` | `(audio: Float32Array) => Promise<string>` or `streamingTranscriber(...)` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. A function receives one utterance as 16 kHz mono samples; a streaming transcriber hears it as it is spoken. See [Streaming speech-to-text](#streaming-speech-to-text). |
+| `onUserPartial` | `(text: string) => void` | `undefined` | The words so far while the user speaks, from a streaming transcriber. |
 | `onSynthesize` | `(text: string, { signal }) => Promise<SynthesisResult>` | `undefined` | Replaces local voice synthesis with your own service, and Kokoro is then not downloaded. Return an encoded file, `{ audio, sampleRate }`, raw 24 kHz samples, or a stream of raw chunks; see [Streaming the voice](#streaming-the-voice). Called a sentence at a time. |
 | `onError` | `(e: AiVoiceAvatarError) => void` | `undefined` | Fires when a stage fails. Carries `stage`, `message` and a `severity` of `degraded` or `fatal`. See [Handling failures](#-handling-failures). |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | `undefined` | Callback delivering real-time microphone transcriptions and assistant spoken utterance strings. |
@@ -1029,6 +1078,7 @@ scene and its overlays (`avatarPreset`, `avatarSize`, `modelSrc`,
 | `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | Loudness from 0 to 1, every frame, from whichever side is talking. What an orb or waveform animates from. Write it to the DOM through a ref rather than into state. |
 | `onSpeechStart` | `(text: string) => void` | Each sentence of the reply as it starts playing. Captions that keep pace with the voice. |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | What the user said, once transcribed, and the reply in full. |
+| `onUserPartial` | `(text: string) => void` | The words so far while the user is still speaking, from a [streaming transcriber](#streaming-speech-to-text). Each call replaces the last. |
 | `onInferenceStart` / `onInferenceEnd` | `() => void` | Around each turn, from the moment the user stops talking to the end of the reply. |
 | `onTtsEngineChange` | `(engine: 'kokoro' \| 'mms' \| 'custom') => void` | Fires whenever `activeTtsEngine` changes. Also a prop on the component. |
 | `preloadLocalSpeech` | `boolean` | Download the in-browser hearing and voice behind `onTranscribe` and `onSynthesize`, without waiting for them. Drop the adapters once `onLocalSpeechReady` fires and the local models take over. Also a prop on the component. |
