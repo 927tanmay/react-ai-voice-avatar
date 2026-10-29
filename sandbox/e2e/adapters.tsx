@@ -114,6 +114,9 @@ const App: React.FC = () => {
     onTranscribe: adapters
       ? async audio => {
           probe.heard.push(audio.length / 16000);
+          // A real service takes a moment. Answering in the same tick lets
+          // React draw 'thinking' and the reply as one render.
+          await wait(50);
           if (transcribeMode === 'empty') return '';
           if (transcribeMode === 'fail') throw new Error('transcription service down');
           return 'What is the capital of France?';
@@ -174,8 +177,10 @@ const App: React.FC = () => {
           }
         })();
       }
-      if (replyMode === 'empty') return '';
-      if (replyMode === 'empty-stream') return (async function* () {})();
+      // After a moment, as a real host's request takes: answering in the same
+      // tick lets React draw 'thinking' and 'idle' as one render.
+      if (replyMode === 'empty') return wait(50).then(() => '');
+      if (replyMode === 'empty-stream') return wait(50).then(() => (async function* () {})());
       if (replyMode?.startsWith('stream')) {
         return (async function* () {
           for (const sentence of STREAMED) yield sentence + ' ';

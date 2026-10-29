@@ -792,6 +792,21 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const needsLocalVoice = !config.onSynthesize;
   const preloadSpeech = !!config.preloadLocalSpeech;
 
+  /**
+   * Whether anything needs the ML worker: Whisper, the in-browser model, or
+   * the MMS voice. A host supplying every stage needs none of them, and the
+   * worker is not started. Once started it stays, so a host that drops an
+   * adapter and later restores it keeps the models it loaded meanwhile.
+   */
+  const mlWorkerStartedRef = useRef(false);
+  const needsMlWorker = mlWorkerStartedRef.current
+    || needsLocalAsr
+    || !config.onSubmit
+    || (needsLocalVoice && activeTtsEngine === 'mms')
+    || preloadSpeech
+    || !!config.preloadLocalLlm;
+  if (loadModels && needsMlWorker) mlWorkerStartedRef.current = true;
+
   // ─── Kokoro TTS Worker (loaded lazily, only when engine === 'kokoro') ───
   /**
    * Count this load as a possible crash, once its download is complete.
@@ -878,9 +893,165 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     });
   };
 
+  /**
+   * Hand what the user said to the host's onSubmit, and speak its reply.
+   *
+   * Called with the local model's transcript, which the worker reports, and
+   * directly with the host's own: from onTranscribe and from typed input.
+   * Those used to be posted to the worker just to be echoed back, so the
+   * worker had to start even for a host that supplies every stage. Not
+   * announced here: callers announce the text.
+   */
+  const submitToHost = (text: string, speechMs?: number) => {
+    rememberHostedTurn('user', text);
+    // An empty answer means "say nothing and keep listening". The turn
+    // still has to end, or the status stays on 'thinking' for good.
+    const settleWithoutReply = () => {
+      advance('reply-empty');
+      configRef.current.onInferenceEnd?.();
+      resumeVadIfAllowed();
+    };
+    // A new question supersedes whatever was still being read.
+    cancelSubmit();
+    const submit = { controller: new AbortController(), open: false };
+    submitRef.current = submit;
+    const isCurrent = () => submitRef.current === submit;
+    Promise.resolve(configRef.current.onSubmit!(text, { speechMs, signal: submit.controller.signal }))
+      .then(async (result: any) => {
+        if (!isCurrent()) {
+          // Abandoned before it answered. Let go of a stream it returned.
+          try { result?.cancel?.(); } catch (e) { /* not cancellable */ }
+          try { result?.return?.(); } catch (e) { /* not an iterator */ }
+          return;
+        }
+        if (!result || (typeof result === 'string' && !result.trim())) {
+          settleWithoutReply();
+          return;
+        }
+
+        // A fetch Response, returned as it came: its body is the stream.
+        // It used to be spoken as "[object Response]".
+        if (typeof Response !== 'undefined' && result instanceof Response) {
+          if (!result.ok || !result.body) throw new Error(`onSubmit returned a ${result.status} response`);
+          result = result.body;
+        }
+
+        // Check if result is an AsyncIterable or ReadableStream (e.g. OpenAI SDK / LangChain / Vercel AI)
+        const isAsyncIterable = typeof result[Symbol.asyncIterator] === 'function';
+        const isReadableStream = typeof result.getReader === 'function';
+        
+        if (isAsyncIterable || isReadableStream) {
+          // Kokoro takes a sentence of any length. Other voices keep the
+          // 35-character floor, as speakInSentences does.
+          const localKokoro = !configRef.current.onSynthesize && activeTtsEngine === 'kokoro';
+          const sentences = createSentenceStream({ minChars: localKokoro ? 0 : 35 });
+          // One decoder for the whole reply, so a character whose bytes are
+          // split across two chunks survives. Hindi letters are three bytes.
+          const decoder = new TextDecoder();
+          /** The reply as spoken, kept so a local model can inherit the conversation. */
+          let spoken = '';
+          const say = (pieces: string[]) => {
+            for (const piece of pieces) {
+              queueSentence(piece, false);
+              spoken += (spoken ? ' ' : '') + piece;
+            }
+          };
+          // A ReadableStream is async-iterable too in current browsers, so
+          // asking for both locked it to the iterator and getReader threw:
+          // every `return res.body` failed the turn. Use the reader if any.
+          const reader = isReadableStream ? result.getReader() : null;
+          const iterator = reader ? null : result[Symbol.asyncIterator]();
+          const read = (): Promise<any> => (iterator ? iterator.next() : reader!.read());
+          /** Stop reading an abandoned reply, and tell its source. */
+          const release = () => {
+            try { reader?.cancel()?.catch?.(() => {}); } catch (e) { /* already closed */ }
+            try { iterator?.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
+          };
+          const QUIET = Symbol('quiet');
+          const quiet = () => new Promise<typeof QUIET>(r => setTimeout(() => r(QUIET), HOLD_SHORT_SENTENCE_MS));
+
+          submit.open = true;
+          try {
+            let next = read();
+            while (true) {
+              // A short sentence waits to join the next, unless the stream
+              // goes quiet: "Sure." before a tool call is said, not held.
+              let step: any = await (sentences.holding ? Promise.race([next, quiet()]) : next);
+              if (!isCurrent()) {
+                release();
+                return;
+              }
+              if (step === QUIET) {
+                say(sentences.release());
+                step = await next;
+                if (!isCurrent()) {
+                  release();
+                  return;
+                }
+              }
+              if (step.done) break;
+              const value = step.value;
+              const text = value instanceof Uint8Array
+                ? decoder.decode(value, { stream: true })
+                : typeof value === 'string' ? value : String(value ?? '');
+              say(sentences.push(text));
+              next = read();
+            }
+          } finally {
+            submit.open = false;
+          }
+          
+          // The stream is closed, so promised audio that never comes is a
+          // stall again. Checked now, in case playback had already run dry
+          // while the stream was quiet.
+          if (isWaitingForMoreRef.current) finishIfDrained();
+
+          const rest = [...sentences.push(decoder.decode()), ...sentences.flush()];
+          if (rest.length > 0) {
+            rest.forEach((piece, i) => queueSentence(piece, i === rest.length - 1));
+            spoken += (spoken ? ' ' : '') + rest.join(' ');
+          } else if (spoken) {
+            // The stream ended on a sentence boundary, so its last sentence
+            // went out promising more. Say the reply is over, or the stall
+            // watchdog has to, ten seconds later. The MMS voice has no
+            // such signal and still relies on the watchdog.
+            queueForVoice(() => {
+              if (configRef.current.onSynthesize) handleSpeechEnd();
+              else if (activeTtsEngine === 'kokoro') kokoroSpeechEnd();
+            });
+          }
+          // A stream that closed without a word is an empty answer too.
+          if (!spoken) {
+            settleWithoutReply();
+            return;
+          }
+          rememberHostedTurn('assistant', spoken);
+        } else {
+          // A whole reply at once. Spoken a sentence at a time so the first
+          // is audible while the rest are still being synthesised.
+          const reply = typeof result === 'string' ? result : String(result);
+          speakInSentences(reply);
+          rememberHostedTurn('assistant', reply);
+        }
+      })
+      .catch((err) => {
+        // Abandoned on purpose. A host that passed the signal to fetch
+        // sees its request rejected, and that is not a failure.
+        if (!isCurrent()) return;
+        console.error('onSubmit streaming error:', err);
+        reportError('onSubmit', `onSubmit failed: ${err?.message ?? err}`, 'degraded');
+        advance('pipeline-failed');
+        configRef.current.onInferenceEnd?.();
+        resumeVadIfAllowed();
+      });
+  };
+  /** The current submitToHost, for callbacks that outlive a render. */
+  const submitToHostRef = useRef(submitToHost);
+  submitToHostRef.current = submitToHost;
+
   // ─── ML Pipeline Worker (ASR + LLM + MMS-TTS) ───
   const { isReady: isMLReady, isAsrReady, isMmsReady, processAudio, processText, synthesizeText: mmsSynthesize, clearHistory, loadLocalLlm, interrupt: mlInterrupt } = useMLWorker({
-    enabled: loadModels,
+    enabled: loadModels && needsMlWorker,
     llmModel: config.llmModel,
     asrModel: config.asrModel,
     asrLanguage: config.asrLanguage,
@@ -930,151 +1101,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       // used to be printed to the console on every turn. Consumers who want it
       // receive it through their own onTranscriptUpdate below.
       configRef.current.onTranscriptUpdate?.(text, speaker);
-      if (speaker === 'user' && configRef.current.onSubmit) {
-        // We have a transcript and an onSubmit override.
-        // We skip local LLM inside worker, and process either a string or a real-time stream here.
-        rememberHostedTurn('user', text);
-        // An empty answer means "say nothing and keep listening". The turn
-        // still has to end, or the status stays on 'thinking' for good.
-        const settleWithoutReply = () => {
-          advance('reply-empty');
-          configRef.current.onInferenceEnd?.();
-          resumeVadIfAllowed();
-        };
-        // A new question supersedes whatever was still being read.
-        cancelSubmit();
-        const submit = { controller: new AbortController(), open: false };
-        submitRef.current = submit;
-        const isCurrent = () => submitRef.current === submit;
-        Promise.resolve(configRef.current.onSubmit(text, { speechMs, signal: submit.controller.signal }))
-          .then(async (result: any) => {
-            if (!isCurrent()) {
-              // Abandoned before it answered. Let go of a stream it returned.
-              try { result?.cancel?.(); } catch (e) { /* not cancellable */ }
-              try { result?.return?.(); } catch (e) { /* not an iterator */ }
-              return;
-            }
-            if (!result || (typeof result === 'string' && !result.trim())) {
-              settleWithoutReply();
-              return;
-            }
-
-            // A fetch Response, returned as it came: its body is the stream.
-            // It used to be spoken as "[object Response]".
-            if (typeof Response !== 'undefined' && result instanceof Response) {
-              if (!result.ok || !result.body) throw new Error(`onSubmit returned a ${result.status} response`);
-              result = result.body;
-            }
-
-            // Check if result is an AsyncIterable or ReadableStream (e.g. OpenAI SDK / LangChain / Vercel AI)
-            const isAsyncIterable = typeof result[Symbol.asyncIterator] === 'function';
-            const isReadableStream = typeof result.getReader === 'function';
-            
-            if (isAsyncIterable || isReadableStream) {
-              // Kokoro takes a sentence of any length. Other voices keep the
-              // 35-character floor, as speakInSentences does.
-              const localKokoro = !configRef.current.onSynthesize && activeTtsEngine === 'kokoro';
-              const sentences = createSentenceStream({ minChars: localKokoro ? 0 : 35 });
-              // One decoder for the whole reply, so a character whose bytes are
-              // split across two chunks survives. Hindi letters are three bytes.
-              const decoder = new TextDecoder();
-              /** The reply as spoken, kept so a local model can inherit the conversation. */
-              let spoken = '';
-              const say = (pieces: string[]) => {
-                for (const piece of pieces) {
-                  queueSentence(piece, false);
-                  spoken += (spoken ? ' ' : '') + piece;
-                }
-              };
-              // A ReadableStream is async-iterable too in current browsers, so
-              // asking for both locked it to the iterator and getReader threw:
-              // every `return res.body` failed the turn. Use the reader if any.
-              const reader = isReadableStream ? result.getReader() : null;
-              const iterator = reader ? null : result[Symbol.asyncIterator]();
-              const read = (): Promise<any> => (iterator ? iterator.next() : reader!.read());
-              /** Stop reading an abandoned reply, and tell its source. */
-              const release = () => {
-                try { reader?.cancel()?.catch?.(() => {}); } catch (e) { /* already closed */ }
-                try { iterator?.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
-              };
-              const QUIET = Symbol('quiet');
-              const quiet = () => new Promise<typeof QUIET>(r => setTimeout(() => r(QUIET), HOLD_SHORT_SENTENCE_MS));
-
-              submit.open = true;
-              try {
-                let next = read();
-                while (true) {
-                  // A short sentence waits to join the next, unless the stream
-                  // goes quiet: "Sure." before a tool call is said, not held.
-                  let step: any = await (sentences.holding ? Promise.race([next, quiet()]) : next);
-                  if (!isCurrent()) {
-                    release();
-                    return;
-                  }
-                  if (step === QUIET) {
-                    say(sentences.release());
-                    step = await next;
-                    if (!isCurrent()) {
-                      release();
-                      return;
-                    }
-                  }
-                  if (step.done) break;
-                  const value = step.value;
-                  const text = value instanceof Uint8Array
-                    ? decoder.decode(value, { stream: true })
-                    : typeof value === 'string' ? value : String(value ?? '');
-                  say(sentences.push(text));
-                  next = read();
-                }
-              } finally {
-                submit.open = false;
-              }
-              
-              // The stream is closed, so promised audio that never comes is a
-              // stall again. Checked now, in case playback had already run dry
-              // while the stream was quiet.
-              if (isWaitingForMoreRef.current) finishIfDrained();
-
-              const rest = [...sentences.push(decoder.decode()), ...sentences.flush()];
-              if (rest.length > 0) {
-                rest.forEach((piece, i) => queueSentence(piece, i === rest.length - 1));
-                spoken += (spoken ? ' ' : '') + rest.join(' ');
-              } else if (spoken) {
-                // The stream ended on a sentence boundary, so its last sentence
-                // went out promising more. Say the reply is over, or the stall
-                // watchdog has to, ten seconds later. The MMS voice has no
-                // such signal and still relies on the watchdog.
-                queueForVoice(() => {
-                  if (configRef.current.onSynthesize) handleSpeechEnd();
-                  else if (activeTtsEngine === 'kokoro') kokoroSpeechEnd();
-                });
-              }
-              // A stream that closed without a word is an empty answer too.
-              if (!spoken) {
-                settleWithoutReply();
-                return;
-              }
-              rememberHostedTurn('assistant', spoken);
-            } else {
-              // A whole reply at once. Spoken a sentence at a time so the first
-              // is audible while the rest are still being synthesised.
-              const reply = typeof result === 'string' ? result : String(result);
-              speakInSentences(reply);
-              rememberHostedTurn('assistant', reply);
-            }
-          })
-          .catch((err) => {
-            // Abandoned on purpose. A host that passed the signal to fetch
-            // sees its request rejected, and that is not a failure.
-            if (!isCurrent()) return;
-            console.error('onSubmit streaming error:', err);
-            reportError('onSubmit', `onSubmit failed: ${err?.message ?? err}`, 'degraded');
-            advance('pipeline-failed');
-            configRef.current.onInferenceEnd?.();
-            resumeVadIfAllowed();
-          });
-      }
+      if (speaker === 'user' && configRef.current.onSubmit) submitToHost(text, speechMs);
     },
     onError: (stage, msg) => {
       advance('pipeline-failed');
@@ -1122,7 +1149,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [mlInterrupt, kokoroInterrupt]);
 
   // Combined readiness
-  const isReady = isMLReady && (!needsLocalVoice || activeTtsEngine !== 'kokoro' || isKokoroReady);
+  const isReady = (isMLReady || !needsMlWorker) && (!needsLocalVoice || activeTtsEngine !== 'kokoro' || isKokoroReady);
 
   const ttsEngineInUse: TtsEngineInUse = needsLocalVoice ? activeTtsEngine : 'custom';
 
@@ -1227,6 +1254,21 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     speakInSentences(text.trim());
   }, [speakInSentences, isReady, ensureAudioContext]);
 
+  /**
+   * What the user said, from the host's transcriber or typed: announce it,
+   * then the host's onSubmit answers, or the in-browser model in the worker
+   * does. Announced once, here; it used to reach onTranscriptUpdate twice.
+   */
+  const submitUserText = useCallback((text: string, speechMs?: number) => {
+    if (configRef.current.onSubmit) {
+      configRef.current.onTranscriptUpdate?.(text, 'user');
+      submitToHostRef.current(text, speechMs);
+    } else {
+      // The worker announces it as it starts its own model.
+      processText(text, false, speechMs);
+    }
+  }, [processText]);
+
   // Imperative text submission skipping ASR, triggering normal pipeline/LLM
   const sendText = useCallback((text: string) => {
     if (!text || !text.trim()) return;
@@ -1236,8 +1278,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     ensureAudioContext();
     advance('text-submitted');
     configRef.current.onInferenceStart?.();
-    processText(text.trim(), !!configRef.current.onSubmit);
-  }, [processText, ensureAudioContext]);
+    submitUserText(text.trim());
+  }, [submitUserText, ensureAudioContext]);
 
   // Readiness announces itself and the rules decide what it means. This used to
   // read `status` and depend on it, which re-ran the effect on every turn of
@@ -1292,10 +1334,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         try {
           const text = await configRef.current.onTranscribe(audio);
           if (text && text.trim()) {
-            // Into the standard LLM / onSubmit flow. Not announced here: the
-            // worker echoes it as a transcript, which announces it, and it
-            // used to reach onTranscriptUpdate twice.
-            processText(text, !!configRef.current.onSubmit, speechMs);
+            submitUserText(text, speechMs);
           } else {
             // Heard, and no words in it. Worth telling the user rather than
             // going back to listening without a word.
@@ -1319,7 +1358,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
       processAudio(audio, langCode, !!configRef.current.onSubmit, speechMs);
     };
-  }, [processAudio, processText, resumeVadIfAllowed, setDetector]);
+  }, [processAudio, submitUserText, resumeVadIfAllowed, setDetector]);
 
   /**
    * Open the microphone and start voice activity detection, once.

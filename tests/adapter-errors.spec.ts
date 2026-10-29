@@ -77,3 +77,31 @@ test('onSynthesize throwing reaches onError', async ({ page }) => {
   await expect.poll(async () => (await probe(page)).errors, { timeout: 15_000 })
     .toEqual([{ stage: 'speech-synthesis', severity: 'degraded', detail: 'onSynthesize' }]);
 });
+
+/**
+ * Every stage is the host's, so nothing runs in the ML worker. The host's
+ * transcript used to be posted to it only to be echoed back, so the worker
+ * started anyway and every turn waited on it. Issue #21.
+ */
+test('with every adapter supplied, the ML worker never starts', async ({ page }) => {
+  await page.addInitScript(() => {
+    const Native = window.Worker;
+    (window as any).__workers = 0;
+    window.Worker = class extends Native {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        (window as any).__workers++;
+      }
+    } as typeof Worker;
+  });
+  await speak(page, '');
+  await expect.poll(async () => (await probe(page)).submitted, { timeout: 15_000 })
+    .toEqual(['What is the capital of France?']);
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 15_000 });
+  await page.evaluate(() => (window as any).__e2e.sendText('And Spain?'));
+  await expect.poll(async () => (await probe(page)).submitted.length, { timeout: 15_000 }).toBe(2);
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 15_000 });
+  expect((await probe(page)).userTranscripts).toEqual(['What is the capital of France?', 'And Spain?']);
+  // Before: 1, the worker started at mount.
+  expect(await page.evaluate(() => (window as any).__workers)).toBe(0);
+});

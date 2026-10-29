@@ -213,7 +213,12 @@ check(
 check(
   'the hook hands it on, and the engine passes it to onSubmit',
   /onTranscriptUpdate\?\.\(payload\.text, 'user', payload\.speechMs\)/.test(mlHook) &&
-    /onSubmit\(text, \{ speechMs, signal: /.test(engine)
+    /onSubmit!?\(text, \{ speechMs, signal: /.test(engine)
+);
+check(
+  'a host transcript goes to onSubmit directly, with its speechMs',
+  /submitUserText\(text, speechMs\)/.test(engine) &&
+    /submitToHostRef\.current\(text, speechMs\)/.test(engine)
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

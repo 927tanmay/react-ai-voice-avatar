@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Breaks nothing.
+
+### Changed
+
+- **Supplying every adapter no longer starts the ML worker.** With
+  `onTranscribe`, `onSubmit` and `onSynthesize` all yours, the transcript now
+  goes straight to `onSubmit`. It used to be posted to the worker only to be
+  echoed back, so the worker started for nothing and every turn waited on a
+  round trip through it. Typed input through `sendText` takes the same direct
+  path. ([#21](https://github.com/927tanmay/react-ai-voice-avatar/issues/21))
+
 ## 0.8.0
 
 A smaller install, a mute button, the 3D component honouring your speech
