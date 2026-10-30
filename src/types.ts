@@ -24,6 +24,11 @@ export interface AiVoiceAvatarCapabilities {
 export type AiVoiceAvatarErrorStage =
   /** Opening or reading the microphone. */
   | 'microphone'
+  /**
+   * The voice detector, which decides when someone is talking, could not load
+   * or start. The microphone itself may be fine.
+   */
+  | 'speech-detection'
   /** Turning speech into text. */
   | 'speech-recognition'
   /** Generating a reply. */
@@ -63,11 +68,15 @@ export interface AiVoiceAvatarError {
   message: string;
   /**
    * The engine's own stage name, for bug reports. Unstable across versions,
-   * except these four, which are safe to branch on: `onTranscribe`,
-   * `onSubmit` and `onSynthesize` (your adapter threw), and `no-speech`
-   * (someone was heard and nothing was recognised).
+   * except these, which are safe to branch on: `onTranscribe`, `onSubmit` and
+   * `onSynthesize` (your adapter threw); `no-speech` (someone was heard and
+   * nothing was recognised); for the microphone, `permission-denied`,
+   * `no-microphone`, `microphone-busy` and `microphone-unavailable`; for the
+   * voice detector, `vad-model`, `vad-wasm`, `vad-worklet` and `vad-start`.
    */
   detail?: string;
+  /** The original error, when there was one. */
+  cause?: unknown;
 }
 
 /** What is known about the turn being handed to `onSubmit`, besides its text. */

@@ -57,11 +57,12 @@ type Probe = {
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
-  startListening?: () => Promise<void>;
+  startListening?: () => Promise<boolean>;
   stopListening?: () => void;
   interrupt?: () => void;
   setMicMuted?: (muted: boolean) => void;
   isMicMuted?: boolean;
+  isMicOpen?: boolean;
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
@@ -412,7 +413,7 @@ const App: React.FC = () => {
       : undefined,
   });
 
-  const { status, sendText, startListening, stopListening, interrupt, setMicMuted, isMicMuted, activeTtsEngine } = voice;
+  const { status, sendText, startListening, stopListening, interrupt, setMicMuted, isMicMuted, isMicOpen, activeTtsEngine } = voice;
 
   useEffect(() => {
     probe.statuses.push(status);
@@ -425,6 +426,7 @@ const App: React.FC = () => {
   probe.interrupt = interrupt;
   probe.setMicMuted = setMicMuted;
   probe.isMicMuted = isMicMuted;
+  probe.isMicOpen = isMicOpen;
   probe.dropSpeechAdapters = () => setAdapters(false);
 
   return <p id="status">{status}</p>;

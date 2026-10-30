@@ -799,10 +799,12 @@ working experience behind an error screen. A refused microphone is `fatal` for
 listening while typed input still works, which is a judgement only your app can
 make.
 
-`stage` is one of `microphone`, `speech-recognition`, `language-model`,
-`speech-synthesis`, `audio-output`, `worker`, `model-storage` or `conversation`.
-There is also a `detail` string carrying the engine's internal stage name for bug
-reports; it is not stable across versions, so do not branch on it.
+`stage` is one of `microphone`, `speech-detection`, `speech-recognition`,
+`language-model`, `speech-synthesis`, `audio-output`, `worker`, `model-storage`
+or `conversation`. There is also a `detail` string carrying the engine's
+internal stage name for bug reports, and `cause`, the original error. `detail`
+is not stable across versions except for the values listed here, so branch
+only on those.
 
 `model-storage` is always `degraded`: a model loaded and works, but could not be
 kept, so the next visit downloads it again. The message says why — usually not
@@ -819,6 +821,34 @@ onError={(e) => {
   if (e.detail === 'no-speech') say("Sorry, I didn't catch that.");
   else if (e.detail === 'onSubmit') toast("Couldn't reach the server. Try again?");
 }}
+```
+
+#### When listening cannot start
+
+`startListening()` resolves `true` once it is hearing the user and `false` if it
+could not start, and `isMicOpen` says whether the microphone is open and being
+listened to. The reason goes to `onError` as `fatal`, and the microphone is
+closed again, so the browser's recording light goes off. The next
+`startListening()` tries from the beginning.
+
+The microphone itself (`stage: 'microphone'`) and the voice detector that
+listens to it (`stage: 'speech-detection'`) are told apart, because only the
+first is the user's to fix:
+
+| `detail` | What happened |
+| :--- | :--- |
+| `permission-denied` | The user, or the page's permissions policy, refused the microphone. |
+| `no-microphone` | There is no microphone. |
+| `microphone-busy` | It could not be started, usually because another app holds it. |
+| `microphone-unavailable` | Any other failure opening it. |
+| `vad-model` | The detector's model did not download or load (see `vadAssetPath`). |
+| `vad-wasm` | onnxruntime's WebAssembly did not load (see `onnxWasmPath`). This one needs a page reload to retry. |
+| `vad-worklet` | The audio worklet that feeds it the microphone did not load (see `vadAssetPath`). |
+| `vad-start` | The detector failed to start some other way. |
+
+```tsx
+const ok = await voice.startListening();
+if (!ok) showTypedInput(); // onError has said why
 ```
 
 ### Models are kept between visits
@@ -1173,14 +1203,15 @@ It returns:
 | :--- | :--- | :--- |
 | `status` | `'loading' \| 'idle' \| 'listening' \| 'thinking' \| 'speaking'` | Where the conversation is. `'loading'` until the models are up, and until `loadModels` is true. |
 | `isLoading`, `isIdle`, `isListening`, `isThinking`, `isSpeaking` | `boolean` | Shorthands for `status`. |
-| `isReady` | `boolean` | The models are loaded. `startListening` does nothing before this. |
+| `isReady` | `boolean` | The models are loaded. `startListening` resolves `false` before this. |
 | `isLocalSpeechReady` | `boolean` | The in-browser hearing and voice are loaded, whether or not they are in use. |
 | `activeTtsEngine` | `'kokoro' \| 'mms' \| 'custom'` | The voice actually speaking. iPhones and iPads get `'mms'`, a single plainer voice that ignores `ttsVoice`, because Kokoro runs Safari out of memory; so does any device where Kokoro fails to load. `'custom'` is your `onSynthesize`. Worth showing if your users will compare devices. |
-| `startListening` | `() => Promise<void>` | Opens the microphone and starts listening. Call it from a click: the first call is where the browser asks for permission. In `'continuous'` mode the microphone then stays open across turns. |
+| `startListening` | `() => Promise<boolean>` | Opens the microphone and starts listening. Call it from a click: the first call is where the browser asks for permission. In `'continuous'` mode the microphone then stays open across turns. Resolves `false` if it could not start; see [When listening cannot start](#when-listening-cannot-start). |
 | `stopListening` | `() => void` | Stops hearing the user. A reply already under way finishes; call `interrupt()` as well to stop it. |
 | `interrupt` | `() => void` | Stops the reply mid-sentence and clears what was queued. |
 | `setMicMuted` | `(muted: boolean) => void` | Mutes or unmutes the microphone without closing it, like the mute button in a call. Replies keep playing, and the user cannot talk over them while muted. |
 | `isMicMuted` | `boolean` | Whether the microphone is muted. |
+| `isMicOpen` | `boolean` | Whether the microphone is open and being listened to. False before `startListening`, after `stopListening`, and after a failure. |
 | `speak` | `(text: string) => void` | Says the text without a model turn: a greeting, a notification. Plays a sentence at a time. |
 | `sendText` | `(text: string) => void` | Typed input, handled as if it had been spoken. |
 | `clearHistory` | `() => void` | Forgets the conversation so far. |

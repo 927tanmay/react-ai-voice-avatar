@@ -7,6 +7,7 @@ import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
 import { toPlayableAudio, isAudioStream, chunkToPlayable, isSpeechReply, speechChunkAudio, speechChunkText, type SynthesisResult } from '../lib/synthesizedAudio';
+import { classifyDetectorError, classifyMicrophoneError, isMicrophoneError } from '../lib/microphoneErrors';
 import { isStreamingTranscriber, openTranscription, type StreamingTranscriber, type TranscriptionSession } from '../lib/streamingTranscription';
 import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
 
@@ -28,6 +29,14 @@ const SCHEDULE_LEAD_SECONDS = 0.06;
  */
 const PUBLIC_ERROR_STAGE: Record<string, AiVoiceAvatarErrorStage> = {
   microphone: 'microphone',
+  'permission-denied': 'microphone',
+  'no-microphone': 'microphone',
+  'microphone-busy': 'microphone',
+  'microphone-unavailable': 'microphone',
+  'vad-model': 'speech-detection',
+  'vad-wasm': 'speech-detection',
+  'vad-worklet': 'speech-detection',
+  'vad-start': 'speech-detection',
   asr: 'speech-recognition',
   llm: 'language-model',
   pipeline: 'conversation',
@@ -282,11 +291,11 @@ export interface UseAiVoiceAvatarReturn {
    * Begin listening. Call this from a user gesture.
    *
    * Asynchronous because the first call is what opens the microphone, which is
-   * where the browser's permission prompt appears. Awaiting it is optional; the
-   * status transitions to 'listening' once the device is live, and `micError`
-   * is set if it never does.
+   * where the browser's permission prompt appears. Resolves true once it is
+   * hearing the user, false if it could not start: the reason has gone to
+   * `onError`, and `micError` says it too.
    */
-  startListening: () => Promise<void>;
+  startListening: () => Promise<boolean>;
   /**
    * Stop hearing the user. A reply already under way finishes; call
    * `interrupt()` as well to stop it.
@@ -301,6 +310,11 @@ export interface UseAiVoiceAvatarReturn {
   setMicMuted: (muted: boolean) => void;
   /** Whether the microphone is muted. See `setMicMuted`. */
   isMicMuted: boolean;
+  /**
+   * Whether the microphone is open and the voice detector is hearing it. False
+   * before `startListening`, after `stopListening`, and after either fails.
+   */
+  isMicOpen: boolean;
   clearHistory: () => void;
   speak: (text: string) => void;
   sendText: (text: string) => void;
@@ -315,6 +329,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const [status, setStatus] = useState<TurnStatus>('loading');
   const [analyser, setAnalyser] = useState<AnalyserNode | undefined>(undefined);
   const [micError, setMicError] = useState<string | null>(null);
+  const [isMicOpen, setIsMicOpen] = useState(false);
   
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
@@ -455,14 +470,29 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * for the one before it.
    */
   const detectorQueueRef = useRef<Promise<unknown>>(Promise.resolve());
-  const setDetector = useCallback((on: boolean) => {
-    detectorQueueRef.current = detectorQueueRef.current.then(async () => {
+  /** What to do when the detector will not start. Set once the microphone code exists. */
+  const detectorStartFailedRef = useRef<(err: unknown) => void>(() => {});
+  /** Resolves with whether the switch happened. */
+  const setDetector = useCallback((on: boolean): Promise<boolean> => {
+    const done = detectorQueueRef.current.then(async () => {
       const vad = vadRef.current;
-      if (!vad) return;
+      if (!vad) return false;
       try {
         await (on ? vad.start() : vad.pause());
-      } catch (e) { /* destroyed or errored; nothing to switch */ }
+        // Pausing releases the microphone; starting opens it.
+        if (!isUnmountedRef.current) setIsMicOpen(on);
+        return true;
+      } catch (e) {
+        // Starting is where the audio worklet loads and a paused microphone
+        // is reopened, so this is a real failure, and used to be swallowed:
+        // the status said listening and nothing was heard. A failed pause is
+        // a detector already torn down, which is fine.
+        if (on && !isUnmountedRef.current) detectorStartFailedRef.current(e);
+        return false;
+      }
     });
+    detectorQueueRef.current = done;
+    return done;
   }, []);
 
   const resumeVadIfAllowed = useCallback(() => {
@@ -486,12 +516,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     stage: string,
     message: string,
     severity: AiVoiceAvatarError['severity'],
+    cause?: unknown,
   ) => {
     configRef.current.onError?.({
       stage: PUBLIC_ERROR_STAGE[stage] ?? 'worker',
       severity,
       message,
       detail: stage,
+      ...(cause !== undefined ? { cause } : {}),
     });
   }, []);
 
@@ -1628,6 +1660,46 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * clicking again rather than by reloading the page. Retrying costs nothing,
    * because a browser that has recorded a denial declines without re-prompting.
    */
+  /**
+   * Close the microphone and everything built on it, so the next
+   * startListening begins again from the permission prompt.
+   */
+  const releaseMicrophoneRef = useRef(() => {});
+  releaseMicrophoneRef.current = () => {
+    const vad = vadRef.current;
+    vadRef.current = null;
+    micSetupRef.current = null;
+    try { vad?.destroy()?.catch?.(() => {}); } catch (e) { /* already gone */ }
+    try { micSourceRef.current?.disconnect(); } catch (e) { /* already detached */ }
+    micSourceRef.current = null;
+    micAnalyserRef.current = null;
+    mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+    mediaStreamRef.current = null;
+    try { inputContextRef.current?.close()?.catch?.(() => {}); } catch (e) { /* already closed */ }
+    inputContextRef.current = null;
+    if (!isUnmountedRef.current) setIsMicOpen(false);
+  };
+
+  /**
+   * The detector would not start: its audio worklet would not load, or the
+   * microphone would not reopen. It cannot be started again once that has
+   * happened, so everything is released, and the next startListening tries
+   * from scratch.
+   */
+  detectorStartFailedRef.current = (err: unknown) => {
+    console.error('[AiVoiceAvatar] Could not start listening:', err);
+    releaseMicrophoneRef.current();
+    listeningWantedRef.current = false;
+    heldAudioRef.current = null;
+    abortLiveTranscription();
+    const { detail, message } = isMicrophoneError(err)
+      ? classifyMicrophoneError(err)
+      : classifyDetectorError(err, 'start');
+    setMicError(message);
+    reportError(detail, message, 'fatal', err);
+    advance('stop-requested');
+  };
+
   const ensureMicrophone = useCallback((): Promise<boolean> => {
     if (micSetupRef.current) return micSetupRef.current;
 
@@ -1643,8 +1715,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         return false;
       }
 
+      // Which part failed decides what the user is told: a refused or missing
+      // microphone, or a detector that would not load.
+      let phase: 'microphone' | 'detector' = 'microphone';
       try {
         const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+        phase = 'detector';
 
         // The hook went away while the permission dialog was open.
         if (isUnmountedRef.current) {
@@ -1882,12 +1958,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         return true;
       } catch (err) {
         console.error('[AiVoiceAvatar] Could not start the microphone:', err);
+        // An open microphone nothing is listening to kept the browser's
+        // recording indicator lit for the rest of the visit.
+        releaseMicrophoneRef.current();
         if (!isUnmountedRef.current) {
-          const errMsg = 'Microphone access denied or unavailable. Please enable permissions in browser settings.';
-          setMicError(errMsg);
+          const { detail, message } = phase === 'microphone'
+            ? classifyMicrophoneError(err)
+            : classifyDetectorError(err, 'load');
+          setMicError(message);
           // Fatal for listening, but typed input still works, so a host may
           // prefer to offer that rather than block the whole experience.
-          reportError('microphone', errMsg, 'fatal');
+          reportError(detail, message, 'fatal', err);
         }
         return false;
       }
@@ -1939,9 +2020,9 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, [stopAllScheduledAudio]);
 
 
-  const startListening = useCallback(async () => {
+  const startListening = useCallback(async (): Promise<boolean> => {
     isInterruptedRef.current = false;
-    if (!isReady) return;
+    if (!isReady) return false;
     listeningWantedRef.current = true;
 
     // Synchronous, and first, so the context is constructed while the browser
@@ -1952,7 +2033,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     // Opening the microphone is what actually asks for permission, so the first
     // call here is where the prompt appears. Everything after it waits.
     const micReady = await ensureMicrophone();
-    if (!micReady || !vadRef.current || isUnmountedRef.current) return;
+    if (!micReady || !vadRef.current || isUnmountedRef.current) return false;
 
     if (configRef.current.listenMode === 'push-to-talk') {
       // Pressing the button is taking the floor, as deliberately as anyone
@@ -1972,13 +2053,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       heldAudioRef.current = { frames: [], speech: [], msPerFrame: 0 };
       // From the press: nothing before it is part of the turn.
       openLiveTranscription(false);
-      setDetector(true);
+      const pressed = setDetector(true);
       advance('user-started-speaking');
-      return;
+      return pressed;
     }
 
-    setDetector(true);
+    const started = setDetector(true);
     advance('listen-requested');
+    return started;
   }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance, setDetector, openLiveTranscription, resumePlayback]);
 
   /**
@@ -2118,6 +2200,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     isThinking: status === 'thinking',
     isSpeaking: status === 'speaking',
     micError,
+    isMicOpen,
     analyser,
     isReady,
     activeTtsEngine: ttsEngineInUse,

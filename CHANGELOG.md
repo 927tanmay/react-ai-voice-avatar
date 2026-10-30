@@ -2,9 +2,16 @@
 
 ## Unreleased
 
-Breaks nothing.
+Breaks nothing, with one thing to check: a voice detector that fails to load
+now reports `stage: 'speech-detection'` rather than `'microphone'`. If your
+app treats a `microphone` error as "cannot listen", treat `speech-detection`
+the same way, or check `startListening()`'s new result instead.
 
 ### Added
+
+- **`startListening()` resolves `true` or `false`**, for whether listening
+  started, and **`isMicOpen`** says whether the microphone is open and being
+  listened to. Both on the hook and the component's handle.
 
 - **Streaming speech-to-text.** Wrap your provider in `streamingTranscriber()`
   and it hears the user while they speak: audio is pushed from the first loud
@@ -46,6 +53,17 @@ README's "Through your own providers, streamed" has the setup.
   the user's turn, a false alarm, or something the user does lifts the duck,
   and the reply's audio is stopped as soon as the sound is known to be
   speech. Reported by someone integrating the package.
+- **A detector that will not load is no longer reported as a refused
+  microphone.** Every failure to start listening was "Microphone access
+  denied", stage `microphone`. The voice detector failing now reports stage
+  `speech-detection`, with `detail` `vad-model`, `vad-wasm`, `vad-worklet` or
+  `vad-start`, and the microphone's own failures say which: `permission-denied`,
+  `no-microphone`, `microphone-busy` or `microphone-unavailable`. Each carries
+  the original error as `cause`. The microphone is closed again after a
+  failure, where it used to stay open with the browser's recording light on.
+  A detector that failed to start, which is where its audio worklet loads,
+  used to be ignored, leaving the status on listening with nothing heard; it
+  is reported now. Reported by someone integrating the package.
 
 ### Changed
 
