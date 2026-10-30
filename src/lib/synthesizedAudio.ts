@@ -150,3 +150,48 @@ export async function* pcmStream(
     try { iterator?.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
   }
 }
+
+/**
+ * One piece of a reply that is already speech. `text`, when the provider
+ * sends a transcript, captions the audio it comes with, or the next audio if
+ * it comes alone.
+ */
+export type SpeechChunk =
+  | AudioChunk
+  | { audio: Float32Array | Int16Array; sampleRate: number; text?: string }
+  | { text: string };
+
+/** A reply from `onSubmit` that is audio, not text. Made by `speechReply()`. */
+export interface SpeechReply {
+  readonly kind: 'speech-reply';
+  readonly chunks: AsyncIterable<SpeechChunk> | ReadableStream<SpeechChunk>;
+}
+
+/**
+ * Return this from `onSubmit` when your model answers in speech, such as a
+ * speech-to-speech model relayed by your backend. Its audio plays as it
+ * arrives and `onSynthesize` is not called for the reply. A wrapper, because
+ * an async iterable on its own already means a stream of text.
+ */
+export function speechReply(chunks: AsyncIterable<SpeechChunk> | ReadableStream<SpeechChunk>): SpeechReply {
+  return { kind: 'speech-reply', chunks };
+}
+
+export function isSpeechReply(value: unknown): value is SpeechReply {
+  return !!value && typeof value === 'object' && (value as SpeechReply).kind === 'speech-reply';
+}
+
+/** A chunk's audio, if it has any, in a form `chunkToPlayable` takes. */
+export function speechChunkAudio(chunk: SpeechChunk): AudioChunk | null {
+  if (chunk instanceof Float32Array || chunk instanceof Int16Array) return chunk;
+  if (chunk && typeof chunk === 'object' && 'audio' in chunk) {
+    return { audio: chunk.audio, sampleRate: chunk.sampleRate };
+  }
+  return null;
+}
+
+/** A chunk's caption, if it has one. */
+export function speechChunkText(chunk: SpeechChunk): string {
+  const text = chunk && typeof chunk === 'object' && 'text' in chunk ? chunk.text : undefined;
+  return typeof text === 'string' ? text.trim() : '';
+}

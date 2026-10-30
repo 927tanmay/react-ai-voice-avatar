@@ -6,7 +6,7 @@ import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
-import { toPlayableAudio, isAudioStream, chunkToPlayable, type SynthesisResult } from '../lib/synthesizedAudio';
+import { toPlayableAudio, isAudioStream, chunkToPlayable, isSpeechReply, speechChunkAudio, speechChunkText, type SynthesisResult } from '../lib/synthesizedAudio';
 import { isStreamingTranscriber, openTranscription, type StreamingTranscriber, type TranscriptionSession } from '../lib/streamingTranscription';
 import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
 
@@ -130,6 +130,9 @@ export interface UseAiVoiceAvatarConfig {
    * Response; a stream is spoken a sentence at a time while the rest is still
    * arriving. Return an empty string, or a
    * stream that ends without text, to say nothing and keep listening.
+   *
+   * A model that answers in speech returns `speechReply(chunks)`: its audio
+   * plays as it arrives, and `onSynthesize` is not called.
    *
    * `details.speechMs` is how long the user spoke for this turn, and
    * `details.signal` is aborted when the reply is no longer wanted.
@@ -965,6 +968,73 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         if (typeof Response !== 'undefined' && result instanceof Response) {
           if (!result.ok || !result.body) throw new Error(`onSubmit returned a ${result.status} response`);
           result = result.body;
+        }
+
+        // The reply is already speech: play it as it arrives, captioned by
+        // whatever transcript comes with it. The voice is not asked for.
+        if (isSpeechReply(result)) {
+          const source: any = result.chunks;
+          const reader = typeof source.getReader === 'function' ? source.getReader() : null;
+          const iterator = reader ? null : source[Symbol.asyncIterator]();
+          const release = () => {
+            try { reader?.cancel()?.catch?.(() => {}); } catch (e) { /* already closed */ }
+            try { iterator?.return?.()?.catch?.(() => {}); } catch (e) { /* already finished */ }
+          };
+          /** Transcript not yet attached to audio, and the reply as captioned. */
+          let caption = '';
+          let spoken = '';
+          let played = false;
+          submit.open = true;
+          try {
+            while (true) {
+              const step = await (reader ? reader.read() : iterator.next());
+              if (!isCurrent()) {
+                release();
+                return;
+              }
+              if (step.done) break;
+              const text = speechChunkText(step.value);
+              if (text) caption += (caption ? ' ' : '') + text;
+              const audio = speechChunkAudio(step.value);
+              if (!audio) continue;
+              const { pcm, sampleRate } = await chunkToPlayable(audio);
+              if (!isCurrent()) {
+                release();
+                return;
+              }
+              if (pcm.length === 0) continue;
+              if (caption) {
+                // A new caption starts with this audio: captions and lip
+                // sync pick it up when it plays.
+                configRef.current.onTranscriptUpdate?.(caption, 'avatar');
+                handleSpeechOutput(pcm, sampleRate, caption, '', false, 'first');
+                spoken += (spoken ? ' ' : '') + caption;
+                caption = '';
+              } else {
+                handleSpeechOutput(pcm, sampleRate, '', '', false, 'more');
+              }
+              played = true;
+            }
+          } catch (err) {
+            release();
+            throw err;
+          } finally {
+            submit.open = false;
+          }
+          // Words after the last audio have nothing to play with, but are
+          // still part of what was said.
+          if (caption) {
+            configRef.current.onTranscriptUpdate?.(caption, 'avatar');
+            spoken += (spoken ? ' ' : '') + caption;
+          }
+          if (spoken) rememberHostedTurn('assistant', spoken);
+          if (!played) {
+            settleWithoutReply();
+            return;
+          }
+          // Every chunk went out promising more. Now the reply is over.
+          handleSpeechEnd();
+          return;
         }
 
         // Check if result is an AsyncIterable or ReadableStream (e.g. OpenAI SDK / LangChain / Vercel AI)

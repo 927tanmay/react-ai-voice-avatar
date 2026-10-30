@@ -14,6 +14,11 @@ Breaks nothing.
   The silence timer stays as the backstop. Carrying on after `endTurn` is a
   new turn, and interrupts the reply. Push-to-talk streams from press to
   release.
+- **Replies that are already speech.** Return `speechReply(chunks)` from
+  `onSubmit` when your model answers in audio, a speech-to-speech model for
+  instance. It plays as it arrives, captioned by any transcript in the
+  chunks, and `onSynthesize` is not called. Cancelled by the reply's signal
+  like any other.
 - **Streamed voices.** `onSynthesize` can return an async iterable of raw
   audio chunks, and each plays as it arrives, so a sentence starts with its
   first chunk rather than when your provider has finished it. `pcmStream()`

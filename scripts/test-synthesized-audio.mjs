@@ -7,7 +7,7 @@
  *
  * Run with: node --experimental-strip-types scripts/test-synthesized-audio.mjs
  */
-import { toPlayableAudio, int16ToFloat32, DEFAULT_SYNTHESIS_SAMPLE_RATE, pcmStream, isAudioStream, chunkToPlayable } from '../src/lib/synthesizedAudio.ts';
+import { toPlayableAudio, int16ToFloat32, DEFAULT_SYNTHESIS_SAMPLE_RATE, pcmStream, isAudioStream, chunkToPlayable, speechReply, isSpeechReply, speechChunkAudio, speechChunkText } from '../src/lib/synthesizedAudio.ts';
 
 const checks = [];
 const check = (name, fn) => checks.push({ name, fn });
@@ -176,6 +176,29 @@ check('a streamed encoded chunk is refused, pointing at pcmStream', async () => 
   } catch (e) {
     return /pcmStream/.test(e.message) ? null : `unhelpful error: ${e.message}`;
   }
+});
+
+// ─── Replies that are already speech ───
+
+check('speechReply is told apart from a text stream', async () => {
+  const chunks = (async function* () {})();
+  if (!isSpeechReply(speechReply(chunks))) return 'a speech reply was not recognised';
+  if (isSpeechReply(chunks)) return 'a bare async iterable, which means text, was taken for speech';
+  if (isSpeechReply('hello')) return 'a string was taken for speech';
+  return null;
+});
+
+check('a speech chunk gives its audio and its caption apart', async () => {
+  const pcm = new Float32Array(4);
+  const both = { audio: pcm, sampleRate: 16000, text: '  Hello.  ' };
+  const audio = speechChunkAudio(both);
+  if (!audio || audio.audio !== pcm || audio.sampleRate !== 16000) return 'audio lost from a captioned chunk';
+  if ('text' in audio) return 'the caption was passed on as audio';
+  if (speechChunkText(both) !== 'Hello.') return `caption "${speechChunkText(both)}"`;
+  if (speechChunkAudio({ text: 'Only words' }) !== null) return 'a caption alone was given audio';
+  if (speechChunkText({ text: 'Only words' }) !== 'Only words') return 'a caption alone lost its text';
+  if (speechChunkAudio(pcm) !== pcm || speechChunkText(pcm) !== '') return 'bare samples mishandled';
+  return null;
 });
 
 let failures = 0;

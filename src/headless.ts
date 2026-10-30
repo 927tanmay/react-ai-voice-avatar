@@ -22,7 +22,7 @@ export { StatusPill } from './components/StatusPill';
 export type { StatusPillProps } from './components/StatusPill';
 
 export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from './types';
-export type { SynthesizedAudio, SynthesisResult, AudioChunk, PcmStreamOptions } from './lib/synthesizedAudio';
-export { pcmStream } from './lib/synthesizedAudio';
+export type { SynthesizedAudio, SynthesisResult, AudioChunk, PcmStreamOptions, SpeechChunk, SpeechReply } from './lib/synthesizedAudio';
+export { pcmStream, speechReply } from './lib/synthesizedAudio';
 export { streamingTranscriber } from './lib/streamingTranscription';
 export type { StreamingTranscriber, TranscriberContext, TranscriptionSession } from './lib/streamingTranscription';

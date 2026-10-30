@@ -1,6 +1,19 @@
 # Design: streaming adapters
 
-Status: proposal, 29 Oct 2026. Nothing here is built yet.
+Status: built, unreleased (for 0.9.0). Proposed 29 Oct 2026. Where the build
+differs from this proposal:
+
+- The detector's segment is started over with vad-web's internal
+  `frameProcessor.reset()`, not `pause()` and `start()`. The spike found
+  `pause()` stops the microphone tracks and `start()` reopens the device,
+  losing audio. `reset()` touches neither; pause and start remain the
+  fallback should a future vad-web drop it.
+- A plain `onTranscribe` function does not get a `signal` yet. Only the
+  streaming transcriber has one.
+- A streamed sentence's lip sync is timed from its text and not rescaled as
+  chunks arrive.
+- A speech reply's chunk may also be `{ text }` alone, which captions the
+  next audio, since realtime models send transcript and audio separately.
 
 ## Why
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { useAiVoiceAvatar, pcmStream, streamingTranscriber } from 'react-ai-voice-avatar/headless';
+import { useAiVoiceAvatar, pcmStream, streamingTranscriber, speechReply } from 'react-ai-voice-avatar/headless';
 
 /**
  * The hook with every stage handed to the host: transcription, replies and
@@ -44,6 +44,11 @@ type Probe = {
   sessionsAborted: number;
   /** Seconds of audio pushed to each session the moment it opened. */
   openingSeconds: number[];
+  /** What onTranscriptUpdate announced for the avatar. */
+  avatarTranscripts: string[];
+  /** Speech replies that yielded their last chunk, and that were closed at all. */
+  speechEnded: number;
+  speechClosed: number;
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -55,7 +60,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0 };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -70,6 +75,10 @@ const params = new URLSearchParams(location.search);
  * ?reply=response: a fetch Response, returned as it is.
  * ?reply=short: "Sure.", three seconds of nothing, then the answer.
  * ?reply=fail: onSubmit throws.
+ * ?reply=speech: a reply that is already audio, as a speech-to-speech model
+ * gives: a caption, half a second of tone, a second and a half of nothing,
+ * then half a second more with a second caption. ?reply=speech-silent: the
+ * same audio with no transcript. ?reply=speech-empty: no chunks at all.
  */
 const replyMode = params.get('reply');
 /**
@@ -204,6 +213,23 @@ const App: React.FC = () => {
       probe.speechMs.push(details.speechMs);
       details.signal?.addEventListener('abort', () => { probe.aborted++; });
       if (replyMode === 'fail') throw new Error('model service down');
+      if (replyMode?.startsWith('speech')) {
+        const captions = replyMode === 'speech';
+        return speechReply((async function* () {
+          try {
+            if (replyMode === 'speech-empty') return;
+            if (captions) yield { text: 'Hello from a speech model.' };
+            yield { audio: tone(), sampleRate: 24000 };
+            await wait(1500);
+            yield captions
+              ? { audio: tone(), sampleRate: 24000, text: 'And a second sentence.' }
+              : { audio: tone(), sampleRate: 24000 };
+            probe.speechEnded++;
+          } finally {
+            probe.speechClosed++;
+          }
+        })());
+      }
       if (replyMode === 'tool') {
         return (async function* () {
           yield 'Let me check that for you, one moment please. ';
@@ -266,7 +292,10 @@ const App: React.FC = () => {
       probe.errors.push({ stage: e.stage, severity: e.severity, detail: e.detail });
       probe.errorMessages.push(e.message);
     },
-    onTranscriptUpdate: (text, speaker) => { if (speaker === 'user') probe.userTranscripts.push(text); },
+    onTranscriptUpdate: (text, speaker) => {
+      if (speaker === 'user') probe.userTranscripts.push(text);
+      else probe.avatarTranscripts.push(text);
+    },
     onSpeechStart: text => {
       probe.played.push(text);
       // Set by the hook for the piece that has just begun.

@@ -3,8 +3,8 @@ export { AiVoiceAvatarLazy } from './components/AiVoiceAvatarLazy';
 
 export type { AiVoiceAvatarProps, AiVoiceAvatarCapabilities, AiVoiceAvatarHandle } from './components/AiVoiceAvatar';
 export type { AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from './types';
-export type { SynthesizedAudio, SynthesisResult, AudioChunk, PcmStreamOptions } from './lib/synthesizedAudio';
-export { pcmStream } from './lib/synthesizedAudio';
+export type { SynthesizedAudio, SynthesisResult, AudioChunk, PcmStreamOptions, SpeechChunk, SpeechReply } from './lib/synthesizedAudio';
+export { pcmStream, speechReply } from './lib/synthesizedAudio';
 export { streamingTranscriber } from './lib/streamingTranscription';
 export type { StreamingTranscriber, TranscriberContext, TranscriptionSession } from './lib/streamingTranscription';
 export { StatusPill } from './components/StatusPill';

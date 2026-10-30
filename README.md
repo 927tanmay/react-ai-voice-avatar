@@ -613,6 +613,38 @@ A streamed reply may go quiet for as long as it needs, for a tool call for
 instance. The hook waits while the stream is open; it is your stream's job to
 end, or to fail, if the work behind it hangs.
 
+### Replies that are already speech
+
+A speech-to-speech model (OpenAI's Realtime API, Gemini Live) answers in audio,
+so there is nothing for `onSynthesize` to do. Relay its audio from your backend
+and return it wrapped in `speechReply`:
+
+```tsx
+import { speechReply } from 'react-ai-voice-avatar/headless';
+
+onSubmit={async (text, { signal }) => {
+  const res = await fetch('/api/realtime', { method: 'POST', body: text, signal });
+  return speechReply(chunksFrom(res.body!)); // your parser for whatever your backend sends
+}}
+```
+
+Each chunk is `{ audio, sampleRate, text? }`, a bare `Float32Array` or
+`Int16Array` at 24 kHz, or `{ text }` alone:
+
+- Audio plays as it arrives, stitched onto the chunk before, and
+  `onSynthesize` is not called for that reply.
+- `text` is the model's transcript of what it is saying. It reaches
+  `onTranscriptUpdate(text, 'avatar')`, and `onSpeechStart` when the audio it
+  came with begins; a `{ text }` chunk captions the next audio. Without any,
+  the reply plays uncaptioned and the avatar's mouth follows loudness alone.
+- Raw PCM only, as for a streamed voice. `pcmStream` handles a stream of
+  bytes, if your backend sends only audio.
+- `signal` stops it like any other reply, and a reply with no chunks says
+  nothing and keeps listening.
+
+The user's words still reach the model as text, from `onTranscribe` or the
+in-browser recognition. Sending it their audio directly is not supported yet.
+
 ---
 
 ## 🗣️ Languages
@@ -1001,7 +1033,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `onUserInterrupt` | `() => void` | `undefined` | Fires when the user talks over the avatar and takes the floor. Only fires if the avatar actually had audio playing. |
 | `gestures` | `boolean \| number` | `true` | Hand and arm gestures while the avatar speaks: one hand or both brought up in front of the chest for each phrase, with small beats on stressed syllables, and the arms back at rest when it stops. `false` keeps the arms still; a number sets the size, `0` to `1.5`. Needs a skeleton with `LeftArm`, `LeftForeArm` and `LeftHand` and the right-hand equivalents; custom avatars without them simply do not gesture. |
 | `onAudioLevelChange` | `(level: number, source: 'mic' \| 'tts' \| 'idle') => void` | `undefined` | Real-time audio amplitude (0-1) callbacks for the active stream. Essential for building highly responsive, audio-reactive 3D Visualizers and HUDs! Fires with `0` and `'idle'` between turns, so a meter falls to rest rather than freezing. |
-| `onSubmit` | `(text: string, details: { speechMs?: number }) => Promise<string \| AsyncIterable<string> \| ReadableStream>` | `undefined` | **Connected Brain API**: Bypasses local LLMs; routes transcribed user microphone strings to your cloud or custom LLM API endpoint. Return `''` to stay quiet and keep listening. `speechMs` is how long the user spoke. See [Staying quiet](#staying-quiet-and-how-long-they-spoke). |
+| `onSubmit` | `(text: string, details: { speechMs?: number, signal: AbortSignal }) => Promise<string \| AsyncIterable<string> \| ReadableStream \| Response \| SpeechReply>` | `undefined` | Your model answers instead of the in-browser one. Return text, a stream of it, or `speechReply(chunks)` for a reply that is already audio ([Replies that are already speech](#replies-that-are-already-speech)). Return `''` to stay quiet and keep listening. `speechMs` is how long the user spoke, and `signal` aborts when the reply is no longer wanted. See [Staying quiet](#staying-quiet-and-how-long-they-spoke). |
 | `preloadLocalLlm` | `boolean` | `false` | Only meaningful alongside `onSubmit`, which otherwise skips the local language model download entirely. Set it to fetch that model in the background while your hosted one answers, so the conversation survives a rate limit, an expired quota or a lost network. See [Hosted now, local when warm](#-hosted-now-local-when-warm). |
 | `onLocalLlmReady` | `() => void` | `undefined` | Fires once the model requested by `preloadLocalLlm` has loaded. Drop `onSubmit` here to hand the conversation over; the turns your backend answered are carried across, so the local model knows what was already said. |
 | `onTranscribe` | `(audio: Float32Array) => Promise<string>` or `streamingTranscriber(...)` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. A function receives one utterance as 16 kHz mono samples; a streaming transcriber hears it as it is spoken. See [Streaming speech-to-text](#streaming-speech-to-text). |

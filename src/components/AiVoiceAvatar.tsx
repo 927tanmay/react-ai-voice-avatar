@@ -98,7 +98,8 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
    * Answer the user with your own language model. Return the reply as a string,
    * an async iterable of text or a ReadableStream; a stream is spoken a sentence
    * at a time while the rest is still arriving. Return an empty string, or a
-   * stream that ends without text, to say nothing and keep listening.
+   * stream that ends without text, to say nothing and keep listening. Or
+   * return `speechReply(chunks)` when your model answers in speech.
    *
    * `details.speechMs` is how long the user spoke for this turn.
    */
