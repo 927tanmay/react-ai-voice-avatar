@@ -37,6 +37,16 @@ streaming transcriber too, and 0.9 s with a speech reply. The hook's own share
 is about 60 ms. `scripts/measure-adapter-latency.mjs` reproduces it, and the
 README's "Through your own providers, streamed" has the setup.
 
+### Fixed
+
+- **Talking over the reply silences it until you have finished.** The reply
+  is ducked the moment a sound starts, but the next sentence arriving resumed
+  it, so the avatar talked over the user; with an encoded voice, decoding a
+  sentence did the same even after the turn was taken. Now only the end of
+  the user's turn, a false alarm, or something the user does lifts the duck,
+  and the reply's audio is stopped as soon as the sound is known to be
+  speech. Reported by someone integrating the package.
+
 ### Changed
 
 - **Supplying every adapter no longer starts the ML worker.** With

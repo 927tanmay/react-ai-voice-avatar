@@ -522,6 +522,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   }, []);
 
   /**
+   * Whether the reply is ducked because someone may be talking. Only
+   * resumePlayback lifts it: a misfire, the end of the user's turn, or
+   * something the user did. Nothing that merely schedules audio may.
+   */
+  const duckedRef = useRef(false);
+
+  /**
    * Get the AudioContext, creating it on first use.
    *
    * Deliberately synchronous, and deliberately called from inside the handlers
@@ -534,7 +541,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const ensureAudioContext = useCallback((): AudioContext | null => {
     const existing = audioContextRef.current;
     if (existing) {
-      if (existing.state === 'suspended') existing.resume();
+      // Not while ducked: the user is talking, and this runs whenever a
+      // sentence is scheduled or decoded. It used to resume the reply over
+      // them as soon as the next sentence arrived.
+      if (existing.state === 'suspended' && !duckedRef.current) existing.resume();
       return existing;
     }
 
@@ -551,6 +561,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     const ctx: AudioContext = new AudioCtxClass();
     audioContextRef.current = ctx;
+    if (duckedRef.current) ctx.suspend().catch(() => { /* closed */ });
 
     const outputAnalyser = ctx.createAnalyser();
     outputAnalyser.fftSize = 256;
@@ -576,6 +587,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * wall-clock timers that would otherwise fire during the pause.
    */
   const suspendPlayback = useCallback(() => {
+    duckedRef.current = true;
     const ctx = audioContextRef.current;
     if (!ctx || ctx.state !== 'running') return;
     for (const cue of visemeTimersRef.current) clearTimeout(cue.timer);
@@ -590,6 +602,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * simply the distance from now to where each cue belongs.
    */
   const resumePlayback = useCallback(() => {
+    duckedRef.current = false;
     const ctx = audioContextRef.current;
     if (!ctx || ctx.state !== 'suspended') return;
     ctx.resume()
@@ -1392,10 +1405,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       return;
     }
     isInterruptedRef.current = false;
+    resumePlayback();
     ensureAudioContext();
     advance('speak-requested');
     speakInSentences(text.trim());
-  }, [speakInSentences, isReady, ensureAudioContext]);
+  }, [speakInSentences, isReady, ensureAudioContext, resumePlayback]);
 
   /**
    * What the user said, from the host's transcriber or typed: announce it,
@@ -1418,11 +1432,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     isInterruptedRef.current = false;
     // Typed input is a user gesture too, and the reply to it needs to be
     // audible without a second interaction to unlock the speakers.
+    resumePlayback();
     ensureAudioContext();
     advance('text-submitted');
     configRef.current.onInferenceStart?.();
     submitUserText(text.trim());
-  }, [submitUserText, ensureAudioContext]);
+  }, [submitUserText, ensureAudioContext, resumePlayback]);
 
   // Readiness announces itself and the rules decide what it means. This used to
   // read `status` and depend on it, which re-ran the effect on every turn of
@@ -1538,16 +1553,17 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       isInterruptedRef.current = false;
 
       // Confirmed speech, so the reply that was paused is genuinely unwanted.
-      // The audio context is resumed because the next reply plays through it;
-      // the chunks queued behind it are dropped first so none of the old one
+      // The chunks queued behind it are dropped so none of the old one
       // survives into the new turn.
       stopAllScheduledAudio();
       resetPlaybackState();
       stopWorkerGenerationRef.current();
-      resumePlayback();
 
       advance('user-stopped-speaking');
       configRef.current.onInferenceStart?.();
+      // Their turn is over, so the duck lifts: the next reply plays through
+      // this context.
+      resumePlayback();
 
       // Whether the microphone keeps listening while the avatar answers is the
       // difference between a conversation and a walkie-talkie. Pausing it here
@@ -1791,6 +1807,16 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // than stopped, so the schedule is still standing here.
             const wasSpeaking = scheduledSourcesRef.current.length > 0;
 
+            // The reply is over, so its audio goes now rather than waiting,
+            // suspended, for the user to finish: anything that resumed the
+            // context in between started it again over them. Sentences still
+            // queued for the voice are dropped too. The duck stays until
+            // their turn ends.
+            stopAllScheduledAudio();
+            resetPlaybackState();
+            clearWatchdog();
+            voiceQueueTurnRef.current++;
+
             // Mark the turn interrupted so a chunk already in flight cannot
             // schedule itself and start the avatar talking over the user.
             // Stopping the workers is a message, not an instruction that has
@@ -1873,7 +1899,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       if (!ok && micSetupRef.current === setup) micSetupRef.current = null;
     });
     return setup;
-  }, [ensureAudioContext, clearWatchdog, reportError, suspendPlayback, resumePlayback, advance, cancelSubmit]);
+  }, [ensureAudioContext, clearWatchdog, reportError, suspendPlayback, resumePlayback, advance, cancelSubmit, stopAllScheduledAudio, resetPlaybackState]);
 
   // Release audio devices when the hook goes away. Deliberately dependency-free:
   // this must run on unmount and at no other time, because anything that makes
@@ -1920,6 +1946,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     // Synchronous, and first, so the context is constructed while the browser
     // still considers itself inside the user gesture that led here.
+    resumePlayback();
     ensureAudioContext();
 
     // Opening the microphone is what actually asks for permission, so the first
@@ -1952,7 +1979,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
     setDetector(true);
     advance('listen-requested');
-  }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance, setDetector, openLiveTranscription]);
+  }, [isReady, ensureAudioContext, ensureMicrophone, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, advance, setDetector, openLiveTranscription, resumePlayback]);
 
   /**
    * Stop hearing the user. A reply already under way carries on: stopping the
@@ -1989,11 +2016,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     live?.controller.abort();
 
     setDetector(false);
+    // No one is being listened to, so nothing is ducked for them. A reply
+    // under way plays on.
+    resumePlayback();
     // The avatar has the floor, and keeps it until its reply ends.
     if (statusRef.current === 'thinking' || statusRef.current === 'speaking') return;
     isInterruptedRef.current = true;
     advance('stop-requested');
-  }, [advance, setDetector]);
+  }, [advance, setDetector, resumePlayback]);
 
   /**
    * Mute or unmute the microphone, the way a call app does.
@@ -2017,6 +2047,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     clearWatchdog();
     stopAllScheduledAudio();
     resetPlaybackState();
+    // Stopped, so ready to play the next thing asked for.
+    resumePlayback();
     configRef.current.onUserInterrupt?.();
     advance('stop-requested');
     setDetector(false);
@@ -2026,7 +2058,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     voiceQueueTurnRef.current++;
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
-  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit, setDetector, abortLiveTranscription]);
+  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit, setDetector, abortLiveTranscription, resumePlayback]);
 
   // Audio polling loop for onAudioLevelChange callback
   useEffect(() => {

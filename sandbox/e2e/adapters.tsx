@@ -49,6 +49,11 @@ type Probe = {
   /** Speech replies that yielded their last chunk, and that were closed at all. */
   speechEnded: number;
   speechClosed: number;
+  /**
+   * Every suspend and resume of an AudioContext, and every status, in order.
+   * `ctx` tells the contexts apart: the detector has one of its own.
+   */
+  audioLog: { kind: 'suspend' | 'resume' | 'status'; ctx?: number; value?: string }[];
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -60,7 +65,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0 };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -75,6 +80,10 @@ const params = new URLSearchParams(location.search);
  * ?reply=response: a fetch Response, returned as it is.
  * ?reply=short: "Sure.", three seconds of nothing, then the answer.
  * ?reply=fail: onSubmit throws.
+ * ?reply=barge: two sentences, the first eight seconds long so the user talks
+ * over it, the second synthesised only once they do. With ?barge=duck it
+ * arrives the moment the reply is ducked, before the sound is known to be
+ * speech; with ?barge=decoded, as a WAV file just after the turn is taken.
  * ?reply=speech: a reply that is already audio, as a speech-to-speech model
  * gives: a caption, half a second of tone, a second and a half of nothing,
  * then half a second more with a second caption. ?reply=speech-silent: the
@@ -163,12 +172,48 @@ const standInTranscriber = streamingTranscriber(({ signal, partial, endTurn, sam
 const listenMode = params.get('listen') === 'ptt' ? 'push-to-talk' : 'continuous';
 (window as unknown as { __e2e: Probe }).__e2e = probe;
 
+const contextIds = new WeakMap<BaseAudioContext, number>();
+let contexts = 0;
+const contextId = (ctx: BaseAudioContext) => {
+  if (!contextIds.has(ctx)) contextIds.set(ctx, ++contexts);
+  return contextIds.get(ctx)!;
+};
+for (const kind of ['suspend', 'resume'] as const) {
+  const native = AudioContext.prototype[kind];
+  AudioContext.prototype[kind] = function (this: AudioContext) {
+    probe.audioLog.push({ kind, ctx: contextId(this) });
+    return native.call(this);
+  };
+}
+/** Resolves once the log has, after the avatar began speaking, an entry that passes `test`. */
+const afterSpeaking = (test: (e: Probe['audioLog'][number]) => boolean) => new Promise<void>(resolve => {
+  const check = () => {
+    const log = probe.audioLog;
+    const from = log.findIndex(e => e.kind === 'status' && e.value === 'speaking');
+    if (from !== -1 && log.slice(from).some(test)) resolve();
+    else setTimeout(check, 10);
+  };
+  check();
+});
+/** A WAV file of half a second of tone, as an encoded voice would send. */
+const wavFile = () => {
+  const pcm = Int16Array.from(tone(false), v => Math.round(v * 32767));
+  const out = new DataView(new ArrayBuffer(44 + pcm.byteLength));
+  const text = (at: number, str: string) => [...str].forEach((c, i) => out.setUint8(at + i, c.charCodeAt(0)));
+  text(0, 'RIFF'); out.setUint32(4, 36 + pcm.byteLength, true); text(8, 'WAVE'); text(12, 'fmt ');
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+  out.setUint32(24, 24000, true); out.setUint32(28, 48000, true); out.setUint16(32, 2, true);
+  out.setUint16(34, 16, true); text(36, 'data'); out.setUint32(40, pcm.byteLength, true);
+  pcm.forEach((v, i) => out.setInt16(44 + i * 2, v, true));
+  return out.buffer;
+};
+
 /**
  * A quiet tone at 24 kHz, standing in for a cloud voice. Half a second, or
  * eight with ?reply=long, so a test can act while the avatar is speaking.
  */
-const tone = () => {
-  const pcm = new Float32Array(replyMode === 'long' ? 24000 * 8 : 12000);
+const tone = (long = replyMode === 'long') => {
+  const pcm = new Float32Array(long ? 24000 * 8 : 12000);
   for (let i = 0; i < pcm.length; i++) pcm[i] = 0.1 * Math.sin((2 * Math.PI * 440 * i) / 24000);
   return pcm;
 };
@@ -213,6 +258,12 @@ const App: React.FC = () => {
       probe.speechMs.push(details.speechMs);
       details.signal?.addEventListener('abort', () => { probe.aborted++; });
       if (replyMode === 'fail') throw new Error('model service down');
+      if (replyMode === 'barge') {
+        return (async function* () {
+          yield 'The first sentence is long, and the user talks over it. ';
+          yield 'The second sentence arrives while they are talking.';
+        })();
+      }
       if (replyMode?.startsWith('speech')) {
         const captions = replyMode === 'speech';
         return speechReply((async function* () {
@@ -287,6 +338,7 @@ const App: React.FC = () => {
       }
       return 'This is the reply.';
     },
+    onInferenceStart: () => { probe.audioLog.push({ kind: 'status', value: 'turn-ended' }); },
     onInferenceEnd: () => { probe.inferenceEnded++; },
     onError: e => {
       probe.errors.push({ stage: e.stage, severity: e.severity, detail: e.detail });
@@ -311,6 +363,16 @@ const App: React.FC = () => {
           if (replyMode === 'stream-fail' && text.startsWith('The second')) throw new Error('voice down');
           if (voiceMode === '16k') return { audio: second(16000), sampleRate: 16000 };
           if (voiceMode === 'bare16k') return second(16000);
+          if (replyMode === 'barge') {
+            if (text.startsWith('The first')) return tone(true);
+            if (params.get('barge') === 'decoded') {
+              await afterSpeaking(e => e.kind === 'status' && e.value === 'listening');
+              await wait(100);
+              return wavFile();
+            }
+            await afterSpeaking(e => e.kind === 'suspend');
+            return tone(false);
+          }
           if (voiceMode === 'stream') {
             return (async function* () {
               try {
@@ -354,6 +416,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     probe.statuses.push(status);
+    probe.audioLog.push({ kind: 'status', value: status });
   }, [status]);
   probe.ttsEngine = activeTtsEngine;
   probe.sendText = sendText;
