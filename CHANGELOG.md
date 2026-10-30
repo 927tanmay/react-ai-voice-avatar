@@ -29,6 +29,14 @@ Breaks nothing.
   interrupted or superseded, whether the voice is streamed or whole. An
   abandoned request rejecting is not reported as a failure.
 
+### Measured
+
+Against stand-in providers with fixed delays, the reply is heard 3.2 s after
+the user stops with batch adapters, 2.5 s with the voice streamed, 1.2 s with a
+streaming transcriber too, and 0.9 s with a speech reply. The hook's own share
+is about 60 ms. `scripts/measure-adapter-latency.mjs` reproduces it, and the
+README's "Through your own providers, streamed" has the setup.
+
 ### Changed
 
 - **Supplying every adapter no longer starts the ML worker.** With

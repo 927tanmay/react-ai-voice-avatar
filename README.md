@@ -963,6 +963,56 @@ Lower `redemptionMs` in `speechDetection` for a snappier feel, at the cost of
 answering half-finished sentences. Without WebGPU, recognition and the voice
 run on the CPU and are several times slower.
 
+#### Through your own providers, streamed
+
+Most of that wait goes once your providers stream. Measured with
+[`scripts/measure-adapter-latency.mjs`](scripts/measure-adapter-latency.mjs)
+against stand-in providers with fixed, typical delays, so that only the way
+the hook uses them changes: speech-to-text 300 ms per clip, or streaming with
+a 300 ms endpoint; a model whose first token takes 350 ms; a voice whose first
+audio takes 200 ms; a speech-to-speech model whose first audio takes 500 ms.
+Timed from the end of speech, measured on the microphone, to the first sound
+of the reply, the median of three turns:
+
+| Setup | Reply heard after you stop |
+| :--- | :--- |
+| `onTranscribe`, `onSubmit` streaming text, `onSynthesize` whole | 3.2 s |
+| … with the voice streamed | 2.5 s |
+| … and a `streamingTranscriber` ending the turn | 1.2 s |
+| `streamingTranscriber` and a `speechReply` | 0.9 s |
+
+The two big steps are the provider ending the turn instead of 1.4 s of
+silence, and the voice starting on its first chunk instead of its last. The
+hook's own share of the 1.2 s is about 60 ms, a scheduling lead that keeps
+chunks gapless; the rest is the providers. Real ones vary, so run the script
+with their figures, or better, against them.
+
+The fastest setup with a text model:
+
+```tsx
+import { useAiVoiceAvatar, streamingTranscriber, pcmStream } from 'react-ai-voice-avatar/headless';
+
+const voice = useAiVoiceAvatar({
+  // Heard while they speak, and the provider says when they have finished.
+  onTranscribe: streamingTranscriber(openMySttSocket),   // see Streaming speech-to-text
+  onUserPartial: setLiveCaption,
+  // Text streamed, so the first sentence goes to the voice while the rest is written.
+  onSubmit: (text, { signal }) =>
+    fetch('/api/chat', { method: 'POST', body: text, signal }).then(r => r.body),
+  // Raw PCM streamed, so each sentence plays from its first chunk.
+  onSynthesize: async (text, { signal }) => {
+    const res = await fetch('/api/tts', { method: 'POST', body: text, signal });
+    return pcmStream(res.body!, { sampleRate: 24000 });
+  },
+});
+```
+
+Keep the first sentence of a reply at least 35 characters. A shorter one is
+held until the next arrives, for up to half a second, so a cloud voice is not
+asked for a single word. With a speech-to-speech model,
+return a [`speechReply`](#replies-that-are-already-speech) from `onSubmit` and
+leave `onSynthesize` out.
+
 ### 🔀 Hosted now, local when warm
 
 You do not have to choose once. `preloadLocalLlm` fetches the in-browser model

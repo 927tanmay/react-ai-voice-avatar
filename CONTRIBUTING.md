@@ -42,6 +42,7 @@ Pages worth knowing in the sandbox:
 | `/voice` | Voice mode on its own, built on the headless hook alone |
 | `/e2e/adapters.html` | A test page for the cloud adapters, used by the e2e suite |
 | `/e2e/latency.html` | Times each stage of a turn, for `node scripts/measure-latency.mjs` |
+| `/e2e/adapter-latency.html` | Times a turn through stand-in providers, batch and streamed, for `node scripts/measure-adapter-latency.mjs` |
 
 The first time you talk to it, the browser downloads about 590 MB of models and
 keeps them, so later runs start in seconds. Chrome or Edge on a desktop is the
