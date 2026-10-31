@@ -57,6 +57,7 @@ type Probe = {
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
+  speak?: (text: string) => void;
   startListening?: () => Promise<boolean>;
   stopListening?: () => void;
   interrupt?: () => void;
@@ -89,6 +90,7 @@ const params = new URLSearchParams(location.search);
  * gives: a caption, half a second of tone, a second and a half of nothing,
  * then half a second more with a second caption. ?reply=speech-silent: the
  * same audio with no transcript. ?reply=speech-empty: no chunks at all.
+ * ?reply=numbered: three sentences at once, numbered by reply.
  */
 const replyMode = params.get('reply');
 /**
@@ -104,8 +106,18 @@ const localLlm = params.get('llm');
  * nothing, then another half second. ?voice=stream-bytes: one second of
  * 22.05 kHz Int16 PCM as bytes cut mid-sample, through pcmStream.
  * ?voice=stream-mp3: MP3 bytes streamed, which cannot be played a piece at a time.
+ * ?voice=slow: the tone after 600 ms. ?voice=late: after a second and a half,
+ * from a voice that ignores the signal; ?voice=late-fail: the same, failing
+ * instead for the first reply's sentences. ?voice=wav: a WAV file, which the
+ * hook decodes; with ?decode=slow that takes a second.
  */
 const voiceMode = params.get('voice');
+if (params.get('decode') === 'slow') {
+  const native = AudioContext.prototype.decodeAudioData;
+  AudioContext.prototype.decodeAudioData = function (this: AudioContext, data: ArrayBuffer) {
+    return new Promise<AudioBuffer>(r => setTimeout(r, 1000)).then(() => native.call(this, data));
+  } as typeof native;
+}
 /** One second of a quiet tone at this rate. */
 const second = (rate: number) => {
   const pcm = new Float32Array(rate);
@@ -319,6 +331,12 @@ const App: React.FC = () => {
           yield 'The capital of France is Paris, a lovely city. ';
         })();
       }
+      if (replyMode === 'numbered') {
+        const reply = ++replies;
+        return (async function* () {
+          for (let n = 1; n <= 3; n++) yield `Reply ${reply} sentence ${n} is long enough to be spoken. `;
+        })();
+      }
       if (replyMode === 'slow') {
         const reply = ++replies;
         return (async function* () {
@@ -362,6 +380,12 @@ const App: React.FC = () => {
           // A long first sentence takes a cloud voice longer than a short second.
           if (text.startsWith('The first')) await new Promise(r => setTimeout(r, 800));
           if (replyMode === 'stream-fail' && text.startsWith('The second')) throw new Error('voice down');
+          if (voiceMode === 'slow') await wait(600);
+          if (voiceMode?.startsWith('late')) {
+            await wait(1500);
+            if (voiceMode === 'late-fail' && text.startsWith('Reply 1')) throw new Error('voice down');
+          }
+          if (voiceMode === 'wav') return wavFile();
           if (voiceMode === '16k') return { audio: second(16000), sampleRate: 16000 };
           if (voiceMode === 'bare16k') return second(16000);
           if (replyMode === 'barge') {
@@ -413,7 +437,7 @@ const App: React.FC = () => {
       : undefined,
   });
 
-  const { status, sendText, startListening, stopListening, interrupt, setMicMuted, isMicMuted, isMicOpen, activeTtsEngine } = voice;
+  const { status, sendText, speak, startListening, stopListening, interrupt, setMicMuted, isMicMuted, isMicOpen, activeTtsEngine } = voice;
 
   useEffect(() => {
     probe.statuses.push(status);
@@ -421,6 +445,7 @@ const App: React.FC = () => {
   }, [status]);
   probe.ttsEngine = activeTtsEngine;
   probe.sendText = sendText;
+  probe.speak = speak;
   probe.startListening = startListening;
   probe.stopListening = stopListening;
   probe.interrupt = interrupt;

@@ -990,8 +990,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       configRef.current.onInferenceEnd?.();
       resumeVadIfAllowed();
     };
-    // A new question supersedes whatever was still being read.
+    // A new question supersedes whatever was still being read, and its
+    // sentences still waiting for the voice.
     cancelSubmit();
+    voiceQueueTurnRef.current++;
     const submit = { controller: new AbortController(), open: false };
     submitRef.current = submit;
     const isCurrent = () => submitRef.current === submit;
@@ -1345,6 +1347,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
                 break;
               }
               const { pcm, sampleRate } = await chunkToPlayable(step.value);
+              if (abandoned()) return true;
               if (pcm.length === 0) continue;
               handleSpeechOutput(pcm, sampleRate, text, '', false, started ? 'more' : 'first');
               started = true;
@@ -1369,6 +1372,10 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           const decoded = await ctx.decodeAudioData(encoded);
           return { pcm: decoded.getChannelData(0), sampleRate: decoded.sampleRate };
         });
+        // Decoding takes a moment, and the reply may have been dropped in it.
+        // The interrupt gate is open again by the next turn, so only the
+        // signal still says this sentence belongs to an old one.
+        if (abandoned()) return true;
 
         handleSpeechOutput(pcm, sampleRate, text, '', isLast);
       } catch (err) {

@@ -64,6 +64,13 @@ README's "Through your own providers, streamed" has the setup.
   A detector that failed to start, which is where its audio worklet loads,
   used to be ignored, leaving the status on listening with nothing heard; it
   is reported now. Reported by someone integrating the package.
+- **A sentence of an abandoned reply no longer plays into the next one.** An
+  encoded voice's sentence still being decoded when the reply was interrupted
+  played into the next reply or `speak()`, and asking a new question while the
+  avatar spoke left the old reply's sentences that were still waiting for the
+  voice to be spoken into the answer. A sentence the voice answers or fails on
+  late, after its reply is gone, is dropped quietly, as before. Reported by
+  someone integrating the package.
 
 ### Changed
 
