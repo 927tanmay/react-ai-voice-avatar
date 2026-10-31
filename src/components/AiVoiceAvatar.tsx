@@ -18,7 +18,7 @@ import type { VisemeWeights } from '../lib/visemeTable';
 
 // Re-exported from ../types so the headless entry never pulls in this module.
 export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, SynthesizeErrorPolicy } from '../types';
 
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
@@ -124,6 +124,10 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onUserPartial?: (text: string) => void;
   /** Speak with your own voice, whole or streamed. See `UseAiVoiceAvatarConfig.onSynthesize` for the formats. */
   onSynthesize?: (text: string, details: AiVoiceAvatarSynthesizeDetails) => Promise<SynthesisResult>;
+  /** What happens when `onSynthesize` fails on a sentence: by default, asked once more, then skipped. See the hook's option of that name. */
+  onSynthesizeError?: SynthesizeErrorPolicy;
+  /** A sentence the voice could not say, skipped or with the reply ended at it. */
+  onUnspokenText?: (text: string, error: unknown) => void;
   /**
    * Which voice is speaking: `'kokoro'`, `'mms'` on iPhones and wherever
    * Kokoro cannot load, or `'custom'` for `onSynthesize`. Fires on every change.
@@ -726,6 +730,8 @@ export const AiVoiceAvatar = forwardRef<AiVoiceAvatarHandle, AiVoiceAvatarProps>
     onInferenceEnd: props.onInferenceEnd,
     onUserInterrupt: props.onUserInterrupt,
     onUserPartial: props.onUserPartial,
+    onSynthesizeError: props.onSynthesizeError,
+    onUnspokenText: props.onUnspokenText,
     onAudioLevelChange: props.onAudioLevelChange,
     onTtsEngineChange: props.onTtsEngineChange,
     preloadLocalSpeech: props.preloadLocalSpeech,

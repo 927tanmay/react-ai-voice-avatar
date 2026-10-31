@@ -810,9 +810,11 @@ only on those.
 kept, so the next visit downloads it again. The message says why — usually not
 enough free space, which on a phone is the common case.
 
-Your own adapters report here too. When `onTranscribe`, `onSubmit` or
-`onSynthesize` throws, the turn ends, the avatar goes back to listening, and
-`onError` gets a `degraded` report whose `detail` is the callback's name. When
+Your own adapters report here too. When `onTranscribe` or `onSubmit` throws,
+the turn ends, the avatar goes back to listening, and `onError` gets a
+`degraded` report whose `detail` is the callback's name. `onSynthesize` is
+different, because it fails one sentence at a time: see
+[When the voice fails on a sentence](#when-the-voice-fails-on-a-sentence). When
 someone was heard but no words were recognised, `detail` is `no-speech`. These
 four `detail` values are stable, so you can branch on them:
 
@@ -822,6 +824,38 @@ onError={(e) => {
   else if (e.detail === 'onSubmit') toast("Couldn't reach the server. Try again?");
 }}
 ```
+
+#### When the voice fails on a sentence
+
+The reply goes to `onSynthesize` a sentence at a time, and by default a
+sentence it fails on is asked for once more, then skipped, and the rest of
+the reply is still spoken. A passing rate limit on the voice no longer cuts the
+answer off mid-way. The skipped sentence reaches `onError` (`detail:
+'onSynthesize'`) and `onUnspokenText`, so a chat can mark it:
+
+```tsx
+onUnspokenText: (text) => markUnspoken(text), // it was captioned, but not heard
+```
+
+`onSynthesizeError` changes that:
+
+| Value | A failed sentence is |
+| :--- | :--- |
+| unset | Asked for once more, then skipped. |
+| `'skip'` | Skipped, without asking again. |
+| `'end-turn'` | The end of the reply: the rest is not spoken, and `onSubmit`'s `signal` aborts. What 0.8 did. |
+| `(text, error, attempt) => 'retry' \| 'skip' \| 'end-turn'` | Up to you, for each failure. `attempt` is 1 the first time that sentence fails. May be async, to wait before retrying. |
+
+```tsx
+onSynthesizeError: async (text, error, attempt) => {
+  if (attempt > 2) return 'skip';
+  await new Promise(r => setTimeout(r, 300 * attempt)); // back off, then
+  return 'retry';
+},
+```
+
+A streamed sentence that fails after some of it has played is skipped rather
+than asked for again, which would repeat what was heard.
 
 #### When listening cannot start
 
@@ -1119,6 +1153,8 @@ Explore the canonical patterns in the `examples/` directory:
 | `onTranscribe` | `(audio: Float32Array) => Promise<string>` or `streamingTranscriber(...)` | `undefined` | Replaces local speech recognition with your own service, and Whisper is then not downloaded. A function receives one utterance as 16 kHz mono samples; a streaming transcriber hears it as it is spoken. See [Streaming speech-to-text](#streaming-speech-to-text). |
 | `onUserPartial` | `(text: string) => void` | `undefined` | The words so far while the user speaks, from a streaming transcriber. |
 | `onSynthesize` | `(text: string, { signal }) => Promise<SynthesisResult>` | `undefined` | Replaces local voice synthesis with your own service, and Kokoro is then not downloaded. Return an encoded file, `{ audio, sampleRate }`, raw 24 kHz samples, or a stream of raw chunks; see [Streaming the voice](#streaming-the-voice). Called a sentence at a time. |
+| `onSynthesizeError` | `'skip' \| 'end-turn' \| (text, error, attempt) => 'retry' \| 'skip' \| 'end-turn'` | retry once, then skip | What happens to a sentence `onSynthesize` fails on. See [When the voice fails on a sentence](#when-the-voice-fails-on-a-sentence). |
+| `onUnspokenText` | `(text: string, error: unknown) => void` | `undefined` | A sentence the voice could not say, skipped or with the reply ended at it. It was already captioned through `onTranscriptUpdate`. |
 | `onError` | `(e: AiVoiceAvatarError) => void` | `undefined` | Fires when a stage fails. Carries `stage`, `message` and a `severity` of `degraded` or `fatal`. See [Handling failures](#-handling-failures). |
 | `onTranscriptUpdate` | `(text: string, speaker: 'user' \| 'avatar') => void` | `undefined` | Callback delivering real-time microphone transcriptions and assistant spoken utterance strings. |
 | `onStatusChange`| `(status: string) => void` | `undefined` | Emits live state transitions (`loading`, `idle`, `listening`, `thinking`, `speaking`). |

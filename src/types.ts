@@ -108,3 +108,19 @@ export interface AiVoiceAvatarSynthesizeDetails {
    */
   signal: AbortSignal;
 }
+
+/**
+ * What to do with a sentence `onSynthesize` failed on: ask for it again, go
+ * on to the next sentence without it, or end the reply there.
+ */
+export type SynthesizeErrorAction = 'retry' | 'skip' | 'end-turn';
+
+/**
+ * How a failed sentence is handled. `'skip'` and `'end-turn'` apply to every
+ * failure. A function decides each one: `attempt` is 1 for the first failure
+ * of that sentence, 2 if a retry failed too, and so on.
+ */
+export type SynthesizeErrorPolicy =
+  | 'skip'
+  | 'end-turn'
+  | ((text: string, error: unknown, attempt: number) => SynthesizeErrorAction | Promise<SynthesizeErrorAction>);

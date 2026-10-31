@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, SynthesizeErrorAction, SynthesizeErrorPolicy } from '../types';
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
@@ -185,6 +185,22 @@ export interface UseAiVoiceAvatarConfig {
    * body of PCM bytes into one. Encoded audio cannot be streamed.
    */
   onSynthesize?: (text: string, details: AiVoiceAvatarSynthesizeDetails) => Promise<SynthesisResult>;
+  /**
+   * What happens when `onSynthesize` fails on a sentence. By default it is
+   * asked once more, then skipped, and the rest of the reply is still spoken.
+   * `'skip'` skips without asking again. `'end-turn'` ends the reply there and
+   * aborts `onSubmit`'s signal, as before 0.9. A function decides each failure.
+   *
+   * A streamed sentence that fails after some of it has played is never asked
+   * for again, which would repeat what was heard; a retry becomes a skip.
+   */
+  onSynthesizeError?: SynthesizeErrorPolicy;
+  /**
+   * A sentence the voice could not say, skipped or with the reply ended at it.
+   * It was announced to `onTranscriptUpdate` before it was synthesised, so a
+   * chat can mark it, or show it, here.
+   */
+  onUnspokenText?: (text: string, error: unknown) => void;
   /**
    * Download the in-browser hearing and voice in the background even though
    * `onTranscribe` and `onSynthesize` are handling them.
@@ -965,7 +981,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       .then(() => (turn === voiceQueueTurnRef.current ? step() : undefined))
       .catch(() => {});
   };
-  /** Queue a sentence. One the voice fails on ends the turn, so the rest of the reply is dropped. */
+  /** Queue a sentence. One whose failure ends the turn (see `onSynthesizeError`) drops the rest of the reply. */
   const queueSentence = (text: string, isLast = true, announce = true) => {
     queueForVoice(async () => {
       if (!(await synthesizeText(text, isLast, announce))) stopWorkerGenerationRef.current();
@@ -1313,10 +1329,28 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     configRef.current.onTtsEngineChange?.(ttsEngineInUse);
   }, [ttsEngineInUse]);
 
+  /**
+   * What to do with a sentence `onSynthesize` failed on, from
+   * `onSynthesizeError`. Unset, it is asked once more and then skipped. A
+   * policy function that throws, or answers with anything else, skips it.
+   */
+  const synthesisFailureAction = async (text: string, err: unknown, tries: number): Promise<SynthesizeErrorAction> => {
+    const policy: SynthesizeErrorPolicy | undefined = configRef.current.onSynthesizeError;
+    if (policy === 'skip' || policy === 'end-turn') return policy;
+    if (typeof policy !== 'function') return tries < 2 ? 'retry' : 'skip';
+    try {
+      const action = await policy(text, err, tries);
+      return action === 'retry' || action === 'end-turn' ? action : 'skip';
+    } catch (e) {
+      console.error('[AiVoiceAvatar] onSynthesizeError threw, skipping the sentence:', e);
+      return 'skip';
+    }
+  };
+
   // ─── Unified synthesizeText: routes to the correct TTS engine or cloud adapter ───
   /**
-   * Returns false when the cloud adapter failed, so a caller speaking several
-   * pieces in turn knows to stop. `announce` is false when the caller already
+   * Returns false when the cloud adapter failed and the reply ends there, so a
+   * caller speaking several pieces in turn knows to stop. `announce` is false when the caller already
    * reported the whole text as one transcript entry.
    */
   const synthesizeText = useCallback(async (text: string, isLast: boolean = true, announce: boolean = true): Promise<boolean> => {
@@ -1328,26 +1362,29 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       synthesisRef.current.add(controller);
       /** Interrupted, or superseded by a new reply: stop quietly. */
       const abandoned = () => controller.signal.aborted || isInterruptedRef.current;
-      try {
-        const audioResult = await configRef.current.onSynthesize(text, { signal: controller.signal });
-        if (abandoned()) return true;
+      /** Whether any of the sentence has been heard, so it cannot be asked for again. */
+      let started = false;
+
+      /** Ask the voice for the sentence and play it. Throws if the voice failed. */
+      const attempt = async () => {
+        const audioResult = await configRef.current.onSynthesize!(text, { signal: controller.signal });
+        if (abandoned()) return;
 
         // Chunks as the voice produces them. Each is played as it arrives,
         // stitched onto the one before, so the sentence starts with its first.
         if (isAudioStream(audioResult)) {
           const iterator = audioResult[Symbol.asyncIterator]();
-          let started = false;
           let ended = false;
           try {
             while (true) {
               const step = await iterator.next();
-              if (abandoned()) return true;
+              if (abandoned()) return;
               if (step.done) {
                 ended = true;
                 break;
               }
               const { pcm, sampleRate } = await chunkToPlayable(step.value);
-              if (abandoned()) return true;
+              if (abandoned()) return;
               if (pcm.length === 0) continue;
               handleSpeechOutput(pcm, sampleRate, text, '', false, started ? 'more' : 'first');
               started = true;
@@ -1361,7 +1398,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           // Only now is it known which chunk was the last. Nothing came at all
           // is an empty sentence, and the turn still settles.
           if (isLast) handleSpeechEnd();
-          return true;
+          return;
         }
 
         // Raw samples at any rate, as floats or 16-bit integers, or an encoded
@@ -1375,23 +1412,49 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         // Decoding takes a moment, and the reply may have been dropped in it.
         // The interrupt gate is open again by the next turn, so only the
         // signal still says this sentence belongs to an old one.
-        if (abandoned()) return true;
+        if (abandoned()) return;
 
         handleSpeechOutput(pcm, sampleRate, text, '', isLast);
-      } catch (err) {
-        // A host passing the signal to fetch sees it rejected when the reply
-        // is abandoned, and that is not a failure.
-        if (abandoned()) return true;
-        console.error('[AiVoiceAvatar] Cloud onSynthesize adapter failed:', err);
-        reportError('onSynthesize', `onSynthesize failed: ${(err as Error)?.message ?? err}`, 'degraded');
-        advance('pipeline-failed');
-        configRef.current.onInferenceEnd?.();
-        resumeVadIfAllowed();
-        return false;
+      };
+
+      try {
+        for (let tries = 1; ; tries++) {
+          try {
+            await attempt();
+            return true;
+          } catch (err) {
+            // A host passing the signal to fetch sees it rejected when the reply
+            // is abandoned, and that is not a failure.
+            if (abandoned()) return true;
+            let action = await synthesisFailureAction(text, err, tries);
+            if (abandoned()) return true;
+            // Asking again would repeat what was already heard.
+            if (action === 'retry' && started) action = 'skip';
+            const reason = (err as Error)?.message ?? String(err);
+            if (action === 'retry') {
+              console.warn(`[AiVoiceAvatar] onSynthesize failed, asking again (attempt ${tries + 1}):`, err);
+              continue;
+            }
+            console.error('[AiVoiceAvatar] Cloud onSynthesize adapter failed:', err);
+            if (action === 'skip') {
+              // One sentence lost is better than the rest of the answer: a
+              // passing rate limit used to cut the reply off there.
+              reportError('onSynthesize', `onSynthesize failed: ${reason}. The sentence was skipped.`, 'degraded', err);
+              configRef.current.onUnspokenText?.(text, err);
+              if (isLast) handleSpeechEnd();
+              return true;
+            }
+            reportError('onSynthesize', `onSynthesize failed: ${reason}`, 'degraded', err);
+            configRef.current.onUnspokenText?.(text, err);
+            advance('pipeline-failed');
+            configRef.current.onInferenceEnd?.();
+            resumeVadIfAllowed();
+            return false;
+          }
+        }
       } finally {
         synthesisRef.current.delete(controller);
       }
-      return true;
     }
 
     // Local fallback

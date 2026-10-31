@@ -54,6 +54,9 @@ type Probe = {
    * `ctx` tells the contexts apart: the detector has one of its own.
    */
   audioLog: { kind: 'suspend' | 'resume' | 'status'; ctx?: number; value?: string }[];
+  /** What onUnspokenText got, and each call to a ?synthError=fn policy. */
+  unspoken: string[];
+  policyCalls: { text: string; attempt: number }[];
   ttsEngine?: string;
   localSpeechReady?: boolean;
   sendText?: (text: string) => void;
@@ -67,12 +70,13 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [], unspoken: [], policyCalls: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
  * ?reply=stream: three sentences streamed, the first of which the voice is
  * slowest to synthesise. ?reply=stream-fail: the voice fails on the second.
+ * ?reply=stream-fail-once: it fails on the second only the first time asked.
  * ?reply=tool: one sentence, then twelve seconds of nothing, as a model calling
  * a tool would, then the answer. ?reply=slow: eight sentences a second and a
  * half apart, numbered by reply, from a host that ignores the signal.
@@ -109,7 +113,8 @@ const localLlm = params.get('llm');
  * ?voice=slow: the tone after 600 ms. ?voice=late: after a second and a half,
  * from a voice that ignores the signal; ?voice=late-fail: the same, failing
  * instead for the first reply's sentences. ?voice=wav: a WAV file, which the
- * hook decodes; with ?decode=slow that takes a second.
+ * hook decodes; with ?decode=slow that takes a second. ?voice=stream-fail: a
+ * streamed voice that fails after its first chunk.
  */
 const voiceMode = params.get('voice');
 if (params.get('decode') === 'slow') {
@@ -134,6 +139,13 @@ const onnxWasmPath = params.get('wasm') === 'local' ? `${location.origin}/__ort/
  * ?transcribe=stream-early: one that ends it after 0.6 s of speech, mid-sentence.
  */
 const transcribeMode = params.get('transcribe');
+/**
+ * ?synthError=skip|end-turn: onSynthesizeError. ?synthError=fn: a policy that
+ * asks twice more, then skips.
+ */
+const synthError = params.get('synthError');
+const failedOnce = new Set<string>();
+
 /** ?redemption=ms and ?minspeech=ms: the detector's silence timer and minimum speech. */
 const speechDetection = {
   ...(params.has('redemption') ? { redemptionMs: Number(params.get('redemption')) } : {}),
@@ -373,6 +385,13 @@ const App: React.FC = () => {
       probe.durations.push(voice.currentAudioDurationRef.current ?? 0);
     },
     onUserInterrupt: () => { probe.userInterrupts++; },
+    onSynthesizeError: synthError === 'fn'
+      ? (text, _err, attempt) => {
+          probe.policyCalls.push({ text, attempt });
+          return attempt < 3 ? 'retry' : 'skip';
+        }
+      : (synthError as 'skip' | 'end-turn' | null) ?? undefined,
+    onUnspokenText: text => { probe.unspoken.push(text); },
     onSynthesize: adapters
       ? async (text, details) => {
           probe.synthesized.push(text);
@@ -380,6 +399,17 @@ const App: React.FC = () => {
           // A long first sentence takes a cloud voice longer than a short second.
           if (text.startsWith('The first')) await new Promise(r => setTimeout(r, 800));
           if (replyMode === 'stream-fail' && text.startsWith('The second')) throw new Error('voice down');
+          if (replyMode === 'stream-fail-once' && text.startsWith('The second') && !failedOnce.has(text)) {
+            failedOnce.add(text);
+            throw new Error('voice busy');
+          }
+          if (voiceMode === 'stream-fail') {
+            return (async function* () {
+              yield tone();
+              await wait(100);
+              throw new Error('voice dropped');
+            })();
+          }
           if (voiceMode === 'slow') await wait(600);
           if (voiceMode?.startsWith('late')) {
             await wait(1500);

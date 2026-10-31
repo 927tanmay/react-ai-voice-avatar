@@ -131,8 +131,8 @@ test('cloud adapters: a streamed reply is spoken in order, however long each sen
   expect(stalls).toEqual([]);
 });
 
-test('cloud adapters: when the voice fails mid-reply, the rest of it is not spoken', async ({ page }) => {
-  await page.goto('/e2e/adapters.html?reply=stream-fail');
+test('cloud adapters: with onSynthesizeError \'end-turn\', the rest of a reply the voice fails on is not spoken', async ({ page }) => {
+  await page.goto('/e2e/adapters.html?reply=stream-fail&synthError=end-turn');
   await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
 
   await page.evaluate(() => (window as any).__e2e.sendText('Hello there'));

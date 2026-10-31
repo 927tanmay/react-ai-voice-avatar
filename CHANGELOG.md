@@ -2,10 +2,15 @@
 
 ## Unreleased
 
-Breaks nothing, with one thing to check: a voice detector that fails to load
-now reports `stage: 'speech-detection'` rather than `'microphone'`. If your
-app treats a `microphone` error as "cannot listen", treat `speech-detection`
-the same way, or check `startListening()`'s new result instead.
+Breaks nothing, with two things to check:
+
+- A voice detector that fails to load now reports `stage: 'speech-detection'`
+  rather than `'microphone'`. If your app treats a `microphone` error as
+  "cannot listen", treat `speech-detection` the same way, or check
+  `startListening()`'s new result instead.
+- A sentence `onSynthesize` fails on no longer ends the reply. It is asked for
+  once more, then skipped. Pass `onSynthesizeError: 'end-turn'` to keep 0.8's
+  behaviour.
 
 ### Added
 
@@ -74,6 +79,16 @@ README's "Through your own providers, streamed" has the setup.
 
 ### Changed
 
+- **A sentence the voice fails on is retried once, then skipped.** One failed
+  `onSynthesize` call used to end the whole reply, so a passing rate limit cut
+  the answer off mid-way. Now the rest of the reply is still spoken. The new
+  `onSynthesizeError` option sets the policy: `'skip'`, `'end-turn'` (0.8's
+  behaviour, which also aborts `onSubmit`), or a function given the sentence,
+  the error and the attempt number that answers `'retry'`, `'skip'` or
+  `'end-turn'`. A sentence left unsaid reaches the new `onUnspokenText` as
+  well as `onError`. A streamed sentence that fails after some of it has
+  played is skipped rather than repeated. Asked for by someone integrating
+  the package.
 - **Supplying every adapter no longer starts the ML worker.** With
   `onTranscribe`, `onSubmit` and `onSynthesize` all yours, the transcript now
   goes straight to `onSubmit`. It used to be posted to the worker only to be
