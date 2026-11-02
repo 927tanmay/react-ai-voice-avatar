@@ -94,6 +94,25 @@ const HOLD_SHORT_SENTENCE_MS = 500;
 /** How long to wait for promised audio that never arrives before recovering. */
 const RESPONSE_STALL_TIMEOUT_MS = 10000;
 
+const ABANDONED = Symbol('abandoned');
+/**
+ * The host's promise, or ABANDONED the moment `signal` aborts, whichever comes
+ * first. A host may ignore the signal, and a request that never answers then
+ * held up everything waiting behind it: sentences are voiced in line, so one
+ * hung sentence of a cancelled reply silenced every reply after it.
+ */
+function unlessAborted<T>(promise: PromiseLike<T>, signal: AbortSignal): Promise<T | typeof ABANDONED> {
+  if (signal.aborted) return Promise.resolve(ABANDONED);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => resolve(ABANDONED);
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(promise).then(
+      value => { signal.removeEventListener('abort', onAbort); resolve(value); },
+      err => { signal.removeEventListener('abort', onAbort); reject(err); },
+    );
+  });
+}
+
 /**
  * What we ask the browser for when opening the microphone.
  *
@@ -1374,8 +1393,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
 
       /** Ask the voice for the sentence and play it. Throws if the voice failed. */
       const attempt = async () => {
-        const audioResult = await configRef.current.onSynthesize!(text, { signal: controller.signal });
-        if (abandoned()) return;
+        const audioResult = await unlessAborted(configRef.current.onSynthesize!(text, { signal: controller.signal }), controller.signal);
+        if (audioResult === ABANDONED || abandoned()) return;
 
         // Chunks as the voice produces them. Each is played as it arrives,
         // stitched onto the one before, so the sentence starts with its first.
@@ -1384,8 +1403,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           let ended = false;
           try {
             while (true) {
-              const step = await iterator.next();
-              if (abandoned()) return;
+              const step = await unlessAborted(iterator.next(), controller.signal);
+              if (step === ABANDONED || abandoned()) return;
               if (step.done) {
                 ended = true;
                 break;
@@ -1433,8 +1452,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // A host passing the signal to fetch sees it rejected when the reply
             // is abandoned, and that is not a failure.
             if (abandoned()) return true;
-            let action = await synthesisFailureAction(text, err, tries);
-            if (abandoned()) return true;
+            let action = await unlessAborted(synthesisFailureAction(text, err, tries), controller.signal);
+            if (action === ABANDONED || abandoned()) return true;
             // Asking again would repeat what was already heard.
             if (action === 'retry' && started) action = 'skip';
             const reason = (err as Error)?.message ?? String(err);

@@ -84,3 +84,40 @@ test('a new question while speaking drops the old reply\'s sentences still waiti
   expect(p.played).toEqual([`Reply 1 sentence 1 is long enough to be spoken.`, ...REPLY_2]);
   expect(p.errors).toEqual([]);
 });
+
+/**
+ * A voice that never answers, and ignores the signal. Sentences wait in line
+ * for the one before, so the hung one held up every reply after it.
+ */
+for (const voice of ['hang', 'hang-stream']) {
+  test(`a voice request that never answers does not hold up the next reply (${voice})`, async ({ page }) => {
+    await open(page, `reply=numbered&voice=${voice}`);
+    await interruptThenAskAgain(page);
+    // Before: the second reply waited behind the first's sentence for good.
+    await expect.poll(async () => (await probe(page)).played.filter((t: string) => t.startsWith('Reply 2')), { timeout: 15_000 })
+      .toEqual(REPLY_2);
+    await expect(page.locator('#status')).toHaveText('idle', { timeout: 10_000 });
+    expect((await probe(page)).errors).toEqual([]);
+  });
+}
+
+test('a new question goes past a voice request that never answers', async ({ page }) => {
+  await open(page, 'reply=numbered&voice=hang');
+  await call(page, 'sendText', 'First question');
+  await expect.poll(async () => (await probe(page)).synthesized.length).toBe(1);
+  await call(page, 'sendText', 'Second question');
+  await expect.poll(async () => (await probe(page)).played, { timeout: 15_000 }).toEqual(REPLY_2);
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 10_000 });
+});
+
+test('an onSynthesizeError that never answers does not hold up the next reply', async ({ page }) => {
+  // The first reply's sentence fails after a second and a half, and the
+  // policy asked what to do about it never says.
+  await open(page, 'reply=numbered&voice=late-fail&synthError=hang');
+  await call(page, 'sendText', 'First question');
+  await expect.poll(async () => (await probe(page)).policyCalls.length, { timeout: 10_000 }).toBe(1);
+  await call(page, 'interrupt');
+  await call(page, 'sendText', 'Second question');
+  await expect.poll(async () => (await probe(page)).played, { timeout: 15_000 }).toEqual(REPLY_2);
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 10_000 });
+});

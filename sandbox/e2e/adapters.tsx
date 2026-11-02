@@ -118,7 +118,9 @@ const localLlm = params.get('llm');
  * from a voice that ignores the signal; ?voice=late-fail: the same, failing
  * instead for the first reply's sentences. ?voice=wav: a WAV file, which the
  * hook decodes; with ?decode=slow that takes a second. ?voice=stream-fail: a
- * streamed voice that fails after its first chunk.
+ * streamed voice that fails after its first chunk. ?voice=hang: the first
+ * reply's sentences never answer, whatever the signal; ?voice=hang-stream:
+ * they stream one chunk and then nothing more.
  */
 const voiceMode = params.get('voice');
 if (params.get('decode') === 'slow') {
@@ -147,7 +149,7 @@ const onnxWasmPath = params.get('wasm') === 'local' ? `${location.origin}/__ort/
 const transcribeMode = params.get('transcribe');
 /**
  * ?synthError=skip|end-turn: onSynthesizeError. ?synthError=fn: a policy that
- * asks twice more, then skips.
+ * asks twice more, then skips. ?synthError=hang: one that never answers.
  */
 const synthError = params.get('synthError');
 const failedOnce = new Set<string>();
@@ -401,9 +403,10 @@ const App: React.FC = () => {
       probe.durations.push(voice.currentAudioDurationRef.current ?? 0);
     },
     onUserInterrupt: () => { probe.userInterrupts++; },
-    onSynthesizeError: synthError === 'fn'
+    onSynthesizeError: synthError === 'fn' || synthError === 'hang'
       ? (text, _err, attempt) => {
           probe.policyCalls.push({ text, attempt });
+          if (synthError === 'hang') return new Promise<never>(() => {});
           return attempt < 3 ? 'retry' : 'skip';
         }
       : (synthError as 'skip' | 'end-turn' | null) ?? undefined,
@@ -427,6 +430,14 @@ const App: React.FC = () => {
             })();
           }
           if (voiceMode === 'slow') await wait(600);
+          const forever = () => new Promise<never>(() => {});
+          if (voiceMode === 'hang' && text.startsWith('Reply 1')) await forever();
+          if (voiceMode === 'hang-stream' && text.startsWith('Reply 1')) {
+            return (async function* () {
+              yield tone();
+              await forever();
+            })();
+          }
           if (voiceMode?.startsWith('late')) {
             await wait(1500);
             if (voiceMode === 'late-fail' && text.startsWith('Reply 1')) throw new Error('voice down');

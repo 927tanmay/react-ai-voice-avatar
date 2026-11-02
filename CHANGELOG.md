@@ -54,6 +54,11 @@ README's "Through your own providers, streamed" has the setup.
 
 ### Fixed
 
+- **A voice request that never answers no longer silences every reply
+  after it.** Sentences are voiced in line, each after the one before, so an
+  `onSynthesize` call that ignored the signal and never settled held up the
+  queue for good, and so did an `onSynthesizeError` function that never
+  answered. Once its reply is cancelled, the hook stops waiting for it.
 - **Unmounting stops the host's requests.** `onSubmit`, `onSynthesize` and
   `onTranscribe` are aborted when the hook or component unmounts. They used
   to run to the end, billed, with nobody left to hear the answer.
