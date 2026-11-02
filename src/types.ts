@@ -99,6 +99,16 @@ export interface AiVoiceAvatarSubmitDetails {
   signal: AbortSignal;
 }
 
+/** The second argument to an `onTranscribe` function. */
+export interface AiVoiceAvatarTranscribeDetails {
+  /**
+   * Aborted when this recording's transcript is no longer wanted:
+   * `interrupt()` was called, or the hook unmounted. Pass it to `fetch` so the
+   * request stops too. A transcript that arrives after it aborts is dropped.
+   */
+  signal: AbortSignal;
+}
+
 /** The second argument to `onSynthesize`. */
 export interface AiVoiceAvatarSynthesizeDetails {
   /**

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, SynthesizeErrorAction, SynthesizeErrorPolicy } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, AiVoiceAvatarTranscribeDetails, SynthesizeErrorAction, SynthesizeErrorPolicy } from '../types';
 import { isIOS } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
@@ -162,12 +162,13 @@ export interface UseAiVoiceAvatarConfig {
   onLocalLlmReady?: () => void;
   /**
    * Transcribe with your own speech-to-text. A function gets the recording
-   * once the user has finished and returns the text. Or pass
+   * once the user has finished and returns the text, and a `signal` that
+   * aborts when the transcript is no longer wanted. Or pass
    * `streamingTranscriber(...)` to hear them while they speak: partial
    * transcripts reach `onUserPartial`, and your provider can end the turn
    * before the silence timer does.
    */
-  onTranscribe?: ((audio: Float32Array) => Promise<string>) | StreamingTranscriber;
+  onTranscribe?: ((audio: Float32Array, details: AiVoiceAvatarTranscribeDetails) => Promise<string>) | StreamingTranscriber;
   /**
    * The words so far, while the user is still speaking, from a
    * `streamingTranscriber`. Each call replaces the last. The final text still
@@ -445,6 +446,12 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   /** Abandon the current `onSubmit` reply, if there is one. */
   /** The host's voice requests under way, aborted with the reply they belong to. */
   const synthesisRef = useRef(new Set<AbortController>());
+  /** Transcripts still to arrive, one per recording, aborted when they are no longer wanted. */
+  const transcriptionRef = useRef(new Set<AbortController>());
+  const abortTranscriptions = useCallback(() => {
+    for (const controller of transcriptionRef.current) controller.abort();
+    transcriptionRef.current.clear();
+  }, []);
   const cancelSubmit = useCallback(() => {
     const current = submitRef.current;
     submitRef.current = null;
@@ -1681,12 +1688,20 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       // Cloud adapter: override local ASR.
       const transcriber = configRef.current.onTranscribe;
       if (transcript || transcriber) {
+        // A streaming transcript has its session's signal; this one says
+        // whether the turn is still wanted once the text arrives.
+        const controller = new AbortController();
+        transcriptionRef.current.add(controller);
+        const abandoned = () => controller.signal.aborted;
         try {
           const text = await (transcript ?? (isStreamingTranscriber(transcriber)
             // Opened at the first sound of every turn, so this is a turn it
             // never heard, which should not happen. Reported, not guessed at.
             ? Promise.reject(new Error('the streaming transcriber heard none of this turn'))
-            : transcriber!(audio)));
+            : transcriber!(audio, { signal: controller.signal })));
+          // Interrupted, or unmounted, while it was transcribed: the turn
+          // is over, and its words start no reply.
+          if (abandoned()) return;
           if (text && text.trim()) {
             submitUserText(text, speechMs);
           } else {
@@ -1698,11 +1713,16 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             resumeVadIfAllowed();
           }
         } catch (err) {
+          // A host passing the signal to fetch sees it rejected, and that is
+          // not a failure.
+          if (abandoned()) return;
           console.error('[AiVoiceAvatar] Cloud onTranscribe adapter failed:', err);
           reportError('onTranscribe', `onTranscribe failed: ${(err as Error)?.message ?? err}`, 'degraded');
           advance('pipeline-failed');
           configRef.current.onInferenceEnd?.();
           resumeVadIfAllowed();
+        } finally {
+          transcriptionRef.current.delete(controller);
         }
         return;
       }
@@ -2061,6 +2081,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       isUnmountedRef.current = true;
       liveTranscriptionRef.current?.controller.abort();
       liveTranscriptionRef.current = null;
+      // Nobody is left to hear the answer, so the host's requests stop: they
+      // used to run to the end, and be billed, after the page had moved on.
+      cancelSubmit();
+      abortTranscriptions();
+      voiceQueueTurnRef.current++;
       if (playbackWatchdogRef.current) {
         clearTimeout(playbackWatchdogRef.current);
         playbackWatchdogRef.current = null;
@@ -2087,7 +2112,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         mediaStreamRef.current?.getTracks().forEach(t => t.stop());
       } catch (e) {}
     };
-  }, [stopAllScheduledAudio]);
+  }, [stopAllScheduledAudio, cancelSubmit, abortTranscriptions]);
 
 
   const startListening = useCallback(async (): Promise<boolean> => {
@@ -2205,12 +2230,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     advance('stop-requested');
     setDetector(false);
 
-    // Immediately stop worker synthesis, and the host's reply with it.
+    // Immediately stop worker synthesis, and the host's reply with it, and
+    // a transcript still to arrive, which would start a new one.
     cancelSubmit();
+    abortTranscriptions();
     voiceQueueTurnRef.current++;
     try { mlInterrupt(); } catch(e) {}
     try { kokoroInterrupt(); } catch(e) {}
-  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit, setDetector, abortLiveTranscription, resumePlayback]);
+  }, [mlInterrupt, kokoroInterrupt, clearWatchdog, stopAllScheduledAudio, resetPlaybackState, cancelSubmit, abortTranscriptions, setDetector, abortLiveTranscription, resumePlayback]);
 
   // Audio polling loop for onAudioLevelChange callback
   useEffect(() => {

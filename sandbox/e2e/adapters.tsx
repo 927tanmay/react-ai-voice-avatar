@@ -36,8 +36,9 @@ type Probe = {
   /** Streamed voices that yielded their last chunk, and that were closed at all. */
   streamsEnded: number;
   streamsClosed: number;
-  /** How many onSynthesize signals have been aborted. */
+  /** How many onSynthesize signals have been aborted, and onTranscribe ones. */
   synthAborted: number;
+  transcribeAborted: number;
   /** From a streaming transcriber: what onUserPartial got, and its sessions. */
   partials: string[];
   sessionsOpened: number;
@@ -68,10 +69,12 @@ type Probe = {
   setMicMuted?: (muted: boolean) => void;
   isMicMuted?: boolean;
   isMicOpen?: boolean;
+  /** Unmount the page's component. */
+  unmount?: () => void;
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, interruptsAtSubmit: [], played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [], unspoken: [], policyCalls: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, interruptsAtSubmit: [], played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, transcribeAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [], unspoken: [], policyCalls: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -138,6 +141,8 @@ const onnxWasmPath = params.get('wasm') === 'local' ? `${location.origin}/__ort/
  * the turn itself. ?transcribe=stream-endturn: one that ends it after 300 ms
  * of quiet following speech, as a provider's endpointing does.
  * ?transcribe=stream-early: one that ends it after 0.6 s of speech, mid-sentence.
+ * ?transcribe=slow: takes a second and a half, ignoring the signal.
+ * ?transcribe=slow-fetch: the same, but rejects when the signal aborts, as fetch does.
  */
 const transcribeMode = params.get('transcribe');
 /**
@@ -265,8 +270,17 @@ const App: React.FC = () => {
     speechDetection,
     onUserPartial: text => { probe.partials.push(text); },
     onTranscribe: !adapters ? undefined : transcribeMode?.startsWith('stream') ? standInTranscriber : adapters
-      ? async audio => {
+      ? async (audio, details) => {
           probe.heard.push(audio.length / 16000);
+          details?.signal.addEventListener('abort', () => { probe.transcribeAborted++; });
+          if (transcribeMode === 'slow-fetch') {
+            await new Promise((resolve, reject) => {
+              setTimeout(resolve, 1500);
+              details?.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+            });
+          } else if (transcribeMode === 'slow') {
+            await wait(1500);
+          }
           // A real service takes a moment. Answering in the same tick lets
           // React draw 'thinking' and the reply as one render.
           await wait(50);
@@ -489,4 +503,6 @@ const App: React.FC = () => {
   return <p id="status">{status}</p>;
 };
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
+const root = ReactDOM.createRoot(document.getElementById('root')!);
+probe.unmount = () => root.unmount();
+root.render(<App />);

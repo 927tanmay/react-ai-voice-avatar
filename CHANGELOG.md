@@ -40,6 +40,9 @@ Breaks nothing, with two things to check:
 - **`onSynthesize` gets a `signal`**, aborted when the reply is talked over,
   interrupted or superseded, whether the voice is streamed or whole. An
   abandoned request rejecting is not reported as a failure.
+- **`onTranscribe` gets a `signal` too**, aborted by `interrupt()` and when
+  the hook unmounts. A transcript that arrives after that is dropped. It used
+  to start a reply to a turn the user had already cancelled.
 
 ### Measured
 
@@ -51,6 +54,9 @@ README's "Through your own providers, streamed" has the setup.
 
 ### Fixed
 
+- **Unmounting stops the host's requests.** `onSubmit`, `onSynthesize` and
+  `onTranscribe` are aborted when the hook or component unmounts. They used
+  to run to the end, billed, with nobody left to hear the answer.
 - **Talking over the reply silences it until you have finished.** The reply
   is ducked the moment a sound starts, but the next sentence arriving resumed
   it, so the avatar talked over the user; with an encoded voice, decoding a

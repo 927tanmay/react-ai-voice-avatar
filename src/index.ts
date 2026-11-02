@@ -2,7 +2,7 @@ export { AiVoiceAvatar } from './components/AiVoiceAvatar';
 export { AiVoiceAvatarLazy } from './components/AiVoiceAvatarLazy';
 
 export type { AiVoiceAvatarProps, AiVoiceAvatarCapabilities, AiVoiceAvatarHandle } from './components/AiVoiceAvatar';
-export type { AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, SynthesizeErrorAction, SynthesizeErrorPolicy } from './types';
+export type { AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, AiVoiceAvatarTranscribeDetails, SynthesizeErrorAction, SynthesizeErrorPolicy } from './types';
 export type { SynthesizedAudio, SynthesisResult, AudioChunk, PcmStreamOptions, SpeechChunk, SpeechReply } from './lib/synthesizedAudio';
 export { pcmStream, speechReply } from './lib/synthesizedAudio';
 export { streamingTranscriber } from './lib/streamingTranscription';

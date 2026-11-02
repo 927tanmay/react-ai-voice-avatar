@@ -18,7 +18,7 @@ import type { VisemeWeights } from '../lib/visemeTable';
 
 // Re-exported from ../types so the headless entry never pulls in this module.
 export type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage } from '../types';
-import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, SynthesizeErrorPolicy } from '../types';
+import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, AiVoiceAvatarTranscribeDetails, SynthesizeErrorPolicy } from '../types';
 
 export interface AiVoiceAvatarHandle {
   clearHistory: () => void;
@@ -119,7 +119,7 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   /** Fires once the model requested by `preloadLocalLlm` is loaded and warm. */
   onLocalLlmReady?: () => void;
   /** Transcribe with your own speech-to-text, whole or streamed. See `UseAiVoiceAvatarConfig.onTranscribe`. */
-  onTranscribe?: ((audio: Float32Array) => Promise<string>) | StreamingTranscriber;
+  onTranscribe?: ((audio: Float32Array, details: AiVoiceAvatarTranscribeDetails) => Promise<string>) | StreamingTranscriber;
   /** The words so far, from a `streamingTranscriber`, while the user speaks. */
   onUserPartial?: (text: string) => void;
   /** Speak with your own voice, whole or streamed. See `UseAiVoiceAvatarConfig.onSynthesize` for the formats. */
