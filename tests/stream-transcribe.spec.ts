@@ -81,8 +81,14 @@ test('speaking on after the provider ended the turn interrupts the reply', async
   // The provider ends the turn 0.6 s into the question; the rest of it is the
   // user carrying on over a long reply.
   await listen(page, 'transcribe=stream-early&reply=long');
-  await expect.poll(async () => (await probe(page)).submitted[0], { timeout: 15_000 }).toBe('What is');
-  await expect.poll(async () => (await probe(page)).userInterrupts, { timeout: 10_000 }).toBeGreaterThanOrEqual(1);
+  // Not necessarily the first turn: when listening starts partway through the
+  // looped question, that turn hears under 0.6 s of it and the silence timer
+  // ends it instead. The next loop's question is heard whole.
+  await expect.poll(async () => (await probe(page)).submitted, { timeout: 20_000 }).toContain('What is');
+  const p = await probe(page);
+  // Counted from that turn, so an ordinary barge-in before it does not pass.
+  const before = p.interruptsAtSubmit[p.submitted.indexOf('What is')];
+  await expect.poll(async () => (await probe(page)).userInterrupts, { timeout: 10_000 }).toBeGreaterThan(before);
 });
 
 test('push-to-talk streams from the press and finishes on release', async ({ page }) => {

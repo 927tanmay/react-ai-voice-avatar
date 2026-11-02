@@ -18,8 +18,9 @@ type Probe = {
   heard: number[];
   /** speechMs from each onSubmit. */
   speechMs: (number | undefined)[];
-  /** How many times onUserInterrupt fired. */
+  /** How many times onUserInterrupt fired, and how many had when each onSubmit was called. */
   userInterrupts: number;
+  interruptsAtSubmit: number[];
   /** Each piece of the reply as it began to play, from onSpeechStart. */
   played: string[];
   /** How many onSubmit signals have been aborted. */
@@ -70,7 +71,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [], unspoken: [], policyCalls: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, interruptsAtSubmit: [], played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [], unspoken: [], policyCalls: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -280,6 +281,7 @@ const App: React.FC = () => {
     ttsEngine: params.get('tts') === 'mms' ? 'mms' : undefined,
     onSubmit: localLlm ? undefined : async (text, details) => {
       probe.submitted.push(text);
+      probe.interruptsAtSubmit.push(probe.userInterrupts);
       probe.speechMs.push(details.speechMs);
       details.signal?.addEventListener('abort', () => { probe.aborted++; });
       if (replyMode === 'fail') throw new Error('model service down');
