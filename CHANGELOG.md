@@ -54,6 +54,13 @@ README's "Through your own providers, streamed" has the setup.
 
 ### Fixed
 
+- **Talking over the in-browser voice stops it without WebGPU too.** On
+  WASM, the voice worker only read `interrupt` once it had generated every
+  sentence still queued, so after a barge-in it went on generating the
+  abandoned reply, a few seconds a sentence, and the answer waited behind
+  it. In the demo, talking over the greeting meant no reply was heard at all.
+  Kokoro and MMS now read their messages before each sentence, so only the
+  one already being generated is finished. This was in 0.8.0 too.
 - **A slow transcript no longer cancels the answer to what was said after
   it.** Each turn's transcript was answered when it arrived, so when the
   user spoke twice and the first `onTranscribe` call was the slower, its text

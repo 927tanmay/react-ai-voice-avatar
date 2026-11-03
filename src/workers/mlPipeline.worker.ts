@@ -3,6 +3,7 @@ import { normalizeToDevanagari } from '../lib/transliterate';
 import { createDownloadProgress } from '../lib/downloadProgress';
 import { createSentenceStream } from '../lib/speechChunks';
 import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
+import { drainQueue } from '../lib/voiceQueue';
 import { createModelCache, isModelCacheSupported, modelFileLabel } from '../lib/modelCache';
 
 // Setup environment specifically for the worker
@@ -324,25 +325,23 @@ const loadMmsVoice = async () => {
 const processTtsQueue = async () => {
   if (isTtsProcessing) return;
   isTtsProcessing = true;
-  while (ttsQueue.length > 0) {
-    // Kokoro runs in its own worker and the host's voice in the host, so for
-    // both the sentence goes back as text. Waiting here for MMS instead, which
-    // a host with its own voice never loads, left every reply queued for good.
-    const textOnly = hostVoice || currentTtsEngine === 'kokoro';
-    if (!textOnly && !ttsPipeline) {
-      // MMS pipeline is still loading; pause queue processing.
-      // switchTts will call processTtsQueue() when ready.
-      isTtsProcessing = false;
-      return;
-    }
-    const item = ttsQueue.shift()!;
-    if (!item.text || item.text.trim().length === 0) continue;
+  // Kokoro runs in its own worker and the host's voice in the host, so for
+  // both the sentence goes back as text. Waiting here for MMS instead, which
+  // a host with its own voice never loads, left every reply queued for good.
+  const textOnly = () => hostVoice || currentTtsEngine === 'kokoro';
+  // Messages are read before each sentence, so an interrupt stops the queue
+  // here rather than after every sentence in it. See lib/voiceQueue.ts.
+  //
+  // It stops short, leaving the rest queued, while MMS is still loading;
+  // switchTts calls processTtsQueue() again once it is ready.
+  await drainQueue(ttsQueue, async item => {
+    if (!item.text || item.text.trim().length === 0) return;
     
     const cleanText = sanitizeForSpeech(item.text);
-    if (cleanText.length === 0) continue;
+    if (cleanText.length === 0) return;
 
     try {
-      if (textOnly) {
+      if (textOnly()) {
         self.postMessage({
           type: 'speechOutput',
           payload: {
@@ -353,7 +352,7 @@ const processTtsQueue = async () => {
             turn: item.turn,
           },
         });
-        continue;
+        return;
       }
 
       if (ttsPipeline) {
@@ -377,7 +376,7 @@ const processTtsQueue = async () => {
     } catch (e: any) {
       console.error('[ML Worker] TTS streaming chunk error:', e);
     }
-  }
+  }, () => textOnly() || !!ttsPipeline);
   isTtsProcessing = false;
 };
 

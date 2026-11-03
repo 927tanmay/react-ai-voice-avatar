@@ -69,6 +69,8 @@ jobs:
         run: npm run test:streaming-transcription
       - name: Microphone errors
         run: npm run test:microphone-errors
+      - name: Voice queue
+        run: npm run test:voice-queue
       - name: Avatar symmetry
         run: npm run test:avatar-symmetry
 

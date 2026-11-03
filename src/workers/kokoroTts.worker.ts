@@ -1,6 +1,7 @@
 import { pipeline, env as transformersEnv } from '@huggingface/transformers';
 import { createDownloadProgress } from '../lib/downloadProgress';
 import { DEFAULT_ONNX_WASM_PATH } from '../lib/onnxRuntime';
+import { drainQueue } from '../lib/voiceQueue';
 import { createModelCache, isModelCacheSupported, modelFileLabel } from '../lib/modelCache';
 // Prevent esbuild from tree-shaking the ONNX Runtime WASM backend registration side-effects
 if (typeof self !== 'undefined' && self.location && self.location.href && self.location.href.includes('prevent-tree-shaking')) {
@@ -231,11 +232,12 @@ const processTtsQueue = async () => {
   if (isTtsProcessing || !kokoroTts) return;
   isTtsProcessing = true;
 
-  while (ttsQueue.length > 0) {
-    const item = ttsQueue.shift()!;
+  // Messages are read before each sentence, so an interrupt stops the queue
+  // here rather than after every sentence in it. See lib/voiceQueue.ts.
+  await drainQueue(ttsQueue, async item => {
     if (item.isEndMarker) {
       self.postMessage({ type: 'speechEnd', payload: { turn: item.turn } });
-      continue;
+      return;
     }
     const cleanText = sanitizeForSpeech(item.text);
     if (!cleanText || cleanText.length === 0) {
@@ -248,7 +250,7 @@ const processTtsQueue = async () => {
           payload: { audio: new Float32Array(0), sampleRate: 24000, text: '', phonemes: '', isLast: false, turn: item.turn }
         });
       }
-      continue;
+      return;
     }
 
     try {
@@ -326,7 +328,7 @@ const processTtsQueue = async () => {
         });
       }
     }
-  }
+  });
 
   isTtsProcessing = false;
 };
