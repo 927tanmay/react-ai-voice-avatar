@@ -65,3 +65,14 @@ test('interrupting a speech reply aborts its signal and closes it', async ({ pag
   expect(p.errors).toEqual([]);
   await expect(page.locator('#status')).toHaveText('idle');
 });
+
+test('a speech reply that arrives after an interrupt is closed unplayed', async ({ page }) => {
+  await ask(page, 'speech-late');
+  await expect.poll(async () => (await probe(page)).submitted.length).toBe(1);
+  await page.evaluate(() => (window as any).__e2e.interrupt());
+  // Before: 0. The stream was left open, as nothing knew it was in the wrapper.
+  await expect.poll(async () => (await probe(page)).speechClosed, { timeout: 5_000 }).toBe(1);
+  const p = await probe(page);
+  expect(p.played).toEqual([]);
+  expect(p.errors).toEqual([]);
+});

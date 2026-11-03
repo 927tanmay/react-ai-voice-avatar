@@ -103,8 +103,9 @@ export interface AiVoiceAvatarSubmitDetails {
 export interface AiVoiceAvatarTranscribeDetails {
   /**
    * Aborted when this recording's transcript is no longer wanted:
-   * `interrupt()` was called, or the hook unmounted. Pass it to `fetch` so the
-   * request stops too. A transcript that arrives after it aborts is dropped.
+   * `interrupt()` was called, the hook unmounted, or something said or typed
+   * after it has already been answered. Pass it to `fetch` so the request
+   * stops too. A transcript that arrives after it aborts is dropped.
    */
   signal: AbortSignal;
 }

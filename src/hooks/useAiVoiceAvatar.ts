@@ -462,7 +462,6 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * quiet for a long time, a tool call for instance, and that is not a stall.
    */
   const submitRef = useRef<{ controller: AbortController; open: boolean } | null>(null);
-  /** Abandon the current `onSubmit` reply, if there is one. */
   /** The host's voice requests under way, aborted with the reply they belong to. */
   const synthesisRef = useRef(new Set<AbortController>());
   /** Transcripts still to arrive, one per recording, aborted when they are no longer wanted. */
@@ -471,6 +470,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     for (const controller of transcriptionRef.current) controller.abort();
     transcriptionRef.current.clear();
   }, []);
+  /** Abandon the current `onSubmit` reply, if there is one, and its voice requests. */
   const cancelSubmit = useCallback(() => {
     const current = submitRef.current;
     submitRef.current = null;
@@ -1042,9 +1042,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     Promise.resolve(configRef.current.onSubmit!(text, { speechMs, signal: submit.controller.signal }))
       .then(async (result: any) => {
         if (!isCurrent()) {
-          // Abandoned before it answered. Let go of a stream it returned.
-          try { result?.cancel?.(); } catch (e) { /* not cancellable */ }
-          try { result?.return?.(); } catch (e) { /* not an iterator */ }
+          // Abandoned before it answered. Let go of a stream it returned,
+          // and of one inside a speech reply.
+          const source = isSpeechReply(result) ? result.chunks : result;
+          try { source?.cancel?.()?.catch?.(() => {}); } catch (e) { /* not cancellable */ }
+          try { source?.return?.()?.catch?.(() => {}); } catch (e) { /* not an iterator */ }
           return;
         }
         if (!result || (typeof result === 'string' && !result.trim())) {

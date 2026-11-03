@@ -17,8 +17,10 @@
 export interface TranscriberContext {
   /**
    * Aborted when the session is abandoned: the sound was a cough rather than
-   * speech, `interrupt()` or `stopListening()` was called, or the component
-   * unmounted. Close your connection when it fires.
+   * speech, `interrupt()` or `stopListening()` was called, the component
+   * unmounted, or, while its final text is still on its way, something said
+   * or typed after it has already been answered. Close your connection when
+   * it fires.
    */
   signal: AbortSignal;
   /** Samples per second of every frame pushed: always 16000, mono. */

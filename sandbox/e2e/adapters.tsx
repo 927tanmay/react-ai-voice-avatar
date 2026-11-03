@@ -100,6 +100,7 @@ const params = new URLSearchParams(location.search);
  * gives: a caption, half a second of tone, a second and a half of nothing,
  * then half a second more with a second caption. ?reply=speech-silent: the
  * same audio with no transcript. ?reply=speech-empty: no chunks at all.
+ * ?reply=speech-late: a speech reply that comes a second late.
  * ?reply=numbered: three sentences at once, numbered by reply.
  */
 const replyMode = params.get('reply');
@@ -329,6 +330,14 @@ const App: React.FC = () => {
           yield 'The first sentence is long, and the user talks over it. ';
           yield 'The second sentence arrives while they are talking.';
         })();
+      }
+      if (replyMode === 'speech-late') {
+        // Answers after a second, by when a test has interrupted it.
+        await wait(1000);
+        return speechReply(new ReadableStream({
+          start(controller) { controller.enqueue({ audio: tone(), sampleRate: 24000 }); },
+          cancel() { probe.speechClosed++; },
+        }));
       }
       if (replyMode?.startsWith('speech')) {
         const captions = replyMode === 'speech';
