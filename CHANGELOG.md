@@ -54,6 +54,14 @@ README's "Through your own providers, streamed" has the setup.
 
 ### Fixed
 
+- **A slow transcript no longer cancels the answer to what was said after
+  it.** Each turn's transcript was answered when it arrived, so when the
+  user spoke twice and the first `onTranscribe` call was the slower, its text
+  came in second, cancelled the reply to the later turn and was answered in
+  its place; a slow one that failed ended the later turn as a failure. Turns
+  are now answered in the order spoken: once a turn's text is submitted, or a
+  question is typed, the earlier turns still being transcribed are dropped
+  and their `onTranscribe` signal, or streaming session, is aborted.
 - **A voice request that never answers no longer silences every reply
   after it.** Sentences are voiced in line, each after the one before, so an
   `onSynthesize` call that ignored the signal and never settled held up the

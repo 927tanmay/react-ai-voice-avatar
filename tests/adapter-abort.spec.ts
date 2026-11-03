@@ -75,3 +75,53 @@ test('unmounting aborts the reply and the voice request under way', async ({ pag
   await page.waitForTimeout(2_000);
   expect((await probe(page)).played).toEqual([]);
 });
+
+/**
+ * A transcript that arrives after a later turn has been answered.
+ *
+ * Each turn's transcript was submitted when it arrived, so a slow one for
+ * something said earlier came in second, cancelled the reply to what was
+ * said after it, and was answered in its place.
+ */
+async function listenUntilTurnTwo(page: Page, mode: string) {
+  await page.goto(`/e2e/adapters.html?transcribe=${mode}`);
+  await expect(page.locator('#status')).toHaveText('idle', { timeout: 30_000 });
+  await page.evaluate(() => (window as any).__e2e.startListening());
+  await expect.poll(async () => (await probe(page)).submitted, { timeout: 20_000 }).toContain('Turn 2');
+  // A transcript under way still arrives after this, so the first one does too.
+  await page.evaluate(() => (window as any).__e2e.stopListening());
+  // Past the moment the first turn's transcript arrives.
+  await page.waitForTimeout(8_500);
+}
+
+for (const mode of ['first-slow', 'stream-first-slow']) {
+  test(`a slow transcript of an earlier turn is not answered over a later one (${mode})`, async ({ page }) => {
+    await listenUntilTurnTwo(page, mode);
+    const p = await probe(page);
+    // Before: ['Turn 2', 'Turn 1'], the second reply cancelled by the first.
+    expect(p.submitted).toEqual(['Turn 2']);
+    expect(p.errors).toEqual([]);
+    // Its request is stopped too, not left to run.
+    expect(mode === 'first-slow' ? p.transcribeAborted : p.finishingAborted).toBe(1);
+  });
+}
+
+test('a slow transcript of an earlier turn that fails does not end a later one', async ({ page }) => {
+  await listenUntilTurnTwo(page, 'first-slow-fail');
+  const p = await probe(page);
+  // Before: reported as a failure, which ended the turn under way.
+  expect(p.errors).toEqual([]);
+  expect(p.submitted).toEqual(['Turn 2']);
+});
+
+test('a slow transcript of a spoken turn is not answered over a typed one', async ({ page }) => {
+  await transcribing(page, 'first-slow');
+  await page.evaluate(() => (window as any).__e2e.stopListening());
+  await page.evaluate(() => (window as any).__e2e.sendText('A typed question'));
+  await page.waitForTimeout(8_500);
+  const p = await probe(page);
+  // Before: ['A typed question', 'Turn 1'].
+  expect(p.submitted).toEqual(['A typed question']);
+  expect(p.transcribeAborted).toBe(1);
+  expect(p.errors).toEqual([]);
+});

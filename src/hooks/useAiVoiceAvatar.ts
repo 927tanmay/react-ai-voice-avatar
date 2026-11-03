@@ -1564,8 +1564,11 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
     ensureAudioContext();
     advance('text-submitted');
     configRef.current.onInferenceStart?.();
+    // Typed after whatever is still being transcribed, so it is the newer
+    // turn, and theirs would arrive to cancel its reply.
+    abortTranscriptions();
     submitUserText(text.trim());
-  }, [submitUserText, ensureAudioContext, resumePlayback]);
+  }, [submitUserText, ensureAudioContext, resumePlayback, abortTranscriptions]);
 
   // Readiness announces itself and the rules decide what it means. This used to
   // read `status` and depend on it, which re-ran the effect on every turn of
@@ -1631,7 +1634,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
       finished.catch(() => {});
       transcript = Promise.resolve(text);
     }
-    handleVadSpeechEndRef.current(new Float32Array(0), speechMs, transcript);
+    handleVadSpeechEndRef.current(new Float32Array(0), speechMs, transcript, live.controller);
   }, [setDetector]);
 
   /** Start hearing an utterance through the host's streaming transcriber. */
@@ -1671,10 +1674,13 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
    * identity too, and re-running that would tear down the audio device and ask
    * the user for permission a second time in the middle of a conversation.
    */
-  const handleVadSpeechEndRef = useRef<(audio: Float32Array, speechMs?: number, transcript?: Promise<string>) => void>(() => {});
+  const handleVadSpeechEndRef = useRef<(audio: Float32Array, speechMs?: number, transcript?: Promise<string>, session?: AbortController) => void>(() => {});
   useEffect(() => {
-    /** `transcript` is a streaming transcriber's text, heard as it was spoken. */
-    handleVadSpeechEndRef.current = async (audio: Float32Array, speechMs?: number, transcript?: Promise<string>) => {
+    /**
+     * `transcript` is a streaming transcriber's text, heard as it was spoken,
+     * and `session` the controller of the session it comes from.
+     */
+    handleVadSpeechEndRef.current = async (audio: Float32Array, speechMs?: number, transcript?: Promise<string>, session?: AbortController) => {
       // The user has finished speaking, so a reply is wanted again. This
       // reopens the gate that barge-in closed; leaving it shut would silence
       // the answer to the very sentence that interrupted.
@@ -1711,6 +1717,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         // whether the turn is still wanted once the text arrives.
         const controller = new AbortController();
         transcriptionRef.current.add(controller);
+        // The streaming session is still finishing, so it stops with the turn.
+        session && controller.signal.addEventListener('abort', () => session.abort(), { once: true });
         const abandoned = () => controller.signal.aborted;
         try {
           const text = await (transcript ?? (isStreamingTranscriber(transcriber)
@@ -1722,6 +1730,14 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
           // is over, and its words start no reply.
           if (abandoned()) return;
           if (text && text.trim()) {
+            // Answered in the order spoken. The turns before this one still
+            // being transcribed are dropped: their words would arrive after
+            // this reply began, cancel it and be answered in its place.
+            for (const earlier of transcriptionRef.current) {
+              if (earlier === controller) break;
+              earlier.abort();
+              transcriptionRef.current.delete(earlier);
+            }
             submitUserText(text, speechMs);
           } else {
             // Heard, and no words in it. Worth telling the user rather than
@@ -2032,7 +2048,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
             // The silence timer ended it before the provider did.
             const live = liveTranscriptionRef.current;
             liveTranscriptionRef.current = null;
-            handleVadSpeechEndRef.current(audio, Math.round(speechMs), live?.session.finish());
+            handleVadSpeechEndRef.current(audio, Math.round(speechMs), live?.session.finish(), live?.controller);
           },
           /**
            * The sound stopped before it ever became speech. A cough, in short.
@@ -2203,7 +2219,7 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
         preSpeechPadMs: detection.preSpeechPadMs,
       });
       if (speech) {
-        handleVadSpeechEndRef.current(speech.audio, speech.speechMs, live?.session.finish());
+        handleVadSpeechEndRef.current(speech.audio, speech.speechMs, live?.session.finish(), live?.controller);
         return;
       }
       // Nothing said, or too little to be words. Fall through to a plain stop.

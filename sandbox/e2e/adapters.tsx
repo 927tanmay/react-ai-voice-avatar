@@ -44,6 +44,8 @@ type Probe = {
   sessionsOpened: number;
   sessionsFinished: number;
   sessionsAborted: number;
+  /** Sessions aborted while their final text was still on its way. */
+  finishingAborted: number;
   /** Seconds of audio pushed to each session the moment it opened. */
   openingSeconds: number[];
   /** What onTranscriptUpdate announced for the avatar. */
@@ -74,7 +76,7 @@ type Probe = {
   /** Stop supplying transcription and the voice, as a host falling back would. */
   dropSpeechAdapters?: () => void;
 };
-const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, interruptsAtSubmit: [], played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, transcribeAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [], unspoken: [], policyCalls: [] };
+const probe: Probe = { statuses: [], synthesized: [], submitted: [], inferenceEnded: 0, heard: [], speechMs: [], userInterrupts: 0, interruptsAtSubmit: [], played: [], aborted: 0, errors: [], userTranscripts: [], durations: [], errorMessages: [], streamsEnded: 0, streamsClosed: 0, synthAborted: 0, transcribeAborted: 0, partials: [], sessionsOpened: 0, sessionsFinished: 0, sessionsAborted: 0, finishingAborted: 0, openingSeconds: [], avatarTranscripts: [], speechEnded: 0, speechClosed: 0, audioLog: [], unspoken: [], policyCalls: [] };
 const params = new URLSearchParams(location.search);
 /**
  * ?reply=empty or ?reply=empty-stream: the host answers with nothing.
@@ -143,8 +145,13 @@ const onnxWasmPath = params.get('wasm') === 'local' ? `${location.origin}/__ort/
  * the turn itself. ?transcribe=stream-endturn: one that ends it after 300 ms
  * of quiet following speech, as a provider's endpointing does.
  * ?transcribe=stream-early: one that ends it after 0.6 s of speech, mid-sentence.
+ * ?transcribe=stream-first-slow: one whose first turn takes eight seconds to
+ * finish, and each is heard as "Turn N".
  * ?transcribe=slow: takes a second and a half, ignoring the signal.
  * ?transcribe=slow-fetch: the same, but rejects when the signal aborts, as fetch does.
+ * ?transcribe=first-slow: the first turn takes eight seconds, ignoring the
+ * signal, and later ones are quick; each is heard as "Turn N".
+ * ?transcribe=first-slow-fail: the same, but the first one then throws.
  */
 const transcribeMode = params.get('transcribe');
 /**
@@ -163,7 +170,11 @@ const speechDetection = {
 /** A stand-in streaming provider. It hears the fake microphone's question. */
 const standInTranscriber = streamingTranscriber(({ signal, partial, endTurn, sampleRate }) => {
   probe.sessionsOpened++;
-  signal.addEventListener('abort', () => { probe.sessionsAborted++; });
+  let finishing = false;
+  signal.addEventListener('abort', () => {
+    probe.sessionsAborted++;
+    if (finishing) probe.finishingAborted++;
+  });
   let saidPartial = false;
   let speech = 0;
   let quietAfterSpeech = 0;
@@ -195,7 +206,12 @@ const standInTranscriber = streamingTranscriber(({ signal, partial, endTurn, sam
       }
     },
     async finish() {
-      probe.sessionsFinished++;
+      finishing = true;
+      const turn = ++probe.sessionsFinished;
+      if (transcribeMode === 'stream-first-slow') {
+        if (turn === 1) await wait(8000);
+        return `Turn ${turn}`;
+      }
       await wait(50);
       return 'What is the capital of France?';
     },
@@ -282,6 +298,13 @@ const App: React.FC = () => {
             });
           } else if (transcribeMode === 'slow') {
             await wait(1500);
+          }
+          if (transcribeMode?.startsWith('first-slow')) {
+            const turn = probe.heard.length;
+            if (turn === 1) await wait(8000);
+            await wait(50);
+            if (turn === 1 && transcribeMode === 'first-slow-fail') throw new Error('transcription service down');
+            return `Turn ${turn}`;
           }
           // A real service takes a moment. Answering in the same tick lets
           // React draw 'thinking' and the reply as one render.
