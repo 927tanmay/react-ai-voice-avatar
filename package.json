@@ -1,6 +1,6 @@
 {
   "name": "react-ai-voice-avatar",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Voice mode for your React app, on your own LLM and speech vendors: mic, turn-taking, barge-in and streamed speech in one hook. No platform, no media server, no per-minute fee. Speech can run in the browser, and an optional lip-synced 3D avatar adds a face.",
   "keywords": [
     "react",

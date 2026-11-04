@@ -276,7 +276,7 @@ Each step is its own commit with its own failing-first tests.
 3. A, streaming speech-to-text, after the detector restart spike.
 4. C, speech replies, which reuses B's playback.
 5. Docs: a "lowest latency" recipe, and a measured before and after with
-   `scripts/measure-latency.mjs` against stand-in providers with fixed delays.
+   `scripts/measure-adapter-latency.mjs` against stand-in providers with fixed delays.
 
 ## Open questions
 

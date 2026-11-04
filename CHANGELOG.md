@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
+
+Replies through your own providers that start much sooner: streaming
+speech-to-text, streamed voices and replies that are already speech. Talking
+over the avatar now also stops everything still on its way.
 
 Breaks nothing, with two things to check:
 
