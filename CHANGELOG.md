@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Phones and low-memory devices get the MMS voice from the first visit.**
+  Android phones and browsers reporting 4 GB of memory or less
+  (`navigator.deviceMemory`) now start with the smaller MMS voice, as iPhones
+  and iPads already did. They used to load Kokoro beside Whisper, which can get
+  a phone's tab killed, and only moved to MMS after the crash guard saw two
+  failed starts. An explicit `ttsEngine` still wins.
+- **`lowMemoryMode` does something, and is no longer deprecated.** `true` uses
+  the MMS voice on any device. `false` keeps Kokoro on Android phones and
+  low-memory browsers, though not on iPhones. It was accepted and ignored
+  before.
+
 ## 0.9.0
 
 Replies through your own providers that start much sooner: streaming

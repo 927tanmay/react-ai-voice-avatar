@@ -129,8 +129,8 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   /** A sentence the voice could not say, skipped or with the reply ended at it. */
   onUnspokenText?: (text: string, error: unknown) => void;
   /**
-   * Which voice is speaking: `'kokoro'`, `'mms'` on iPhones and wherever
-   * Kokoro cannot load, or `'custom'` for `onSynthesize`. Fires on every change.
+   * Which voice is speaking: `'kokoro'`, `'mms'` on phones, low-memory devices
+   * and wherever Kokoro cannot load, or `'custom'` for `onSynthesize`. Fires on every change.
    */
   onTtsEngineChange?: (engine: 'kokoro' | 'mms' | 'custom') => void;
   /**
@@ -170,7 +170,7 @@ export interface AiVoiceAvatarProps extends Omit<ThreeElements['group'], 'childr
   onError?: (error: AiVoiceAvatarError) => void;
   onCapabilityDetected?: (caps: AiVoiceAvatarCapabilities) => void;
   loadingProgress?: (pct: number, label: string) => void;
-  /** @deprecated Accepted and ignored: nothing reads it. It will be removed in 1.0. */
+  /** Use the smaller MMS voice in place of Kokoro. See the hook's option of that name. */
   lowMemoryMode?: boolean;
 
   /** Optional overrides for self-hosting VAD and ONNX runtime WASM assets */

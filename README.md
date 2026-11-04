@@ -62,7 +62,7 @@ stand, so you can decide what to verify yourself before shipping.
 - Long sessions. Nothing has yet held a conversation for 30 minutes and
   checked memory and turn-taking along the way.
 
-The iPhone behaviour (the smaller MMS voice, and the guard that stops a tab
+The phone behaviour (the smaller MMS voice, and the guard that stops a tab
 reloading into the same crash) is built around Safari's known memory limits and has
 not been run on a device. The [compatibility](#-browser-compatibility-matrix) and
 [hardware](#-hardware-requirements) tables mark what is tested and what is
@@ -158,7 +158,7 @@ Each stage runs in the browser or on your backend, and the choice is mostly abou
 | Setup | Options | Downloaded by each visitor | Audio leaves the device |
 | :--- | :--- | :--- | :--- |
 | **Cloud speech** | `onTranscribe` + `onSubmit` + `onSynthesize` | Nothing until the mic opens, then ~4 MB for the voice detector | Yes, to your providers |
-| **Local speech** (the demo) | `onSubmit` | ~590 MB once, kept for later visits (~320 MB on iPhone) | No |
+| **Local speech** (the demo) | `onSubmit` | ~590 MB once, kept for later visits (~320 MB on phones) | No |
 | **Fully local** | none | ~1.3 GB once | Nothing leaves at all |
 
 Cloud speech is the setup to reach for on phones and on pages people visit once: it is ready as soon as the page is. Local speech keeps what people say on their device and costs nothing per minute, and suits an app they come back to, since the models are stored after the first visit. Fully local is for kiosks and offline use. Use [`loadModels`](#show-the-avatar-before-anyone-commits-to-a-download) to hold any download until someone actually engages.
@@ -1135,6 +1135,7 @@ Explore the canonical patterns in the `examples/` directory:
 | `llmModel` | `string` | by language | Hugging Face id for the local WebGPU reasoning model, used only when `onSubmit` is absent. Defaults to Qwen2.5-0.5B for English and Gemma 3 1B for Hindi, which Qwen that size cannot speak. Set it to pin one model for every language. |
 | `asrModel` | `string` | by language | Hugging Face id for the local Whisper model. Defaults to Whisper base for English and Whisper small for Hindi, which base transcribes badly. Pass `"Xenova/whisper-tiny"` for a faster download and worse accuracy. |
 | `ttsEngine` | `'kokoro' \| 'mms'` | `'kokoro'` | High-fidelity neural voice synthesis engine executing inside dedicated Web Workers. |
+| `lowMemoryMode` | `boolean` | by device | Use the smaller MMS voice in place of Kokoro. Unset, Android phones and browsers reporting 4 GB of memory or less get it, as iPhones and iPads always do. `false` keeps Kokoro on those, though not on iPhones. An explicit `ttsEngine` wins over both. |
 | `ttsVoice` | `string` | by language | Kokoro voice id. `af_*` and `am_*` American, `bf_*` and `bm_*` British, `hf_*` and `hm_*` Hindi (`af_heart`, `am_michael`, `bf_emma`, `hf_alpha`, `hm_omega`). Defaults to one matching `ttsLanguage`. A voice whose language disagrees is corrected with a warning. |
 | `ttsLanguage`| `'en-US' \| 'en-GB' \| 'hi-IN'` | `'en-US'` | Conversation language. Selects the voice, the recognition model and the phoneme path. Also sets `asrLanguage` unless you set that yourself. For any other language, pass `onSynthesize` and use a cloud voice provider. |
 | `asrLanguage`| `string` | `ttsLanguage` | Language to transcribe. Follows `ttsLanguage` by default, since a conversation is almost always held in one language. |
@@ -1242,7 +1243,7 @@ It returns:
 | `isLoading`, `isIdle`, `isListening`, `isThinking`, `isSpeaking` | `boolean` | Shorthands for `status`. |
 | `isReady` | `boolean` | The models are loaded. `startListening` resolves `false` before this. |
 | `isLocalSpeechReady` | `boolean` | The in-browser hearing and voice are loaded, whether or not they are in use. |
-| `activeTtsEngine` | `'kokoro' \| 'mms' \| 'custom'` | The voice actually speaking. iPhones and iPads get `'mms'`, a single plainer voice that ignores `ttsVoice`, because Kokoro runs Safari out of memory; so does any device where Kokoro fails to load. `'custom'` is your `onSynthesize`. Worth showing if your users will compare devices. |
+| `activeTtsEngine` | `'kokoro' \| 'mms' \| 'custom'` | The voice actually speaking. iPhones and iPads get `'mms'`, a single plainer voice that ignores `ttsVoice`, because Kokoro runs Safari out of memory; so do Android phones, browsers reporting 4 GB of memory or less, `lowMemoryMode`, and any device where Kokoro fails to load. `'custom'` is your `onSynthesize`. Worth showing if your users will compare devices. |
 | `startListening` | `() => Promise<boolean>` | Opens the microphone and starts listening. Call it from a click: the first call is where the browser asks for permission. In `'continuous'` mode the microphone then stays open across turns. Resolves `false` if it could not start; see [When listening cannot start](#when-listening-cannot-start). |
 | `stopListening` | `() => void` | Stops hearing the user. A reply already under way finishes; call `interrupt()` as well to stop it. |
 | `interrupt` | `() => void` | Stops the reply mid-sentence and clears what was queued. |
@@ -1311,7 +1312,7 @@ The library relies on WebGL, Web Audio, Web Workers and, where available, WebGPU
 |---|---|---|
 | **Chrome, desktop** | ✅ macOS (Apple M4) by hand; Linux in CI | WebGPU for the models. The reference setup. |
 | **Edge, desktop** | Not yet | The same engine as Chrome, so expected to behave the same. |
-| **Chrome, Android** | Not yet | WebGPU on devices that have it, WebAssembly otherwise. Speed and memory not measured. |
+| **Chrome, Android** | Not yet | WebGPU on devices that have it, WebAssembly otherwise. Phones use the smaller MMS voice, as iPhones do. Speed and memory not measured. |
 | **Safari, iPhone and iPad** | Not yet | Uses the smaller MMS voice to stay inside Safari's memory limit. Not run on a device. |
 | **Safari, macOS** | Not yet | Expected to work. Not checked. |
 | **Firefox** | Not yet | Expected to work, more slowly where WebGPU is unavailable. Not checked. |
@@ -1320,7 +1321,7 @@ Tried it on one of these? An [issue](https://github.com/927tanmay/react-ai-voice
 
 > [!NOTE]
 > - **WebGPU** is currently enabled by default in Chrome/Edge. On browsers without WebGPU, the library automatically falls back to WASM execution. 
-> - **iPhone and iPad**: Safari gives a tab far less memory than desktop browsers, and the Kokoro voice (~310 MB) is expected to exceed it, so the engine uses the smaller MMS voice on iOS. Elsewhere, if two page loads in a row start building Kokoro and never finish, that browser switches to the MMS voice rather than crash a third time. Neither has been seen on a real device yet.
+> - **iPhone and iPad**: Safari gives a tab far less memory than desktop browsers, and the Kokoro voice (~310 MB) is expected to exceed it, so the engine uses the smaller MMS voice on iOS. Android phones and browsers reporting 4 GB of memory or less (`navigator.deviceMemory`) get it too; set `lowMemoryMode` to decide yourself. Elsewhere, if two page loads in a row start building Kokoro and never finish, that browser switches to the MMS voice rather than crash a third time. Neither has been seen on a real device yet.
 > - **Strict CSP Environments**: Safari and Firefox may block `blob:` worker execution depending on your Content-Security-Policy headers. If this occurs, host the `.worker.js` files statically and pass their base path via the `workerBaseUrl` prop.
 
 ---

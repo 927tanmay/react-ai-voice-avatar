@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMLWorker } from './useMLWorker';
 import { useKokoroWorker } from './useKokoroWorker';
 import type { AiVoiceAvatarCapabilities, AiVoiceAvatarError, AiVoiceAvatarErrorStage, AiVoiceAvatarSubmitDetails, AiVoiceAvatarSynthesizeDetails, AiVoiceAvatarTranscribeDetails, SynthesizeErrorAction, SynthesizeErrorPolicy } from '../types';
-import { isIOS } from '../lib/device';
+import { isIOS, isLowMemoryDevice } from '../lib/device';
 import { nextStatus, type TurnEvent, type TurnStatus } from '../lib/turnState';
 import { splitForSpeech, createSentenceStream } from '../lib/speechChunks';
 import { heldSpeech, type HeldAudio } from '../lib/pushToTalk';
@@ -147,7 +147,12 @@ export interface UseAiVoiceAvatarConfig {
   ttsEngine?: 'kokoro' | 'mms';
   ttsVoice?: string;
   fallbackMode?: 'wasm' | 'disable' | 'error';
-  /** @deprecated Accepted and ignored: nothing reads it. It will be removed in 1.0. */
+  /**
+   * Use the smaller MMS voice in place of Kokoro, to fit a tab with little
+   * memory. Left unset, Android phones and browsers reporting 4 GB of memory
+   * or less get it, as iPhones and iPads always do; `false` keeps Kokoro on
+   * those, though not on iPhones. An explicit `ttsEngine` wins over both.
+   */
   lowMemoryMode?: boolean;
   systemPrompt?: string;
   asrLanguage?: string;
@@ -300,7 +305,8 @@ export interface UseAiVoiceAvatarConfig {
  * The voice actually in use, which is not always the one asked for.
  *
  * iPhones and iPads get `'mms'` in place of Kokoro, which runs Safari out of
- * memory, and so does any device where Kokoro fails to load. MMS is a single,
+ * memory, and so do Android phones, browsers reporting 4 GB of memory or less,
+ * `lowMemoryMode`, and any device where Kokoro fails to load. MMS is a single,
  * plainer English voice and ignores `ttsVoice`. `'custom'` means the host's
  * `onSynthesize` is speaking.
  */
@@ -879,7 +885,8 @@ export function useAiVoiceAvatar(config: UseAiVoiceAvatarConfig): UseAiVoiceAvat
   const [activeTtsEngine, setActiveTtsEngine] = useState<'kokoro' | 'mms'>(() => {
     if (config.ttsEngine) return config.ttsEngine;
 
-    if (isIOS()) return 'mms';
+    if (config.lowMemoryMode || isIOS()) return 'mms';
+    if (config.lowMemoryMode !== false && isLowMemoryDevice()) return 'mms';
 
     if (typeof window !== 'undefined') {
       const priorCrashes = Number(localStorage.getItem(CRUMB) || 0);
