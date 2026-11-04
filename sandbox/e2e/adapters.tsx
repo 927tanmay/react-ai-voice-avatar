@@ -515,7 +515,9 @@ const App: React.FC = () => {
             return pcmStream(body, { sampleRate: 22050 });
           }
           if (voiceMode === 'stream-mp3') {
-            return (async function* () { yield new Uint8Array([0xff, 0xfb, 0x90, 0x44]); })();
+            // The types rule bytes out, as they should; a JavaScript host can
+            // still stream them, and that is what this checks.
+            return (async function* () { yield new Uint8Array([0xff, 0xfb, 0x90, 0x44]); })() as unknown as AsyncIterable<Int16Array>;
           }
           if (voiceMode === 'int16') {
             const f = second(22050);
